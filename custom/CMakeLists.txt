@@ -1,0 +1,44 @@
+message(STATUS "QGC: Adding Marine Custom Plugin")
+
+set(MARINE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTask.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTask.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTypes.h
+)
+
+if(QGC_BUILD_TESTING)
+    list(APPEND MARINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
+         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        MarineTaskModelTest
+        LABELS
+        Unit
+    )
+endif()
+
+set(CUSTOM_SOURCES
+    ${MARINE_SOURCES}
+    PARENT_SCOPE
+)
+
+set(CUSTOM_INCLUDE_DIRECTORIES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine
+    PARENT_SCOPE
+)
+
+set(CUSTOM_DEFINITIONS
+    QGC_CUSTOM_BUILD CUSTOMHEADER="CustomPlugin.h" CUSTOMCLASS=CustomPlugin
+    PARENT_SCOPE
+)
+
+set(CUSTOM_QT_COMPONENTS
+    Core
+    PARENT_SCOPE
+)
