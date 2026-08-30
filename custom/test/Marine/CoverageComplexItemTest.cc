@@ -1,8 +1,11 @@
 #include "CoverageComplexItemTest.h"
 
+#include <QtCore/QFile>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QVariantList>
+#include <QtQml/QQmlComponent>
+#include <QtQml/QQmlEngine>
 #include <QtTest/QSignalSpy>
 
 #include <memory>
@@ -158,6 +161,77 @@ void CoverageComplexItemTest::_testInvalidation()
     _marineContext->clearTasks();
     QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
     QVERIFY(_item->generatedPath().isEmpty());
+}
+
+void CoverageComplexItemTest::_testQmlRegistration()
+{
+    const QString editorUrl = QStringLiteral("qrc:/qml/Marine/Plan/CoverageInspectionEditor.qml");
+    const QString mapVisualUrl = QStringLiteral("qrc:/qml/Marine/Plan/CoverageInspectionMapVisual.qml");
+
+    QCOMPARE(_item->property("editorQml").toString(), editorUrl);
+    QCOMPARE(_item->mapVisualQML(), mapVisualUrl);
+    QVERIFY(QFile::exists(QStringLiteral(":/qml/Marine/Plan/CoverageInspectionEditor.qml")));
+    QVERIFY(QFile::exists(QStringLiteral(":/qml/Marine/Plan/CoverageInspectionMapVisual.qml")));
+
+    QQmlEngine engine;
+    engine.addImportPath(QStringLiteral("qrc:/qml"));
+    QQmlComponent editorComponent(&engine, QUrl(editorUrl));
+    QQmlComponent mapVisualComponent(&engine, QUrl(mapVisualUrl));
+    QVERIFY2(editorComponent.isReady(), qPrintable(editorComponent.errorString()));
+    QVERIFY2(mapVisualComponent.isReady(), qPrintable(mapVisualComponent.errorString()));
+}
+
+void CoverageComplexItemTest::_testQmlTaskProperties()
+{
+    MarineTask task = validTask();
+    task.name = "Harbor inspection";
+    task.coverage.swathWidthM = 8.5;
+    task.coverage.safetyMarginM = 2.25;
+    task.sensors.cameraEnabled = true;
+    task.sensors.cameraRecord = false;
+    task.sensors.sonarEnabled = false;
+    task.sensors.sonarRecord = true;
+    task.region.noGoRegions = {GeoPolygon{.vertices = {
+                                              {.latitudeDeg = 47.3980, .longitudeDeg = 8.5458, .altitudeM = 0.0},
+                                              {.latitudeDeg = 47.3980, .longitudeDeg = 8.5460, .altitudeM = 0.0},
+                                              {.latitudeDeg = 47.3982, .longitudeDeg = 8.5460, .altitudeM = 0.0},
+                                          }}};
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QCOMPARE(_item->taskName(), QStringLiteral("Harbor inspection"));
+    QCOMPARE(_item->swathWidthM(), 8.5);
+    QCOMPARE(_item->safetyMarginM(), 2.25);
+    QVERIFY(_item->cameraEnabled());
+    QVERIFY(!_item->cameraRecord());
+    QVERIFY(!_item->sonarEnabled());
+    QVERIFY(_item->sonarRecord());
+    QCOMPARE(_item->outerBoundary().size(), 4);
+    const QVariantList noGoRegions = _item->noGoRegions();
+    QCOMPARE(noGoRegions.size(), 1);
+    QCOMPARE(noGoRegions.constFirst().toList().size(), 3);
+
+    QVERIFY(_item->plan());
+    QSignalSpy taskDataSpy(_item, &CoverageInspectionComplexItem::taskDataChanged);
+    _item->setTaskName(QStringLiteral("Updated inspection"));
+    _item->setSwathWidthM(11.0);
+    _item->setSafetyMarginM(3.0);
+    _item->setCameraEnabled(false);
+    _item->setCameraRecord(true);
+    _item->setSonarEnabled(true);
+    _item->setSonarRecord(false);
+
+    const MarineTask* updatedTask = _marineContext->task(task.id);
+    QVERIFY(updatedTask != nullptr);
+    QCOMPARE(QString::fromStdString(updatedTask->name), QStringLiteral("Updated inspection"));
+    QCOMPARE(updatedTask->coverage.swathWidthM, 11.0);
+    QCOMPARE(updatedTask->coverage.safetyMarginM, 3.0);
+    QVERIFY(!updatedTask->sensors.cameraEnabled);
+    QVERIFY(updatedTask->sensors.cameraRecord);
+    QVERIFY(updatedTask->sensors.sonarEnabled);
+    QVERIFY(!updatedTask->sensors.sonarRecord);
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+    QCOMPARE(taskDataSpy.count(), 7);
 }
 
 void CoverageComplexItemTest::_testSaveLoad()

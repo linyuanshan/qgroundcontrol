@@ -1,5 +1,22 @@
 message(STATUS "QGC: Adding Marine Custom Plugin")
 
+qt_add_library(MarinePlanModule STATIC)
+qgc_configure_target(MarinePlanModule)
+
+qgc_set_qt_resource_alias(${CMAKE_CURRENT_SOURCE_DIR}/src/PlanView/CoverageInspectionEditor.qml
+                          ${CMAKE_CURRENT_SOURCE_DIR}/src/PlanView/CoverageInspectionMapVisual.qml
+)
+
+qt_add_qml_module(
+    MarinePlanModule
+    URI Marine.Plan
+    VERSION 1.0
+    RESOURCE_PREFIX /qml
+    QML_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/PlanView/CoverageInspectionEditor.qml
+              ${CMAKE_CURRENT_SOURCE_DIR}/src/PlanView/CoverageInspectionMapVisual.qml
+    NO_PLUGIN
+)
+
 set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.h
@@ -147,6 +164,11 @@ set(CUSTOM_INCLUDE_DIRECTORIES
     ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager
+    PARENT_SCOPE
+)
+
+set(CUSTOM_LIBRARIES
+    MarinePlanModule
     PARENT_SCOPE
 )
 

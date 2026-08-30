@@ -21,6 +21,8 @@ private slots:
     void _testPlanning();
     void _testPlanningFailures();
     void _testInvalidation();
+    void _testQmlRegistration();
+    void _testQmlTaskProperties();
     void _testSaveLoad();
     void _testLoadValidation();
 

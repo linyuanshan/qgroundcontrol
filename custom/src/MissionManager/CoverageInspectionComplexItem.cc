@@ -34,15 +34,18 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
     if (_marineContext) {
         connect(_marineContext, &MarinePlanContext::taskChanged, this, [this](const QString& changedTaskId) {
             if (changedTaskId == taskId()) {
+                emit taskDataChanged();
                 invalidatePlan();
             }
         });
         connect(_marineContext, &MarinePlanContext::tasksCleared, this, [this]() {
             if (!_taskId.empty()) {
+                emit taskDataChanged();
                 invalidatePlan();
             }
         });
     }
+    _editorQml = QStringLiteral("qrc:/qml/Marine/Plan/CoverageInspectionEditor.qml");
     setDirty(false);
 }
 
@@ -60,7 +63,147 @@ void CoverageInspectionComplexItem::setTaskId(const QString& taskId)
 
     _taskId = newTaskId;
     emit taskIdChanged();
+    emit taskDataChanged();
     invalidatePlan();
+}
+
+QString CoverageInspectionComplexItem::taskName() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) ? QString::fromStdString(marineTask->name) : QString();
+}
+
+void CoverageInspectionComplexItem::setTaskName(const QString& taskName)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->name == taskName.toStdString())) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.name = taskName.toStdString();
+    _replaceTask(updatedTask);
+}
+
+double CoverageInspectionComplexItem::swathWidthM() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) ? marineTask->coverage.swathWidthM : 0.0;
+}
+
+void CoverageInspectionComplexItem::setSwathWidthM(double swathWidthM)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->coverage.swathWidthM == swathWidthM)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.coverage.swathWidthM = swathWidthM;
+    _replaceTask(updatedTask);
+}
+
+double CoverageInspectionComplexItem::safetyMarginM() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) ? marineTask->coverage.safetyMarginM : 0.0;
+}
+
+void CoverageInspectionComplexItem::setSafetyMarginM(double safetyMarginM)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->coverage.safetyMarginM == safetyMarginM)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.coverage.safetyMarginM = safetyMarginM;
+    _replaceTask(updatedTask);
+}
+
+bool CoverageInspectionComplexItem::cameraEnabled() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) && marineTask->sensors.cameraEnabled;
+}
+
+void CoverageInspectionComplexItem::setCameraEnabled(bool enabled)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->sensors.cameraEnabled == enabled)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.sensors.cameraEnabled = enabled;
+    _replaceTask(updatedTask);
+}
+
+bool CoverageInspectionComplexItem::cameraRecord() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) && marineTask->sensors.cameraRecord;
+}
+
+void CoverageInspectionComplexItem::setCameraRecord(bool record)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->sensors.cameraRecord == record)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.sensors.cameraRecord = record;
+    _replaceTask(updatedTask);
+}
+
+bool CoverageInspectionComplexItem::sonarEnabled() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) && marineTask->sensors.sonarEnabled;
+}
+
+void CoverageInspectionComplexItem::setSonarEnabled(bool enabled)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->sensors.sonarEnabled == enabled)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.sensors.sonarEnabled = enabled;
+    _replaceTask(updatedTask);
+}
+
+bool CoverageInspectionComplexItem::sonarRecord() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) && marineTask->sensors.sonarRecord;
+}
+
+void CoverageInspectionComplexItem::setSonarRecord(bool record)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->sensors.sonarRecord == record)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.sensors.sonarRecord = record;
+    _replaceTask(updatedTask);
+}
+
+QVariantList CoverageInspectionComplexItem::outerBoundary() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) ? _toQGeoCoordinates(marineTask->region.outerBoundary) : QVariantList();
+}
+
+QVariantList CoverageInspectionComplexItem::noGoRegions() const
+{
+    QVariantList regions;
+    const MarineTask* marineTask = _task();
+    if (marineTask == nullptr) {
+        return regions;
+    }
+    regions.reserve(static_cast<qsizetype>(marineTask->region.noGoRegions.size()));
+    for (const GeoPolygon& polygon : marineTask->region.noGoRegions) {
+        regions.append(QVariant::fromValue(_toQGeoCoordinates(polygon)));
+    }
+    return regions;
 }
 
 QVariantList CoverageInspectionComplexItem::generatedPath() const
@@ -334,6 +477,28 @@ void CoverageInspectionComplexItem::_applyPlanningResult(PlanningResult result)
         emit readyForSaveStateChanged();
     }
     setDirty(true);
+}
+
+const MarineTask* CoverageInspectionComplexItem::_task() const
+{
+    return _marineContext ? _marineContext->task(_taskId) : nullptr;
+}
+
+void CoverageInspectionComplexItem::_replaceTask(const MarineTask& task)
+{
+    if (_marineContext) {
+        _marineContext->addTask(task);
+    }
+}
+
+QVariantList CoverageInspectionComplexItem::_toQGeoCoordinates(const GeoPolygon& polygon)
+{
+    QVariantList coordinates;
+    coordinates.reserve(static_cast<qsizetype>(polygon.vertices.size()));
+    for (const GeoPoint& point : polygon.vertices) {
+        coordinates.append(QVariant::fromValue(_toQGeoCoordinate(point)));
+    }
+    return coordinates;
 }
 
 QGeoCoordinate CoverageInspectionComplexItem::_toQGeoCoordinate(const GeoPoint& point)

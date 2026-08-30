@@ -26,6 +26,15 @@ public:
                                            Marine::MarinePlanContext* marineContext);
 
     Q_PROPERTY(QString taskId READ taskId WRITE setTaskId NOTIFY taskIdChanged)
+    Q_PROPERTY(QString taskName READ taskName WRITE setTaskName NOTIFY taskDataChanged)
+    Q_PROPERTY(double swathWidthM READ swathWidthM WRITE setSwathWidthM NOTIFY taskDataChanged)
+    Q_PROPERTY(double safetyMarginM READ safetyMarginM WRITE setSafetyMarginM NOTIFY taskDataChanged)
+    Q_PROPERTY(bool cameraEnabled READ cameraEnabled WRITE setCameraEnabled NOTIFY taskDataChanged)
+    Q_PROPERTY(bool cameraRecord READ cameraRecord WRITE setCameraRecord NOTIFY taskDataChanged)
+    Q_PROPERTY(bool sonarEnabled READ sonarEnabled WRITE setSonarEnabled NOTIFY taskDataChanged)
+    Q_PROPERTY(bool sonarRecord READ sonarRecord WRITE setSonarRecord NOTIFY taskDataChanged)
+    Q_PROPERTY(QVariantList outerBoundary READ outerBoundary NOTIFY taskDataChanged)
+    Q_PROPERTY(QVariantList noGoRegions READ noGoRegions NOTIFY taskDataChanged)
     Q_PROPERTY(PlanningState planningState READ planningState NOTIFY planningStateChanged)
     Q_PROPERTY(QVariantList generatedPath READ generatedPath NOTIFY generatedPathChanged)
 
@@ -34,6 +43,23 @@ public:
 
     QString taskId() const;
     void setTaskId(const QString& taskId);
+
+    QString taskName() const;
+    void setTaskName(const QString& taskName);
+    double swathWidthM() const;
+    void setSwathWidthM(double swathWidthM);
+    double safetyMarginM() const;
+    void setSafetyMarginM(double safetyMarginM);
+    bool cameraEnabled() const;
+    void setCameraEnabled(bool enabled);
+    bool cameraRecord() const;
+    void setCameraRecord(bool record);
+    bool sonarEnabled() const;
+    void setSonarEnabled(bool enabled);
+    bool sonarRecord() const;
+    void setSonarRecord(bool record);
+    QVariantList outerBoundary() const;
+    QVariantList noGoRegions() const;
 
     PlanningState planningState() const { return _planningState; }
 
@@ -56,7 +82,10 @@ public:
     bool load(const QJsonObject& complexObject, int sequenceNumber, QString& errorString) final;
     double greatestDistanceTo(const QGeoCoordinate& other) const final;
 
-    QString mapVisualQML() const final { return {}; }
+    QString mapVisualQML() const final
+    {
+        return QStringLiteral("qrc:/qml/Marine/Plan/CoverageInspectionMapVisual.qml");
+    }
 
     bool dirty() const final { return _dirty; }
 
@@ -109,11 +138,15 @@ public:
 
 signals:
     void taskIdChanged();
+    void taskDataChanged();
     void planningStateChanged();
     void generatedPathChanged();
 
 private:
     void _applyPlanningResult(Marine::PlanningResult result);
+    const Marine::MarineTask* _task() const;
+    void _replaceTask(const Marine::MarineTask& task);
+    static QVariantList _toQGeoCoordinates(const Marine::GeoPolygon& polygon);
     static QGeoCoordinate _toQGeoCoordinate(const Marine::GeoPoint& point);
 
     std::string _taskId;
