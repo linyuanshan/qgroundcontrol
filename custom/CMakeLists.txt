@@ -1,14 +1,23 @@
 message(STATUS "QGC: Adding Marine Custom Plugin")
 
 set(MARINE_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTask.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTask.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTask.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTask.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTaskJsonCodec.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTaskJsonCodec.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTypes.h
 )
 
 if(QGC_BUILD_TESTING)
-    list(APPEND MARINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
-         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
+    list(
+        APPEND
+        MARINE_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
     )
 
     cmake_language(
@@ -18,6 +27,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         MarineTaskModelTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        MarineTaskJsonTest
         LABELS
         Unit
     )
