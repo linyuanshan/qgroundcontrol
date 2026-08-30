@@ -56,6 +56,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CustomPluginIntegrationTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanIntegrationTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanIntegrationTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
@@ -130,6 +132,18 @@ if(QGC_BUILD_TESTING)
         MarinePlanContextTest
         LABELS
         Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        MarinePlanIntegrationTest
+        LABELS
+        Integration
+        MissionManager
     )
 
     cmake_language(
