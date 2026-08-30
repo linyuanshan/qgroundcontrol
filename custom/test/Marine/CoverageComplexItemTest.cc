@@ -286,6 +286,12 @@ void CoverageComplexItemTest::_testLoadValidation()
     errorString.clear();
     QVERIFY(!loadedItem->load(negativePathLength, 0, errorString));
     QVERIFY(!errorString.isEmpty());
+
+    QJsonObject brokenTaskReference = validObject;
+    brokenTaskReference.insert(QStringLiteral("taskId"), QStringLiteral("missing-task"));
+    errorString.clear();
+    QVERIFY(!loadedItem->load(brokenTaskReference, 0, errorString));
+    QVERIFY(errorString.contains(QStringLiteral("missing-task")));
 }
 
 UT_REGISTER_TEST(CoverageComplexItemTest, TestLabel::Unit, TestLabel::MissionManager)

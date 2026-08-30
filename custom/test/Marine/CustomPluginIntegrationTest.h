@@ -15,4 +15,7 @@ private slots:
     void _testFactoryRegistrationAndContextReuse();
     void _testMarineEntriesFilteredForNonMarineVehicle();
     void _testNullVehicleMenuHandled();
+    void _testMarinePlanSaveFiltersOrphans();
+    void _testMarinePlanPreload();
+    void _testMarinePlanPreloadValidation();
 };

@@ -363,7 +363,10 @@ void PlanMasterController::loadFromFile(const QString& filename)
 
         QJsonObject json = jsonDoc.object();
         //-- Allow plugins to pre process the load
-        QGCCorePlugin::instance()->preLoadFromJson(this, json);
+        if (!QGCCorePlugin::instance()->preLoadFromJson(this, json, errorString)) {
+            QGC::showAppMessage(errorMessage.arg(errorString));
+            return;
+        }
 
         int version;
         if (!JsonParsing::validateExternalQGCJsonFile(json, kPlanFileType, kPlanFileVersion, kPlanFileVersion, version, errorString)) {

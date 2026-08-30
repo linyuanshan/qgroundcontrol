@@ -15,4 +15,6 @@ public:
     ComplexMissionItem* createComplexMissionItem(const QString& complexItemType, PlanMasterController* masterController,
                                                  bool flyView, const QString& kmlOrShpFile = QString()) final;
     QList<PlanCreator*> planCreators(PlanMasterController* planMasterController) final;
+    void postSaveToJson(PlanMasterController* planMasterController, QJsonObject& json) final;
+    bool preLoadFromJson(PlanMasterController* planMasterController, QJsonObject& json, QString& errorString) final;
 };

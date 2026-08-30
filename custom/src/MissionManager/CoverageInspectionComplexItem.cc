@@ -398,6 +398,12 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         return false;
     }
 
+    const std::string loadedTaskId = object.value(_jsonTaskIdKey).toString().toStdString();
+    if ((_marineContext == nullptr) || (_marineContext->task(loadedTaskId) == nullptr)) {
+        errorString = tr("Marine coverage item references missing task '%1'").arg(QString::fromStdString(loadedTaskId));
+        return false;
+    }
+
     const int statusValue = object.value(_jsonPlanningStatusKey).toInt(-1);
     if ((statusValue < static_cast<int>(PlanningStatus::Success)) ||
         (statusValue > static_cast<int>(PlanningStatus::Failed))) {
@@ -434,7 +440,7 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         return false;
     }
 
-    _taskId = object.value(_jsonTaskIdKey).toString().toStdString();
+    _taskId = loadedTaskId;
     _sequenceNumber = sequenceNumber;
     _applyPlanningResult(std::move(result));
     setDirty(false);

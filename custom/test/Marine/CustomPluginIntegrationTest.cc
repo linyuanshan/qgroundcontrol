@@ -1,14 +1,43 @@
 #include "CustomPluginIntegrationTest.h"
 
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonObject>
+
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
 #include "MarinePlanContext.h"
+#include "MarineTaskJsonCodec.h"
 #include "MissionController.h"
 #include "PlanMasterController.h"
 #include "QGCCorePlugin.h"
 #include "QmlObjectListModel.h"
 
+using namespace Marine;
+
 namespace {
+
+MarineTask validTask(const std::string& id)
+{
+    MarineTask task;
+    task.id = id;
+    task.name = "Harbor inspection";
+    task.planner.plannerId = "marine.coverage.mock";
+    task.region.outerBoundary.vertices = {
+        {.latitudeDeg = 47.3977, .longitudeDeg = 8.5455, .altitudeM = 0.0},
+        {.latitudeDeg = 47.3977, .longitudeDeg = 8.5465, .altitudeM = 0.0},
+        {.latitudeDeg = 47.3987, .longitudeDeg = 8.5465, .altitudeM = 0.0},
+        {.latitudeDeg = 47.3987, .longitudeDeg = 8.5455, .altitudeM = 0.0},
+    };
+    return task;
+}
+
+QJsonObject saveTask(const MarineTask& task)
+{
+    QJsonObject taskJson;
+    QString errorString;
+    (void) MarineTaskJsonCodec::save(task, taskJson, errorString);
+    return taskJson;
+}
 
 int coverageMenuEntryCount(const QVariantList& entries)
 {
@@ -99,6 +128,90 @@ void CustomPluginIntegrationTest::_testMarineEntriesFilteredForNonMarineVehicle(
 void CustomPluginIntegrationTest::_testNullVehicleMenuHandled()
 {
     QCOMPARE(QGCCorePlugin::instance()->complexMissionItemNames(nullptr).size(), 0);
+}
+
+void CustomPluginIntegrationTest::_testMarinePlanSaveFiltersOrphans()
+{
+    auto* context = planController()->findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(context != nullptr);
+    const MarineTask referencedTask = validTask("referenced-task");
+    const MarineTask orphanTask = validTask("orphan-task");
+    context->addTask(referencedTask);
+    context->addTask(orphanTask);
+
+    VisualMissionItem* visualItem = missionController()->insertComplexMissionItem(
+        CoverageInspectionComplexItem::canonicalName, QGeoCoordinate(47.398, 8.546), -1, true);
+    auto* coverageItem = qobject_cast<CoverageInspectionComplexItem*>(visualItem);
+    QVERIFY(coverageItem != nullptr);
+    coverageItem->setTaskId(QString::fromStdString(referencedTask.id));
+    QVERIFY(coverageItem->plan());
+
+    const QJsonObject planJson = planController()->saveToJson().object();
+    const QJsonObject marineJson = planJson.value(QStringLiteral("marine")).toObject();
+    QCOMPARE(marineJson.value(QStringLiteral("version")).toInt(), 1);
+    const QJsonArray tasksJson = marineJson.value(QStringLiteral("tasks")).toArray();
+    QCOMPARE(tasksJson.size(), 1);
+    QCOMPARE(tasksJson.at(0).toObject().value(QStringLiteral("id")).toString(),
+             QString::fromStdString(referencedTask.id));
+}
+
+void CustomPluginIntegrationTest::_testMarinePlanPreload()
+{
+    auto* context = planController()->findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(context != nullptr);
+    context->addTask(validTask("old-task"));
+    const MarineTask loadedTask = validTask("loaded-task");
+    QJsonObject planJson{
+        {QStringLiteral("marine"),
+         QJsonObject{{QStringLiteral("version"), 1}, {QStringLiteral("tasks"), QJsonArray{saveTask(loadedTask)}}}}};
+
+    QString errorString;
+    QVERIFY2(QGCCorePlugin::instance()->preLoadFromJson(planController(), planJson, errorString),
+             qPrintable(errorString));
+    QVERIFY(context->task("old-task") == nullptr);
+    const MarineTask* restoredTask = context->task(loadedTask.id);
+    QVERIFY(restoredTask != nullptr);
+    QCOMPARE(restoredTask->name, loadedTask.name);
+    QVERIFY(context->plannerRegistry().planner("marine.coverage.mock") != nullptr);
+}
+
+void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()
+{
+    auto* context = planController()->findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(context != nullptr);
+    const MarineTask existingTask = validTask("existing-task");
+    context->addTask(existingTask);
+    QGCCorePlugin* plugin = QGCCorePlugin::instance();
+    QString errorString;
+
+    QJsonObject unsupportedVersion{{QStringLiteral("marine"), QJsonObject{{QStringLiteral("version"), 2},
+                                                                          {QStringLiteral("tasks"), QJsonArray()}}}};
+    QVERIFY(!plugin->preLoadFromJson(planController(), unsupportedVersion, errorString));
+    QVERIFY(errorString.contains(QStringLiteral("version"), Qt::CaseInsensitive));
+    QVERIFY(context->task(existingTask.id) != nullptr);
+
+    const MarineTask duplicateTask = validTask("duplicate-task");
+    QJsonObject duplicateIds{
+        {QStringLiteral("marine"),
+         QJsonObject{{QStringLiteral("version"), 1},
+                     {QStringLiteral("tasks"), QJsonArray{saveTask(duplicateTask), saveTask(duplicateTask)}}}}};
+    errorString.clear();
+    QVERIFY(!plugin->preLoadFromJson(planController(), duplicateIds, errorString));
+    QVERIFY(errorString.contains(QStringLiteral("duplicate"), Qt::CaseInsensitive));
+    QVERIFY(context->task(existingTask.id) != nullptr);
+
+    QJsonObject brokenReference{
+        {QStringLiteral("mission"),
+         QJsonObject{{QStringLiteral("items"),
+                      QJsonArray{QJsonObject{
+                          {QStringLiteral("complexItemType"), CoverageInspectionComplexItem::jsonComplexItemTypeValue},
+                          {QStringLiteral("taskId"), QStringLiteral("missing-task")}}}}}},
+        {QStringLiteral("marine"),
+         QJsonObject{{QStringLiteral("version"), 1}, {QStringLiteral("tasks"), QJsonArray()}}}};
+    errorString.clear();
+    QVERIFY(!plugin->preLoadFromJson(planController(), brokenReference, errorString));
+    QVERIFY(errorString.contains(QStringLiteral("missing-task")));
+    QVERIFY(context->task(existingTask.id) != nullptr);
 }
 
 UT_REGISTER_TEST(CustomPluginIntegrationTest, TestLabel::Unit, TestLabel::MissionManager)

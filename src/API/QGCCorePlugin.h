@@ -217,6 +217,15 @@ public:
     };
     virtual QList<JoystickAction> joystickActions() { return {}; }
 
+    /// Error-reporting overload of preLoadFromJson. Existing custom builds which only override the
+    /// two-argument hook remain supported through this default implementation.
+    virtual bool preLoadFromJson(PlanMasterController *pController, QJsonObject &json, QString &errorString)
+    {
+        errorString.clear();
+        preLoadFromJson(pController, json);
+        return true;
+    }
+
     /// Returns the list of first run prompt ids which need to be displayed according to current settings
     Q_INVOKABLE QVariantList firstRunPromptsToShow();
 
