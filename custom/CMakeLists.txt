@@ -19,6 +19,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC/MarinePlanContext.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionComplexItem.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionComplexItem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionPlanCreator.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionPlanCreator.h
 )
 
 if(QGC_BUILD_TESTING)
@@ -29,6 +31,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageInspectionPlanCreatorTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageInspectionPlanCreatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.cc
@@ -37,6 +41,18 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageInspectionPlanCreatorTest
+        LABELS
+        Unit
+        MissionManager
     )
 
     cmake_language(
