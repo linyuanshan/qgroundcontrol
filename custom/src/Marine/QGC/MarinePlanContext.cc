@@ -25,16 +25,24 @@ void MarinePlanContext::addTask(const MarineTask& task)
     }
 
     _tasks.insert_or_assign(task.id, task);
+    emit taskChanged(QString::fromStdString(task.id));
 }
 
 void MarinePlanContext::removeTask(const std::string& taskId)
 {
-    _tasks.erase(taskId);
+    if (_tasks.erase(taskId) != 0) {
+        emit taskChanged(QString::fromStdString(taskId));
+    }
 }
 
 void MarinePlanContext::clearTasks()
 {
+    if (_tasks.empty()) {
+        return;
+    }
+
     _tasks.clear();
+    emit tasksCleared();
 }
 
 PlannerRegistry& MarinePlanContext::plannerRegistry()

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QtCore/QObject>
+#include <QtCore/QString>
 
 #include <string>
 #include <unordered_map>
@@ -26,6 +27,10 @@ public:
     void clearTasks();
     PlannerRegistry& plannerRegistry();
     const PlannerRegistry& plannerRegistry() const;
+
+signals:
+    void taskChanged(const QString& taskId);
+    void tasksCleared();
 
 private:
     std::unordered_map<std::string, MarineTask> _tasks;
