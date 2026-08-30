@@ -35,12 +35,26 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageInspectionPlanCreatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CustomPluginIntegrationTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CustomPluginIntegrationTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CustomPluginIntegrationTest
+        LABELS
+        Unit
+        MissionManager
     )
 
     cmake_language(

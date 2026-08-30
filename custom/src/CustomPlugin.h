@@ -11,6 +11,8 @@ public:
 
     static QGCCorePlugin* instance();
 
+    QVariantList complexMissionItemNames(Vehicle* vehicle) final;
     ComplexMissionItem* createComplexMissionItem(const QString& complexItemType, PlanMasterController* masterController,
                                                  bool flyView, const QString& kmlOrShpFile = QString()) final;
+    QList<PlanCreator*> planCreators(PlanMasterController* planMasterController) final;
 };
