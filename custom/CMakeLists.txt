@@ -8,6 +8,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTaskJsonCodec.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTaskJsonCodec.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTypes.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/ICoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.h
@@ -23,6 +25,8 @@ if(QGC_BUILD_TESTING)
     list(
         APPEND
         MARINE_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.cc
@@ -33,6 +37,18 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        ArduPilotMissionAdapterTest
+        LABELS
+        Unit
+        MissionManager
     )
 
     cmake_language(
@@ -99,8 +115,8 @@ set(CUSTOM_SOURCES
 
 set(CUSTOM_INCLUDE_DIRECTORIES
     ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager
     PARENT_SCOPE
 )
 

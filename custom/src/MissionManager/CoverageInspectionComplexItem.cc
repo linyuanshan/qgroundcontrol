@@ -8,6 +8,7 @@
 #include <cmath>
 #include <utility>
 
+#include "ArduPilotMissionAdapter.h"
 #include "GeoJsonHelper.h"
 #include "JsonParsing.h"
 #include "MarinePlanContext.h"
@@ -159,10 +160,20 @@ double CoverageInspectionComplexItem::greatestDistanceTo(const QGeoCoordinate& o
     return greatestDistance;
 }
 
+int CoverageInspectionComplexItem::lastSequenceNumber() const
+{
+    return _planningResult.path.empty() ? _sequenceNumber
+                                        : _sequenceNumber + static_cast<int>(_planningResult.path.size()) - 1;
+}
+
 void CoverageInspectionComplexItem::appendMissionItems(QList<MissionItem*>& items, QObject* missionItemParent)
 {
-    Q_UNUSED(items)
-    Q_UNUSED(missionItemParent)
+    int nextSequenceNumber = _sequenceNumber;
+    QString errorString;
+    if (!ArduPilotMissionAdapter::appendWaypoints(_planningResult, items, missionItemParent, nextSequenceNumber,
+                                                  errorString)) {
+        return;
+    }
 }
 
 void CoverageInspectionComplexItem::setMissionFlightStatus(MissionFlightStatus_t& missionFlightStatus)
@@ -307,6 +318,7 @@ void CoverageInspectionComplexItem::_applyPlanningResult(PlanningResult result)
     }
     if (pathChanged) {
         emit generatedPathChanged();
+        emit lastSequenceNumberChanged(lastSequenceNumber());
         emit coordinateChanged(coordinate());
         emit entryCoordinateChanged(entryCoordinate());
         emit exitCoordinateChanged(exitCoordinate());

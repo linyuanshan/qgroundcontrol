@@ -9,6 +9,7 @@
 
 #include "CoverageInspectionComplexItem.h"
 #include "MarinePlanContext.h"
+#include "MissionItem.h"
 #include "MockCoveragePlanner.h"
 
 using namespace Marine;
@@ -66,6 +67,7 @@ void CoverageComplexItemTest::_testPlanning()
     _marineContext->addTask(task);
     QSignalSpy stateSpy(_item, &CoverageInspectionComplexItem::planningStateChanged);
     QSignalSpy pathSpy(_item, &CoverageInspectionComplexItem::generatedPathChanged);
+    QSignalSpy lastSequenceSpy(_item, &CoverageInspectionComplexItem::lastSequenceNumberChanged);
 
     _item->setTaskId(QString::fromStdString(task.id));
     _item->setDirty(false);
@@ -79,9 +81,19 @@ void CoverageComplexItemTest::_testPlanning()
     QVERIFY(_item->complexDistance() > 0.0);
     QVERIFY(_item->specifiesCoordinate());
     QCOMPARE(_item->readyForSaveState(), VisualMissionItem::ReadyForSave);
+    QCOMPARE(_item->lastSequenceNumber(), 2);
     QVERIFY(_item->dirty());
     QCOMPARE(stateSpy.count(), 1);
     QCOMPARE(pathSpy.count(), 1);
+    QCOMPARE(lastSequenceSpy.count(), 1);
+
+    QList<MissionItem*> items;
+    _item->appendMissionItems(items, this);
+    QCOMPARE(items.size(), 3);
+    for (int index = 0; index < items.size(); ++index) {
+        QCOMPARE(items.at(index)->sequenceNumber(), index);
+        QCOMPARE(items.at(index)->command(), MAV_CMD_NAV_WAYPOINT);
+    }
 }
 
 void CoverageComplexItemTest::_testPlanningFailures()
@@ -127,6 +139,9 @@ void CoverageComplexItemTest::_testInvalidation()
     _marineContext->addTask(updatedTask);
     QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
     QVERIFY(_item->generatedPath().isEmpty());
+    QList<MissionItem*> invalidatedItems;
+    _item->appendMissionItems(invalidatedItems, this);
+    QVERIFY(invalidatedItems.isEmpty());
 
     QVERIFY(_item->plan());
     _item->setTaskId(QString::fromStdString(secondTask.id));

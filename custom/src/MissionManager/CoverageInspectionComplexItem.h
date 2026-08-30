@@ -51,7 +51,7 @@ public:
     double minAMSLAltitude() const final;
     double maxAMSLAltitude() const final;
 
-    int lastSequenceNumber() const final { return _sequenceNumber; }
+    int lastSequenceNumber() const final;
 
     bool load(const QJsonObject& complexObject, int sequenceNumber, QString& errorString) final;
     double greatestDistanceTo(const QGeoCoordinate& other) const final;
