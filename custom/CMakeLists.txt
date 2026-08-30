@@ -13,6 +13,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlannerRegistry.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlannerRegistry.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC/MarinePlanContext.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC/MarinePlanContext.h
 )
 
 if(QGC_BUILD_TESTING)
@@ -21,6 +23,8 @@ if(QGC_BUILD_TESTING)
         MARINE_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
@@ -34,6 +38,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         CoveragePlannerTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        MarinePlanContextTest
         LABELS
         Unit
     )
@@ -68,7 +83,7 @@ set(CUSTOM_SOURCES
 
 set(CUSTOM_INCLUDE_DIRECTORIES
     ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC
     PARENT_SCOPE
 )
 
