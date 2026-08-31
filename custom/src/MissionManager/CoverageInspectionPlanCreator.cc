@@ -26,6 +26,16 @@ void CoverageInspectionPlanCreator::createPlan(const QGeoCoordinate& mapCenterCo
     Marine::MarineTask task;
     task.name = CoverageInspectionComplexItem::canonicalName;
     task.planner.plannerId = "marine.coverage.mock";
+    // Keep the creator deterministic and immediately plannable; the editor can replace this test region.
+    const double latitude = mapCenterCoord.latitude();
+    const double longitude = mapCenterCoord.longitude();
+    constexpr double delta = 0.0005;
+    task.region.outerBoundary.vertices = {
+        {.latitudeDeg = latitude - delta, .longitudeDeg = longitude - delta, .altitudeM = mapCenterCoord.altitude()},
+        {.latitudeDeg = latitude - delta, .longitudeDeg = longitude + delta, .altitudeM = mapCenterCoord.altitude()},
+        {.latitudeDeg = latitude + delta, .longitudeDeg = longitude + delta, .altitudeM = mapCenterCoord.altitude()},
+        {.latitudeDeg = latitude + delta, .longitudeDeg = longitude - delta, .altitudeM = mapCenterCoord.altitude()},
+    };
     _marineContext->addTask(task);
 
     VisualMissionItem* visualItem = _missionController->insertComplexMissionItem(

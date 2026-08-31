@@ -16,6 +16,7 @@ private slots:
     void _testMarineEntriesFilteredForNonMarineVehicle();
     void _testNullVehicleMenuHandled();
     void _testMarinePlanSaveFiltersOrphans();
+    void _testOrdinaryPlanOmitsMarineSection();
     void _testMarinePlanPreload();
     void _testMarinePlanPreloadValidation();
 };

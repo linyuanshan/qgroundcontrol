@@ -20,9 +20,9 @@ class MarinePlanContext final : public QObject
 public:
     explicit MarinePlanContext(PlanMasterController* controller);
 
-    [[nodiscard]] MarineTask* task(const std::string& taskId);
     [[nodiscard]] const MarineTask* task(const std::string& taskId) const;
     void addTask(const MarineTask& task);
+    [[nodiscard]] bool updateTask(const MarineTask& task);
     void removeTask(const std::string& taskId);
     void clearTasks();
     PlannerRegistry& plannerRegistry();

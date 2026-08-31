@@ -1,5 +1,7 @@
 #include "MarinePlanContextTest.h"
 
+#include <QtTest/QSignalSpy>
+
 #include <memory>
 
 #include "MarinePlanContext.h"
@@ -26,7 +28,7 @@ void MarinePlanContextTest::_testAddAndFind()
     const std::string storedName = task.name;
     task.name = "Changed outside context";
 
-    MarineTask* storedTask = context.task(task.id);
+    const MarineTask* storedTask = context.task(task.id);
     QVERIFY(storedTask);
     QCOMPARE(storedTask->id, task.id);
     QCOMPARE(storedTask->name, storedName);
@@ -34,6 +36,25 @@ void MarinePlanContextTest::_testAddAndFind()
     const MarinePlanContext& constContext = context;
     QVERIFY(constContext.task(task.id));
     QVERIFY(!constContext.task("missing-task"));
+}
+
+void MarinePlanContextTest::_testUpdateNotifies()
+{
+    MarinePlanContext context(nullptr);
+    MarineTask original;
+    original.name = "Original";
+    context.addTask(original);
+
+    QSignalSpy taskChangedSpy(&context, &MarinePlanContext::taskChanged);
+    MarineTask replacement = original;
+    replacement.name = "Replacement";
+    QVERIFY(context.updateTask(replacement));
+    QCOMPARE(taskChangedSpy.count(), 1);
+    QCOMPARE(context.task(original.id)->name, replacement.name);
+
+    MarineTask missing;
+    QVERIFY(!context.updateTask(missing));
+    QCOMPARE(taskChangedSpy.count(), 1);
 }
 
 void MarinePlanContextTest::_testDuplicateIdReplaces()

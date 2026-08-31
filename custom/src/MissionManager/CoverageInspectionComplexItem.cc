@@ -25,6 +25,36 @@ bool pathsEqual(const std::vector<GeoPoint>& first, const std::vector<GeoPoint>&
     });
 }
 
+QString planningStatusToString(PlanningStatus status)
+{
+    switch (status) {
+        case PlanningStatus::Success:
+            return QStringLiteral("success");
+        case PlanningStatus::InvalidInput:
+            return QStringLiteral("invalidInput");
+        case PlanningStatus::Failed:
+            return QStringLiteral("failed");
+    }
+    return {};
+}
+
+bool planningStatusFromString(const QString& value, PlanningStatus& status)
+{
+    if (value == QStringLiteral("success")) {
+        status = PlanningStatus::Success;
+        return true;
+    }
+    if (value == QStringLiteral("invalidInput")) {
+        status = PlanningStatus::InvalidInput;
+        return true;
+    }
+    if (value == QStringLiteral("failed")) {
+        status = PlanningStatus::Failed;
+        return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterController* masterController, bool flyView,
@@ -363,7 +393,7 @@ void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
     object.insert(VisualMissionItem::jsonTypeKey, VisualMissionItem::jsonTypeComplexItemValue);
     object.insert(ComplexMissionItem::jsonComplexItemTypeKey, jsonComplexItemTypeValue);
     object.insert(_jsonTaskIdKey, taskId());
-    object.insert(_jsonPlanningStatusKey, static_cast<int>(_planningResult.status));
+    object.insert(_jsonPlanningStatusKey, planningStatusToString(_planningResult.status));
     object.insert(_jsonPathLengthKey, _planningResult.pathLengthM);
     object.insert(_jsonPlanningMessageKey, QString::fromStdString(_planningResult.message));
 
@@ -380,7 +410,7 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         {.key = VisualMissionItem::jsonTypeKey, .type = QJsonValue::String, .required = true},
         {.key = ComplexMissionItem::jsonComplexItemTypeKey, .type = QJsonValue::String, .required = true},
         {.key = _jsonTaskIdKey, .type = QJsonValue::String, .required = true},
-        {.key = _jsonPlanningStatusKey, .type = QJsonValue::Double, .required = true},
+        {.key = _jsonPlanningStatusKey, .type = QJsonValue::String, .required = true},
         {.key = _jsonGeneratedPathKey, .type = QJsonValue::Array, .required = true},
         {.key = _jsonPathLengthKey, .type = QJsonValue::Double, .required = true},
         {.key = _jsonPlanningMessageKey, .type = QJsonValue::String, .required = true},
@@ -404,9 +434,8 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         return false;
     }
 
-    const int statusValue = object.value(_jsonPlanningStatusKey).toInt(-1);
-    if ((statusValue < static_cast<int>(PlanningStatus::Success)) ||
-        (statusValue > static_cast<int>(PlanningStatus::Failed))) {
+    PlanningStatus status;
+    if (!planningStatusFromString(object.value(_jsonPlanningStatusKey).toString(), status)) {
         errorString = tr("Coverage inspection planning status is invalid");
         return false;
     }
@@ -417,7 +446,7 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
     }
 
     PlanningResult result;
-    result.status = static_cast<PlanningStatus>(statusValue);
+    result.status = status;
     result.pathLengthM = object.value(_jsonPathLengthKey).toDouble();
     result.message = object.value(_jsonPlanningMessageKey).toString().toStdString();
     result.path.reserve(static_cast<std::size_t>(path.size()));
@@ -493,7 +522,7 @@ const MarineTask* CoverageInspectionComplexItem::_task() const
 void CoverageInspectionComplexItem::_replaceTask(const MarineTask& task)
 {
     if (_marineContext) {
-        _marineContext->addTask(task);
+        (void) _marineContext->updateTask(task);
     }
 }
 

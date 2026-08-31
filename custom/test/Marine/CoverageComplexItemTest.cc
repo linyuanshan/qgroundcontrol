@@ -248,6 +248,7 @@ void CoverageComplexItemTest::_testSaveLoad()
     QCOMPARE(items.size(), 1);
     const QJsonObject object = items.first().toObject();
     QVERIFY(object.contains(QStringLiteral("taskId")));
+    QCOMPARE(object.value(QStringLiteral("planningStatus")).toString(), QStringLiteral("success"));
     QVERIFY(!object.contains(QStringLiteral("task")));
     QVERIFY(!object.contains(QStringLiteral("marine")));
 
@@ -280,6 +281,12 @@ void CoverageComplexItemTest::_testLoadValidation()
     emptySuccessfulPath.insert(QStringLiteral("generatedPath"), QJsonArray());
     QVERIFY(!loadedItem->load(emptySuccessfulPath, 0, errorString));
     QVERIFY(!errorString.isEmpty());
+
+    QJsonObject unknownStatus = validObject;
+    unknownStatus.insert(QStringLiteral("planningStatus"), QStringLiteral("futureStatus"));
+    errorString.clear();
+    QVERIFY(!loadedItem->load(unknownStatus, 0, errorString));
+    QVERIFY(errorString.contains(QStringLiteral("status"), Qt::CaseInsensitive));
 
     QJsonObject negativePathLength = validObject;
     negativePathLength.insert(QStringLiteral("pathLengthM"), -1.0);

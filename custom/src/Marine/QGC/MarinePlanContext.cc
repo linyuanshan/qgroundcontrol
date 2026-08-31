@@ -6,12 +6,6 @@ namespace Marine {
 
 MarinePlanContext::MarinePlanContext(PlanMasterController* controller) : QObject(controller) {}
 
-MarineTask* MarinePlanContext::task(const std::string& taskId)
-{
-    const auto iterator = _tasks.find(taskId);
-    return (iterator == _tasks.end()) ? nullptr : &iterator->second;
-}
-
 const MarineTask* MarinePlanContext::task(const std::string& taskId) const
 {
     const auto iterator = _tasks.find(taskId);
@@ -26,6 +20,17 @@ void MarinePlanContext::addTask(const MarineTask& task)
 
     _tasks.insert_or_assign(task.id, task);
     emit taskChanged(QString::fromStdString(task.id));
+}
+
+bool MarinePlanContext::updateTask(const MarineTask& task)
+{
+    if (task.id.empty() || (_tasks.find(task.id) == _tasks.end())) {
+        return false;
+    }
+
+    _tasks.insert_or_assign(task.id, task);
+    emit taskChanged(QString::fromStdString(task.id));
+    return true;
 }
 
 void MarinePlanContext::removeTask(const std::string& taskId)

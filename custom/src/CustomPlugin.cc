@@ -27,9 +27,6 @@ constexpr int MarinePlanVersion = 1;
 constexpr const char* MarineKey = "marine";
 constexpr const char* VersionKey = "version";
 constexpr const char* TasksKey = "tasks";
-constexpr const char* MissionKey = "mission";
-constexpr const char* ItemsKey = "items";
-constexpr const char* TaskIdKey = "taskId";
 
 Marine::MarinePlanContext* marinePlanContextFor(PlanMasterController* controller)
 {
@@ -45,30 +42,6 @@ Marine::MarinePlanContext* marinePlanContextFor(PlanMasterController* controller
         (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::MockCoveragePlanner>());
     }
     return context;
-}
-
-bool validateTaskReferences(const QJsonObject& planJson, const std::unordered_set<std::string>& taskIds,
-                            QString& errorString)
-{
-    const QJsonArray missionItems =
-        planJson.value(QLatin1String(MissionKey)).toObject().value(QLatin1String(ItemsKey)).toArray();
-    for (const auto value : missionItems) {
-        if (!value.isObject()) {
-            continue;
-        }
-        const QJsonObject item = value.toObject();
-        if (item.value(ComplexMissionItem::jsonComplexItemTypeKey).toString() !=
-            CoverageInspectionComplexItem::jsonComplexItemTypeValue) {
-            continue;
-        }
-
-        const QString taskId = item.value(QLatin1String(TaskIdKey)).toString();
-        if (taskId.isEmpty() || !taskIds.contains(taskId.toStdString())) {
-            errorString = CustomPlugin::tr("Marine coverage item references missing task '%1'").arg(taskId);
-            return false;
-        }
-    }
-    return true;
 }
 
 }  // namespace
@@ -159,8 +132,12 @@ void CustomPlugin::postSaveToJson(PlanMasterController* planMasterController, QJ
         }
     }
 
-    json.insert(QLatin1String(MarineKey),
-                QJsonObject{{QLatin1String(VersionKey), MarinePlanVersion}, {QLatin1String(TasksKey), tasksJson}});
+    if (!tasksJson.isEmpty()) {
+        json.insert(QLatin1String(MarineKey),
+                    QJsonObject{{QLatin1String(VersionKey), MarinePlanVersion}, {QLatin1String(TasksKey), tasksJson}});
+    } else {
+        json.remove(QLatin1String(MarineKey));
+    }
 }
 
 bool CustomPlugin::preLoadFromJson(PlanMasterController* planMasterController, QJsonObject& json, QString& errorString)
@@ -212,10 +189,6 @@ bool CustomPlugin::preLoadFromJson(PlanMasterController* planMasterController, Q
             }
             loadedTasks.push_back(std::move(task));
         }
-    }
-
-    if (!validateTaskReferences(json, loadedTaskIds, errorString)) {
-        return false;
     }
 
     context->clearTasks();

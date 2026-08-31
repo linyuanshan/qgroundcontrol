@@ -9,6 +9,7 @@ class MarinePlanContextTest : public UnitTest
 private slots:
     void _testControllerOwnsContext();
     void _testAddAndFind();
+    void _testUpdateNotifies();
     void _testDuplicateIdReplaces();
     void _testEmptyIdIgnored();
     void _testRemoveAndClear();

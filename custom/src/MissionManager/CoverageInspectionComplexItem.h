@@ -25,7 +25,7 @@ public:
     explicit CoverageInspectionComplexItem(PlanMasterController* masterController, bool flyView,
                                            Marine::MarinePlanContext* marineContext);
 
-    Q_PROPERTY(QString taskId READ taskId WRITE setTaskId NOTIFY taskIdChanged)
+    Q_PROPERTY(QString taskId READ taskId NOTIFY taskIdChanged)
     Q_PROPERTY(QString taskName READ taskName WRITE setTaskName NOTIFY taskDataChanged)
     Q_PROPERTY(double swathWidthM READ swathWidthM WRITE setSwathWidthM NOTIFY taskDataChanged)
     Q_PROPERTY(double safetyMarginM READ safetyMarginM WRITE setSafetyMarginM NOTIFY taskDataChanged)

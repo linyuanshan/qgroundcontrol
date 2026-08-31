@@ -155,6 +155,12 @@ void CustomPluginIntegrationTest::_testMarinePlanSaveFiltersOrphans()
              QString::fromStdString(referencedTask.id));
 }
 
+void CustomPluginIntegrationTest::_testOrdinaryPlanOmitsMarineSection()
+{
+    const QJsonObject planJson = planController()->saveToJson().object();
+    QVERIFY(!planJson.contains(QStringLiteral("marine")));
+}
+
 void CustomPluginIntegrationTest::_testMarinePlanPreload()
 {
     auto* context = planController()->findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
@@ -200,18 +206,23 @@ void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()
     QVERIFY(errorString.contains(QStringLiteral("duplicate"), Qt::CaseInsensitive));
     QVERIFY(context->task(existingTask.id) != nullptr);
 
+    QJsonObject marineWithoutTasks{{QStringLiteral("marine"), QJsonObject{{QStringLiteral("version"), 1},
+                                                                          {QStringLiteral("tasks"), QJsonArray()}}}};
+    QVERIFY(plugin->preLoadFromJson(planController(), marineWithoutTasks, errorString));
     QJsonObject brokenReference{
-        {QStringLiteral("mission"),
-         QJsonObject{{QStringLiteral("items"),
-                      QJsonArray{QJsonObject{
-                          {QStringLiteral("complexItemType"), CoverageInspectionComplexItem::jsonComplexItemTypeValue},
-                          {QStringLiteral("taskId"), QStringLiteral("missing-task")}}}}}},
-        {QStringLiteral("marine"),
-         QJsonObject{{QStringLiteral("version"), 1}, {QStringLiteral("tasks"), QJsonArray()}}}};
+        {QStringLiteral("version"), 1},
+        {QStringLiteral("type"), QStringLiteral("ComplexItem")},
+        {QStringLiteral("complexItemType"), CoverageInspectionComplexItem::jsonComplexItemTypeValue},
+        {QStringLiteral("taskId"), QStringLiteral("missing-task")},
+        {QStringLiteral("planningStatus"), QStringLiteral("success")},
+        {QStringLiteral("generatedPath"), QJsonArray()},
+        {QStringLiteral("pathLengthM"), 0.0},
+        {QStringLiteral("planningMessage"), QStringLiteral("")},
+    };
     errorString.clear();
-    QVERIFY(!plugin->preLoadFromJson(planController(), brokenReference, errorString));
+    auto* item = new CoverageInspectionComplexItem(planController(), false, context);
+    QVERIFY(!item->load(brokenReference, 0, errorString));
     QVERIFY(errorString.contains(QStringLiteral("missing-task")));
-    QVERIFY(context->task(existingTask.id) != nullptr);
 }
 
 UT_REGISTER_TEST(CustomPluginIntegrationTest, TestLabel::Unit, TestLabel::MissionManager)

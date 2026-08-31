@@ -116,7 +116,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         firstContext = context;
 
         expectedTaskId = item->taskId();
-        MarineTask* task = context->task(expectedTaskId.toStdString());
+        const MarineTask* task = context->task(expectedTaskId.toStdString());
         QVERIFY(task != nullptr);
         MarineTask configuredTask = *task;
         configuredTask.name = expectedName;
