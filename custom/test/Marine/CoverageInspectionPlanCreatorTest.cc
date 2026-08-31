@@ -1,9 +1,12 @@
 #include "CoverageInspectionPlanCreatorTest.h"
 
+#include <cmath>
+
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
 #include "MarinePlanContext.h"
 #include "MissionController.h"
+#include "MissionItem.h"
 #include "MissionSettingsItem.h"
 #include "QGCMAVLink.h"
 #include "QmlObjectListModel.h"
@@ -82,6 +85,26 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanReplacesExistingPlan()
     QVERIFY(coverageItem != nullptr);
     QVERIFY(coverageItem->taskId() != firstTaskId);
     QVERIFY(_marineContext->task(coverageItem->taskId().toStdString()) != nullptr);
+}
+
+void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter()
+{
+    _creator->createPlan(QGeoCoordinate(38.1, 121.1));
+
+    auto* coverageItem = missionController()->visualItems()->value<CoverageInspectionComplexItem*>(1);
+    QVERIFY(coverageItem != nullptr);
+    QVERIFY(coverageItem->plan());
+
+    QList<MissionItem*> missionItems;
+    coverageItem->appendMissionItems(missionItems, this);
+    QVERIFY(!missionItems.isEmpty());
+    for (const MissionItem* missionItem : missionItems) {
+        QVERIFY(std::isfinite(missionItem->param5()));
+        QVERIFY(std::isfinite(missionItem->param6()));
+        QVERIFY(std::isfinite(missionItem->param7()));
+        QVERIFY(missionItem->param5() >= -90.0 && missionItem->param5() <= 90.0);
+        QVERIFY(missionItem->param6() >= -180.0 && missionItem->param6() <= 180.0);
+    }
 }
 
 UT_REGISTER_TEST(CoverageInspectionPlanCreatorTest, TestLabel::Unit, TestLabel::MissionManager)

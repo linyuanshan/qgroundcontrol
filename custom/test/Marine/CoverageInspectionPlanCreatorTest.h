@@ -19,6 +19,7 @@ protected:
 private slots:
     void _testMetadata();
     void _testCreatePlan();
+    void _testCreatePlanWithTwoDimensionalCenter();
     void _testCreatePlanReplacesExistingPlan();
 
 private:

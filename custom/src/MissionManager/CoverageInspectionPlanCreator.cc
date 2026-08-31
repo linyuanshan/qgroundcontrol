@@ -30,11 +30,12 @@ void CoverageInspectionPlanCreator::createPlan(const QGeoCoordinate& mapCenterCo
     const double latitude = mapCenterCoord.latitude();
     const double longitude = mapCenterCoord.longitude();
     constexpr double delta = 0.0005;
+    constexpr double altitudeM = 0.0;
     task.region.outerBoundary.vertices = {
-        {.latitudeDeg = latitude - delta, .longitudeDeg = longitude - delta, .altitudeM = mapCenterCoord.altitude()},
-        {.latitudeDeg = latitude - delta, .longitudeDeg = longitude + delta, .altitudeM = mapCenterCoord.altitude()},
-        {.latitudeDeg = latitude + delta, .longitudeDeg = longitude + delta, .altitudeM = mapCenterCoord.altitude()},
-        {.latitudeDeg = latitude + delta, .longitudeDeg = longitude - delta, .altitudeM = mapCenterCoord.altitude()},
+        {.latitudeDeg = latitude - delta, .longitudeDeg = longitude - delta, .altitudeM = altitudeM},
+        {.latitudeDeg = latitude - delta, .longitudeDeg = longitude + delta, .altitudeM = altitudeM},
+        {.latitudeDeg = latitude + delta, .longitudeDeg = longitude + delta, .altitudeM = altitudeM},
+        {.latitudeDeg = latitude + delta, .longitudeDeg = longitude - delta, .altitudeM = altitudeM},
     };
     _marineContext->addTask(task);
 
