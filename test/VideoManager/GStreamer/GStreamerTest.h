@@ -24,6 +24,9 @@ private slots:
     void _testWritePipelineDotReturnsEmptyOnWriteFailure();
     void _testCompleteInit();
     void _testCreateVideoReceiver();
+    void _testRecordingSinkAcceptsElementaryStreams_data();
+    void _testRecordingSinkAcceptsElementaryStreams();
+    void _testRecordingSinkFinalizesMidStreamH265Mp4();
     void _testBindDebugLevelFactRejectsNullContext();
     void _testRuntimeVersionCheck();
     void _testAppsinkFrameDelivery();
@@ -83,7 +86,8 @@ private slots:
     void _testSourceFactoryUdpRtpJitterBuffer();
     void _testSourceFactoryJitterBufferNone();
     void _testSourceFactoryNoRetransmission();
-    void _testSourceFactoryRtspExcludesStaticJitterBuffer();
+    void _testSourceFactoryRtspJitterBufferPolicy_data();
+    void _testSourceFactoryRtspJitterBufferPolicy();
     void _testSourceFactoryRejectsBadUri();
     void _testSourceFactoryTcpMpegTs();
     void _testSourceFactoryRejectsBadTcpUri();
