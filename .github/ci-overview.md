@@ -23,14 +23,14 @@ via composite actions and reusable workflows. Python helpers in `scripts/` are i
 ```text
 .github/
 ├── workflows/                 # Platform builds, reusable workflows, and repo automation
-├── actions/                   # Composite actions shared across workflows
+├── actions/                   # Composite actions and external-action policy (see actions/README.md)
 ├── scripts/                   # Python helpers invoked by workflows and actions
 │   ├── templates/             # Jinja2 templates (build_results.md.j2)
 │   └── tests/                 # pytest suite for scripts/ (see #tests)
 ├── build-config.json          # Centralized version numbers and build settings
 ├── build-config.schema.json   # JSON Schema for build-config.json
 ├── dependabot.yml             # Dependabot config (GitHub Actions only)
-└── renovate.json              # Renovate config (npm, python, pre-commit)
+└── renovate.json              # Renovate config (code, tooling, and dev-environment dependencies)
 ```
 
 ## Workflows
@@ -62,6 +62,27 @@ via composite actions and reusable workflows. Python helpers in `scripts/` are i
 | `px4-metadata.yml` | PX4 metadata sync |
 | `vm-builds.yml` | VM-based builds |
 | `welcome.yml` | New contributor welcome |
+
+### TestFlight releases
+
+`ios.yml` builds a Release device bundle and a Debug x86_64 simulator bundle. Pull-request and
+branch builds remain unsigned. A `v*` tag selects the Xcode App Store preset, imports an Apple
+Distribution certificate and provisioning profile, verifies the signed bundle, packages an IPA,
+and uploads it to TestFlight.
+
+Configure these repository variables before publishing a tag:
+
+- `APPSTORE_BUNDLE_ID` (defaults to `org.mavlink.qgroundcontrol`)
+- `APPSTORE_TEAM_ID`
+- `APPSTORE_ISSUER_ID`
+- `APPSTORE_API_KEY_ID`
+- `APPSTORE_PROVISIONING_PROFILE_NAME`
+
+Configure these repository secrets:
+
+- `APPSTORE_API_PRIVATE_KEY` — App Store Connect API private key in PKCS#8 `.p8` format
+- `APPSTORE_CERTIFICATES_FILE_BASE64` — base64-encoded Apple Distribution `.p12`
+- `APPSTORE_CERTIFICATES_PASSWORD` — password for the distribution `.p12`
 
 ## Composite Actions
 
@@ -101,6 +122,9 @@ via composite actions and reusable workflows. Python helpers in `scripts/` are i
 | `test-duration-report` | Analyze JUnit test durations and summarize slow tests |
 | `test-report` | Publish and upload test results |
 | `verify-executable` | Post-build executable boot-test verification |
+
+See [`actions/README.md`](actions/README.md) for the repository's external-action reference policy,
+including how to handle automated warnings about major-version tags.
 
 ## Scripts
 
@@ -157,10 +181,11 @@ Python helpers in `.github/scripts/` invoked by workflows and composite actions.
 
 Dependency updates are split between two bots to avoid overlapping PRs:
 
-- **Dependabot** (`.github/dependabot.yml`) owns `github-actions` updates only, grouped weekly.
-  Merge with `@dependabot merge`.
-- **Renovate** (`.github/renovate.json`) owns `npm`, `python` (pep621/uv), and `pre-commit`
-  updates, grouped into a single weekly PR. GitHub Actions paths are excluded via `ignorePaths`.
+- **Dependabot** (`.github/dependabot.yml`) owns action references in `.github/workflows`, grouped
+  weekly. Merge with `@dependabot merge`.
+- **Renovate** (`.github/renovate.json`) owns `npm`, Python (pep621/uv), pre-commit, devcontainer,
+  Dockerfile, Gradle Wrapper, and composite-action dependencies. Workflow paths are excluded so
+  the bots do not open overlapping action updates.
 
 ## CI Conventions
 
@@ -185,11 +210,11 @@ linting) and a pytest job covering both `tools/tests` and `.github/scripts/tests
 Run the CI script tests locally:
 
 ```bash
-pytest -q .github/scripts/tests/
+uv run --project tools --extra scripts --extra test pytest -q .github/scripts/tests
 ```
 
-Run the full set the same way CI does (also covers `tools/`):
+Run the full set locally with the same locked dependency groups CI installs (also covers `tools/`):
 
 ```bash
-pytest -q tools/tests .github/scripts/tests
+uv run --project tools --extra scripts --extra test pytest -q tools/tests .github/scripts/tests
 ```

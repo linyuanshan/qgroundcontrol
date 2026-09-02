@@ -10,6 +10,8 @@ on:
       - '.vscode/*.default.json'
       - 'CMakePresets.json'
       - 'cmake/Helpers.cmake'
+      - 'cmake/modules/CPMPatchCache.cmake'
+      - 'cmake/install/**'
       - 'cmake/presets/**'
       - 'justfile'
       - 'tools/setup/**'
@@ -22,6 +24,7 @@ on:
       - 'tools/simulation/**'
       - 'tools/translations/**'
       - 'deploy/docker/**'
+      - 'deploy/linux/PKGBUILD.in'
   push:
     branches:
       - master
@@ -34,6 +37,8 @@ on:
       - '.vscode/*.default.json'
       - 'CMakePresets.json'
       - 'cmake/Helpers.cmake'
+      - 'cmake/modules/CPMPatchCache.cmake'
+      - 'cmake/install/**'
       - 'cmake/presets/**'
       - 'justfile'
       - 'tools/setup/**'
@@ -46,6 +51,7 @@ on:
       - 'tools/simulation/**'
       - 'tools/translations/**'
       - 'deploy/docker/**'
+      - 'deploy/linux/PKGBUILD.in'
   workflow_dispatch:
 
 concurrency:
@@ -113,35 +119,32 @@ jobs:
             .github/actions/cmake-build
             .github/actions/cmake-configure
             .github/actions/build-prerequisites
+            .github/actions/attest-and-upload
+            .github/actions/attest-sbom
             .github/actions/cache
             .github/actions/docker
             .github/actions/free-disk-space
             .github/actions/qt-android
+            .github/actions/qt-ios
             .github/actions/qt-install
+            .github/actions/verify-executable
             .github/build-config.json
             .github/scripts
-            .github/workflows/build-results.yml
-            .github/workflows/ci-scripts.yml
-            .github/workflows/analysis.yml
-            .github/workflows/android.yml
-            .github/workflows/build-profile.yml
-            .github/workflows/build-gstreamer.yml
-            .github/workflows/custom-build.yml
-            .github/workflows/cache-cleanup.yml
-            .github/workflows/ios.yml
-            .github/workflows/linux.yml
-            .github/workflows/macos.yml
-            .github/workflows/windows.yml
+            .github/workflows
             .vscode
             CMakeLists.txt
             CMakePresets.json
             cmake/BuildConfig.cmake
             cmake/CustomOptions.cmake
+            cmake/install
+            cmake/modules/AppleXCFramework.cmake
             cmake/modules/Hardening.cmake
             cmake/modules/LinuxDistro.cmake
+            cmake/modules/CPMPatchCache.cmake
             cmake/modules/PythonVenv.cmake
             cmake/Helpers.cmake
             cmake/Toolchain.cmake
+            cmake/platform/Apple.cmake
             cmake/presets
             justfile
             src/AppSettings/pages
@@ -158,6 +161,8 @@ jobs:
             tools/simulation
             tools/translations
             deploy/docker
+            deploy/ios
+            deploy/linux/PKGBUILD.in
             deploy/multipass/build-in-vm.sh
             deploy/vagrant/Vagrantfile
           sparse-checkout-cone-mode: false
