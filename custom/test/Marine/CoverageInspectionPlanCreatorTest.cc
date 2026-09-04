@@ -1,6 +1,7 @@
 #include "CoverageInspectionPlanCreatorTest.h"
 
 #include <cmath>
+#include <memory>
 
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
@@ -8,6 +9,7 @@
 #include "MissionController.h"
 #include "MissionItem.h"
 #include "MissionSettingsItem.h"
+#include "MockCoveragePlanner.h"
 #include "QGCMAVLink.h"
 #include "QmlObjectListModel.h"
 
@@ -19,6 +21,7 @@ void CoverageInspectionPlanCreatorTest::init()
     setOfflineVehicleType(MAV_TYPE_GROUND_ROVER);
     OfflineMissionTest::init();
     _marineContext = new MarinePlanContext(planController());
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
     _creator = new CoverageInspectionPlanCreator(planController(), _marineContext);
 }
 
