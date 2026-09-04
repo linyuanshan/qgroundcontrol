@@ -3,7 +3,7 @@
 #include <QtCore/QList>
 #include <QtCore/QString>
 
-#include "ICoveragePlanner.h"
+#include "PlanningResult.h"
 
 class MissionItem;
 class QObject;

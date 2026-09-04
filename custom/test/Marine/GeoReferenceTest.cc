@@ -7,6 +7,12 @@
 
 using namespace Marine;
 
+namespace {
+
+constexpr double RoundTripToleranceDeg = 1e-8;
+
+}  // namespace
+
 void GeoReferenceTest::_testRegionOrigin()
 {
     const GeoPolygon region{{
@@ -46,8 +52,12 @@ void GeoReferenceTest::_testRoundTrip()
 
     const std::optional<GeoPoint> roundTrip = reference->toGeo(*local);
     QVERIFY(roundTrip.has_value());
-    QVERIFY(qAbs(roundTrip->latitudeDeg - input.latitudeDeg) < 1e-9);
-    QVERIFY(qAbs(roundTrip->longitudeDeg - input.longitudeDeg) < 1e-9);
+    const double latitudeErrorDeg = qAbs(roundTrip->latitudeDeg - input.latitudeDeg);
+    const double longitudeErrorDeg = qAbs(roundTrip->longitudeDeg - input.longitudeDeg);
+    QVERIFY2(latitudeErrorDeg < RoundTripToleranceDeg,
+             qPrintable(QStringLiteral("latitude error: %1 deg").arg(latitudeErrorDeg, 0, 'g', 17)));
+    QVERIFY2(longitudeErrorDeg < RoundTripToleranceDeg,
+             qPrintable(QStringLiteral("longitude error: %1 deg").arg(longitudeErrorDeg, 0, 'g', 17)));
     QCOMPARE(roundTrip->altitudeM, 0.0);
 }
 

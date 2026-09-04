@@ -16,6 +16,8 @@ void MarineTaskModelTest::_testDefaults()
     QVERIFY(task.planner.plannerId.empty());
     QCOMPARE(task.coverage.swathWidthM, 0.0);
     QCOMPARE(task.coverage.safetyMarginM, 0.0);
+    QVERIFY(task.coverage.sweepAngleMode == SweepAngleMode::Auto);
+    QCOMPARE(task.coverage.sweepAngleDeg, 0.0);
     QVERIFY(task.sensors.cameraEnabled);
     QVERIFY(task.sensors.cameraRecord);
     QVERIFY(task.sensors.sonarEnabled);
@@ -67,6 +69,8 @@ void MarineTaskModelTest::_testConfiguration()
     task.vehicleId = "usv-1";
     task.coverage.swathWidthM = 4.5;
     task.coverage.safetyMarginM = 1.25;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 75.0;
     task.sensors.cameraEnabled = false;
     task.sensors.cameraRecord = false;
     task.sensors.sonarEnabled = true;
@@ -75,6 +79,8 @@ void MarineTaskModelTest::_testConfiguration()
     QVERIFY(task.vehicleId == "usv-1");
     QCOMPARE(task.coverage.swathWidthM, 4.5);
     QCOMPARE(task.coverage.safetyMarginM, 1.25);
+    QVERIFY(task.coverage.sweepAngleMode == SweepAngleMode::Manual);
+    QCOMPARE(task.coverage.sweepAngleDeg, 75.0);
     QVERIFY(!task.sensors.cameraEnabled);
     QVERIFY(!task.sensors.cameraRecord);
     QVERIFY(task.sensors.sonarEnabled);

@@ -23,6 +23,8 @@ struct CoverageConfig
 {
     double swathWidthM = 0.0;
     double safetyMarginM = 0.0;
+    SweepAngleMode sweepAngleMode = SweepAngleMode::Auto;
+    double sweepAngleDeg = 0.0;
 };
 
 struct PlannerConfig

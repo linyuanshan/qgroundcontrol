@@ -7,8 +7,8 @@
 #include <string>
 
 #include "ComplexMissionItem.h"
-#include "ICoveragePlanner.h"
 #include "MarinePlanContext.h"
+#include "PlanningResult.h"
 
 class CoverageInspectionComplexItem final : public ComplexMissionItem
 {

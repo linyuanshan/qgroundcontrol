@@ -1,40 +1,25 @@
 #include "MockCoveragePlanner.h"
 
 #include <cmath>
-#include <numbers>
 
 namespace {
 
-constexpr double EarthRadiusM = 6371000.0;
-
-double degreesToRadians(double degrees)
+double distanceM(const Marine::Point2D& first, const Marine::Point2D& second)
 {
-    return degrees * std::numbers::pi / 180.0;
+    return std::hypot(second.xM - first.xM, second.yM - first.yM);
 }
 
-double distanceM(const Marine::GeoPoint& first, const Marine::GeoPoint& second)
+Marine::Point2D polygonCenter(const Marine::Polygon2D& polygon)
 {
-    const double firstLatitudeRad = degreesToRadians(first.latitudeDeg);
-    const double secondLatitudeRad = degreesToRadians(second.latitudeDeg);
-    const double latitudeDelta = secondLatitudeRad - firstLatitudeRad;
-    const double longitudeDelta = degreesToRadians(second.longitudeDeg - first.longitudeDeg);
-    const double x = longitudeDelta * std::cos((firstLatitudeRad + secondLatitudeRad) / 2.0);
-    return EarthRadiusM * std::hypot(x, latitudeDelta);
-}
-
-Marine::GeoPoint polygonCenter(const Marine::GeoPolygon& polygon)
-{
-    Marine::GeoPoint center;
-    for (const Marine::GeoPoint& point : polygon.vertices) {
-        center.latitudeDeg += point.latitudeDeg;
-        center.longitudeDeg += point.longitudeDeg;
-        center.altitudeM += point.altitudeM;
+    Marine::Point2D center;
+    for (const Marine::Point2D& point : polygon.vertices) {
+        center.xM += point.xM;
+        center.yM += point.yM;
     }
 
     const auto vertexCount = static_cast<double>(polygon.vertices.size());
-    center.latitudeDeg /= vertexCount;
-    center.longitudeDeg /= vertexCount;
-    center.altitudeM /= vertexCount;
+    center.xM /= vertexCount;
+    center.yM /= vertexCount;
     return center;
 }
 
@@ -52,26 +37,30 @@ std::string MockCoveragePlanner::displayName() const
     return "Architecture Test Planner";
 }
 
-PlanningResult MockCoveragePlanner::plan(const MarineTask& task) const
+CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem& problem) const
 {
-    if (!task.isValid()) {
-        PlanningResult result;
-        result.status = PlanningStatus::InvalidInput;
-        result.message = "Marine task is invalid";
-        return result;
+    if ((problem.region.outerBoundary.vertices.size() < 3) || !problem.region.isFinite()) {
+        CoveragePlanningSolution solution;
+        solution.status = PlanningStatus::InvalidInput;
+        solution.error = CoveragePlanningError::InvalidOuterBoundary;
+        solution.message = "Coverage planning problem has an invalid outer boundary";
+        return solution;
     }
 
-    const GeoPolygon& boundary = task.region.outerBoundary;
-    const GeoPoint& first = boundary.vertices.front();
-    const GeoPoint center = polygonCenter(boundary);
-    const GeoPoint& opposite = boundary.vertices.at(boundary.vertices.size() / 2);
+    const Polygon2D& boundary = problem.region.outerBoundary;
+    const Point2D& first = boundary.vertices.front();
+    const Point2D center = polygonCenter(boundary);
+    const Point2D& opposite = boundary.vertices.at(boundary.vertices.size() / 2);
 
-    PlanningResult result;
-    result.status = PlanningStatus::Success;
-    result.path = {first, center, opposite};
-    result.pathLengthM = distanceM(first, center) + distanceM(center, opposite);
-    result.message = "Architecture test path generated. Not for field operation";
-    return result;
+    CoveragePlanningSolution solution;
+    solution.status = PlanningStatus::Success;
+    solution.path = {first, center, opposite};
+    solution.pathLengthM = distanceM(first, center) + distanceM(center, opposite);
+    solution.selectedSweepAngleDeg =
+        (problem.sweepAngleMode == SweepAngleMode::Manual) ? problem.requestedSweepAngleDeg : 0.0;
+    solution.turnCount = 1;
+    solution.message = "Architecture test path generated. Not for field operation";
+    return solution;
 }
 
 }  // namespace Marine

@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <utility>
 
 #include "ArduPilotMissionAdapter.h"
+#include "CoverageTaskAdapter.h"
 #include "GeoJsonHelper.h"
 #include "JsonParsing.h"
 #include "MarinePlanContext.h"
@@ -271,7 +273,19 @@ bool CoverageInspectionComplexItem::plan()
         return false;
     }
 
-    result = planner->plan(*task);
+    CoveragePlanningProblem problem;
+    std::optional<GeoReference> geoReference;
+    CoveragePlanningError adapterError = CoveragePlanningError::None;
+    if (!CoverageTaskAdapter::buildProblem(*task, problem, geoReference, adapterError)) {
+        result.status = (adapterError == CoveragePlanningError::InvalidOuterBoundary) ? PlanningStatus::InvalidInput
+                                                                                      : PlanningStatus::Failed;
+        result.message = "Marine task geometry could not be converted for coverage planning";
+        _applyPlanningResult(std::move(result));
+        return false;
+    }
+
+    const CoveragePlanningSolution solution = planner->plan(problem);
+    result = CoverageTaskAdapter::toPlanningResult(solution, *geoReference);
     if ((result.status == PlanningStatus::Success) &&
         (result.path.empty() || !std::isfinite(result.pathLengthM) || (result.pathLengthM < 0.0))) {
         result.status = PlanningStatus::Failed;

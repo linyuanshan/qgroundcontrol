@@ -31,8 +31,12 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/ICoveragePlanner.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoveragePlanningProblem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageTaskAdapter.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageTaskAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlanningResult.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlannerRegistry.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlannerRegistry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC/MarinePlanContext.cc
@@ -51,6 +55,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeoReferenceTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeoReferenceTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeometryTypesTest.cc
@@ -126,6 +132,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         CoveragePlannerTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageTaskAdapterTest
         LABELS
         Unit
     )

@@ -10,7 +10,7 @@ private slots:
     void _testRegisterAndLookup();
     void _testDuplicateId();
     void _testMissingPlanner();
-    void _testValidPolygon();
-    void _testInvalidPolygon();
+    void _testValidProblem();
+    void _testInvalidProblem();
     void _testDeterministicPath();
 };

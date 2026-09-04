@@ -10,6 +10,7 @@
 #include "MissionItem.h"
 #include "MissionSettingsItem.h"
 #include "MockCoveragePlanner.h"
+#include "PlanMasterController.h"
 #include "QGCMAVLink.h"
 #include "QmlObjectListModel.h"
 
@@ -20,8 +21,13 @@ void CoverageInspectionPlanCreatorTest::init()
     setOfflineFirmwareType(MAV_AUTOPILOT_ARDUPILOTMEGA);
     setOfflineVehicleType(MAV_TYPE_GROUND_ROVER);
     OfflineMissionTest::init();
-    _marineContext = new MarinePlanContext(planController());
-    QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
+    _marineContext = planController()->findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+    if (_marineContext == nullptr) {
+        _marineContext = new MarinePlanContext(planController());
+    }
+    if (!_marineContext->plannerRegistry().planner("marine.coverage.mock")) {
+        QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
+    }
     _creator = new CoverageInspectionPlanCreator(planController(), _marineContext);
 }
 
@@ -96,7 +102,7 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
 
     auto* coverageItem = missionController()->visualItems()->value<CoverageInspectionComplexItem*>(1);
     QVERIFY(coverageItem != nullptr);
-    QVERIFY(coverageItem->plan());
+    QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
 
     QList<MissionItem*> missionItems;
     coverageItem->appendMissionItems(missionItems, this);
