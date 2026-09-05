@@ -1,5 +1,36 @@
 message(STATUS "QGC: Adding Marine Custom Plugin")
 
+set(QGC_CLIPPER2_VERSION 2.0.1)
+CPMAddPackage(
+    NAME Clipper2
+    VERSION ${QGC_CLIPPER2_VERSION}
+    GITHUB_REPOSITORY AngusJohnson/Clipper2
+    GIT_TAG Clipper2_${QGC_CLIPPER2_VERSION}
+    DOWNLOAD_ONLY YES
+)
+
+if(NOT Clipper2_SOURCE_DIR)
+    message(FATAL_ERROR "QGC: Clipper2 (required Marine dependency) was not resolved")
+endif()
+
+add_library(
+    MarineClipper2 STATIC
+    ${Clipper2_SOURCE_DIR}/CPP/Clipper2Lib/src/clipper.engine.cpp
+    ${Clipper2_SOURCE_DIR}/CPP/Clipper2Lib/src/clipper.offset.cpp
+    ${Clipper2_SOURCE_DIR}/CPP/Clipper2Lib/src/clipper.rectclip.cpp
+    ${Clipper2_SOURCE_DIR}/CPP/Clipper2Lib/src/clipper.triangulation.cpp
+)
+qgc_disable_dependency_warnings(MarineClipper2)
+target_compile_definitions(MarineClipper2 PUBLIC CLIPPER2_MAX_DECIMAL_PRECISION=8)
+target_include_directories(MarineClipper2 SYSTEM PUBLIC ${Clipper2_SOURCE_DIR}/CPP/Clipper2Lib/include)
+
+add_library(MarineGeometry STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.cc
+                                  ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.h
+)
+qgc_configure_target(MarineGeometry)
+target_include_directories(MarineGeometry PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine)
+target_link_libraries(MarineGeometry PRIVATE MarineClipper2)
+
 qt_add_library(MarinePlanModule STATIC)
 qgc_configure_target(MarinePlanModule)
 
@@ -28,8 +59,6 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeometryTypes.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/ICoveragePlanner.h
@@ -67,6 +96,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeoReferenceTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeometryTypesTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeometryTypesTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineGeometryTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineGeometryTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageInspectionPlanCreatorTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageInspectionPlanCreatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.cc
@@ -192,6 +223,17 @@ if(QGC_BUILD_TESTING)
         "${CMAKE_SOURCE_DIR}"
         CALL
         add_qgc_test
+        MarineGeometryTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
         MarinePlanContextTest
         LABELS
         Unit
@@ -245,7 +287,7 @@ set(CUSTOM_INCLUDE_DIRECTORIES
 )
 
 set(CUSTOM_LIBRARIES
-    MarinePlanModule
+    MarineGeometry MarinePlanModule
     PARENT_SCOPE
 )
 

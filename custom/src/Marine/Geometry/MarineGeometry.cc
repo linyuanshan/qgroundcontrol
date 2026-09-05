@@ -1,7 +1,10 @@
 #include "MarineGeometry.h"
 
 #include <algorithm>
+#include <clipper2/clipper.h>
 #include <cmath>
+#include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -60,6 +63,64 @@ bool edgesAreAdjacent(std::size_t first, std::size_t second, std::size_t vertexC
     return (first == second) || (((first + 1) % vertexCount) == second) || (((second + 1) % vertexCount) == first);
 }
 
+double twiceSignedArea(const Marine::Polygon2D& polygon)
+{
+    double area = 0.0;
+    for (std::size_t index = 0; index < polygon.vertices.size(); ++index) {
+        const Marine::Point2D& current = polygon.vertices[index];
+        const Marine::Point2D& next = polygon.vertices[(index + 1) % polygon.vertices.size()];
+        area += (current.xM * next.yM) - (next.xM * current.yM);
+    }
+    return area;
+}
+
+void canonicalize(Marine::Polygon2D& polygon)
+{
+    if (twiceSignedArea(polygon) < 0.0) {
+        std::reverse(polygon.vertices.begin(), polygon.vertices.end());
+    }
+
+    const auto first =
+        std::min_element(polygon.vertices.begin(), polygon.vertices.end(),
+                         [](const Marine::Point2D& left, const Marine::Point2D& right) {
+                             return (left.xM < right.xM) || ((left.xM == right.xM) && (left.yM < right.yM));
+                         });
+    std::rotate(polygon.vertices.begin(), first, polygon.vertices.end());
+}
+
+bool toClipperPath(const Marine::Polygon2D& polygon, Clipper2Lib::Path64& path)
+{
+    constexpr double maximumScaledCoordinate = 1e15;
+
+    path.reserve(polygon.vertices.size());
+    for (const Marine::Point2D& vertex : polygon.vertices) {
+        const double scaledX = vertex.xM * Marine::Geometry::CoordinateScalePerM;
+        const double scaledY = vertex.yM * Marine::Geometry::CoordinateScalePerM;
+        if (!std::isfinite(scaledX) || !std::isfinite(scaledY) || (std::abs(scaledX) > maximumScaledCoordinate) ||
+            (std::abs(scaledY) > maximumScaledCoordinate)) {
+            return false;
+        }
+        path.emplace_back(static_cast<int64_t>(std::llround(scaledX)), static_cast<int64_t>(std::llround(scaledY)));
+    }
+
+    if (!Clipper2Lib::IsPositive(path)) {
+        std::reverse(path.begin(), path.end());
+    }
+    return true;
+}
+
+Marine::Polygon2D fromClipperPath(const Clipper2Lib::Path64& path)
+{
+    Marine::Polygon2D polygon;
+    polygon.vertices.reserve(path.size());
+    for (const Clipper2Lib::Point64& vertex : path) {
+        polygon.vertices.push_back({static_cast<double>(vertex.x) / Marine::Geometry::CoordinateScalePerM,
+                                    static_cast<double>(vertex.y) / Marine::Geometry::CoordinateScalePerM});
+    }
+    canonicalize(polygon);
+    return polygon;
+}
+
 }  // namespace
 
 namespace Marine::Geometry {
@@ -103,6 +164,41 @@ bool isSimpleNonDegeneratePolygon(const Polygon2D& polygon)
     }
 
     return std::abs(twiceArea) > (LengthEpsilonM * perimeter);
+}
+
+PolygonInsetResult insetPolygon(const Polygon2D& polygon, double marginM)
+{
+    if (!isSimpleNonDegeneratePolygon(polygon) || !std::isfinite(marginM) || (marginM < 0.0)) {
+        return {PolygonInsetStatus::InvalidInput, {}};
+    }
+    if (marginM == 0.0) {
+        return {PolygonInsetStatus::Success, polygon};
+    }
+
+    Clipper2Lib::Path64 inputPath;
+    if (!toClipperPath(polygon, inputPath)) {
+        return {PolygonInsetStatus::GeometryFailure, {}};
+    }
+
+    const double scaledMargin = marginM * CoordinateScalePerM;
+    if (!std::isfinite(scaledMargin) || (scaledMargin > 1e15)) {
+        return {PolygonInsetStatus::GeometryFailure, {}};
+    }
+
+    const Clipper2Lib::Paths64 insetPaths = Clipper2Lib::InflatePaths(
+        {inputPath}, -scaledMargin, Clipper2Lib::JoinType::Miter, Clipper2Lib::EndType::Polygon);
+    if (insetPaths.empty()) {
+        return {PolygonInsetStatus::Empty, {}};
+    }
+    if (insetPaths.size() != 1) {
+        return {PolygonInsetStatus::Disconnected, {}};
+    }
+
+    Polygon2D inset = fromClipperPath(insetPaths.front());
+    if (!isSimpleNonDegeneratePolygon(inset)) {
+        return {PolygonInsetStatus::GeometryFailure, {}};
+    }
+    return {PolygonInsetStatus::Success, std::move(inset)};
 }
 
 }  // namespace Marine::Geometry
