@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "CoverageProblemValidator.h"
+
 namespace {
 
 bool toLocalPolygon(const Marine::GeoPolygon& geoPolygon, const Marine::GeoReference& geoReference,
@@ -28,6 +30,7 @@ namespace Marine {
 bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningProblem& problem,
                                        std::optional<GeoReference>& geoReference, CoveragePlanningError& error)
 {
+    problem = {};
     geoReference.reset();
     error = CoveragePlanningError::None;
     if (!task.isValid()) {
@@ -47,20 +50,19 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
         return false;
     }
 
-    converted.region.noGoRegions.reserve(task.region.noGoRegions.size());
-    for (const GeoPolygon& noGoRegion : task.region.noGoRegions) {
-        Polygon2D localNoGoRegion;
-        if (!toLocalPolygon(noGoRegion, *reference, localNoGoRegion)) {
-            error = CoveragePlanningError::GeometryFailure;
-            return false;
-        }
-        converted.region.noGoRegions.push_back(std::move(localNoGoRegion));
-    }
-
     converted.swathWidthM = task.coverage.swathWidthM;
     converted.safetyMarginM = task.coverage.safetyMarginM;
     converted.sweepAngleMode = task.coverage.sweepAngleMode;
     converted.requestedSweepAngleDeg = task.coverage.sweepAngleDeg;
+
+    error = CoverageProblemValidator::validateAndNormalize(converted);
+    if (error != CoveragePlanningError::None) {
+        return false;
+    }
+    if (!task.region.noGoRegions.empty()) {
+        error = CoveragePlanningError::UnsupportedNoGoRegion;
+        return false;
+    }
 
     problem = std::move(converted);
     geoReference = std::move(reference);

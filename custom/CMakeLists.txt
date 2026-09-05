@@ -28,10 +28,14 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeometryTypes.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/ICoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoveragePlanningProblem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageProblemValidator.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageProblemValidator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageTaskAdapter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageTaskAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.cc
@@ -55,6 +59,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeoReferenceTest.cc
@@ -132,6 +138,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         CoveragePlannerTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageProblemValidatorTest
         LABELS
         Unit
     )

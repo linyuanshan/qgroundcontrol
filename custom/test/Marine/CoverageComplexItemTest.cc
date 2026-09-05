@@ -23,6 +23,7 @@ MarineTask validTask()
 {
     MarineTask task;
     task.planner.plannerId = "marine.coverage.mock";
+    task.coverage.swathWidthM = 5.0;
     task.region.outerBoundary.vertices = {
         {47.3977, 8.5455, 0.0},
         {47.3977, 8.5465, 0.0},
@@ -211,7 +212,9 @@ void CoverageComplexItemTest::_testQmlTaskProperties()
     QCOMPARE(noGoRegions.size(), 1);
     QCOMPARE(noGoRegions.constFirst().toList().size(), 3);
 
-    QVERIFY(_item->plan());
+    QVERIFY(!_item->plan());
+    QCOMPARE(_item->planningResult().status, PlanningStatus::Failed);
+    QVERIFY(_item->planningResult().message.find("P2") != std::string::npos);
     QSignalSpy taskDataSpy(_item, &CoverageInspectionComplexItem::taskDataChanged);
     _item->setTaskName(QStringLiteral("Updated inspection"));
     _item->setSwathWidthM(11.0);

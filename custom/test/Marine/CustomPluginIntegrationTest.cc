@@ -22,6 +22,7 @@ MarineTask validTask(const std::string& id)
     task.id = id;
     task.name = "Harbor inspection";
     task.planner.plannerId = "marine.coverage.mock";
+    task.coverage.swathWidthM = 5.0;
     task.region.outerBoundary.vertices = {
         {.latitudeDeg = 47.3977, .longitudeDeg = 8.5455, .altitudeM = 0.0},
         {.latitudeDeg = 47.3977, .longitudeDeg = 8.5465, .altitudeM = 0.0},

@@ -102,6 +102,7 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
 
     auto* coverageItem = missionController()->visualItems()->value<CoverageInspectionComplexItem*>(1);
     QVERIFY(coverageItem != nullptr);
+    coverageItem->setSwathWidthM(5.0);
     QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
 
     QList<MissionItem*> missionItems;

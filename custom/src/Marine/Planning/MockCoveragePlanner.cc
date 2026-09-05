@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "CoverageProblemValidator.h"
+
 namespace {
 
 double distanceM(const Marine::Point2D& first, const Marine::Point2D& second)
@@ -39,15 +41,17 @@ std::string MockCoveragePlanner::displayName() const
 
 CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem& problem) const
 {
-    if ((problem.region.outerBoundary.vertices.size() < 3) || !problem.region.isFinite()) {
+    CoveragePlanningProblem normalizedProblem = problem;
+    const CoveragePlanningError validationError = CoverageProblemValidator::validateAndNormalize(normalizedProblem);
+    if (validationError != CoveragePlanningError::None) {
         CoveragePlanningSolution solution;
-        solution.status = PlanningStatus::InvalidInput;
-        solution.error = CoveragePlanningError::InvalidOuterBoundary;
-        solution.message = "Coverage planning problem has an invalid outer boundary";
+        solution.status = CoverageProblemValidator::statusForError(validationError);
+        solution.error = validationError;
+        solution.message = CoverageProblemValidator::messageForError(validationError);
         return solution;
     }
 
-    const Polygon2D& boundary = problem.region.outerBoundary;
+    const Polygon2D& boundary = normalizedProblem.region.outerBoundary;
     const Point2D& first = boundary.vertices.front();
     const Point2D center = polygonCenter(boundary);
     const Point2D& opposite = boundary.vertices.at(boundary.vertices.size() / 2);
@@ -56,8 +60,7 @@ CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem
     solution.status = PlanningStatus::Success;
     solution.path = {first, center, opposite};
     solution.pathLengthM = distanceM(first, center) + distanceM(center, opposite);
-    solution.selectedSweepAngleDeg =
-        (problem.sweepAngleMode == SweepAngleMode::Manual) ? problem.requestedSweepAngleDeg : 0.0;
+    solution.selectedSweepAngleDeg = normalizedProblem.requestedSweepAngleDeg;
     solution.turnCount = 1;
     solution.message = "Architecture test path generated. Not for field operation";
     return solution;

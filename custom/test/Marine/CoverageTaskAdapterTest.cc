@@ -24,11 +24,6 @@ MarineTask createTask()
         {38.002, 121.002, 0.0},
         {38.002, 121.0, 0.0},
     };
-    task.region.noGoRegions.push_back({{
-        {38.0005, 121.0005, 0.0},
-        {38.0005, 121.0008, 0.0},
-        {38.0008, 121.0005, 0.0},
-    }});
     task.coverage.swathWidthM = 8.0;
     task.coverage.safetyMarginM = 2.5;
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
@@ -59,8 +54,7 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     QVERIFY(qAbs(reference->origin().latitudeDeg - 38.001) < CoordinateToleranceDeg);
     QVERIFY(qAbs(reference->origin().longitudeDeg - 121.001) < CoordinateToleranceDeg);
     QCOMPARE(problem.region.outerBoundary.vertices.size(), task.region.outerBoundary.vertices.size());
-    QCOMPARE(problem.region.noGoRegions.size(), task.region.noGoRegions.size());
-    QCOMPARE(problem.region.noGoRegions.front().vertices.size(), task.region.noGoRegions.front().vertices.size());
+    QVERIFY(problem.region.noGoRegions.empty());
     QCOMPARE(problem.swathWidthM, 8.0);
     QCOMPARE(problem.safetyMarginM, 2.5);
     QVERIFY(problem.sweepAngleMode == SweepAngleMode::Manual);
@@ -89,10 +83,59 @@ void CoverageTaskAdapterTest::_testInvalidTaskGeometry()
     QVERIFY(!CoverageTaskAdapter::buildProblem(invalidOuter, problem, reference, error));
     QVERIFY(error == CoveragePlanningError::InvalidOuterBoundary);
 
-    MarineTask invalidNoGo = createTask();
-    invalidNoGo.region.noGoRegions.front().vertices.front().longitudeDeg = std::numeric_limits<double>::infinity();
-    QVERIFY(!CoverageTaskAdapter::buildProblem(invalidNoGo, problem, reference, error));
-    QVERIFY(error == CoveragePlanningError::GeometryFailure);
+    MarineTask invalidWgs84 = createTask();
+    invalidWgs84.region.outerBoundary.vertices.front().latitudeDeg = 91.0;
+    QVERIFY(!CoverageTaskAdapter::buildProblem(invalidWgs84, problem, reference, error));
+    QVERIFY(error == CoveragePlanningError::InvalidOuterBoundary);
+
+    MarineTask selfIntersecting = createTask();
+    selfIntersecting.region.outerBoundary.vertices = {
+        {38.0, 121.0, 0.0},
+        {38.002, 121.002, 0.0},
+        {38.002, 121.0, 0.0},
+        {38.0, 121.002, 0.0},
+    };
+    QVERIFY(!CoverageTaskAdapter::buildProblem(selfIntersecting, problem, reference, error));
+    QVERIFY(error == CoveragePlanningError::InvalidOuterBoundary);
+}
+
+void CoverageTaskAdapterTest::_testValidationAndNormalization()
+{
+    CoveragePlanningProblem problem;
+    std::optional<GeoReference> reference;
+    CoveragePlanningError error = CoveragePlanningError::None;
+
+    MarineTask task = createTask();
+    task.coverage.sweepAngleDeg = -45.0;
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(problem.requestedSweepAngleDeg, 135.0);
+
+    task = createTask();
+    task.coverage.swathWidthM = 0.0;
+    QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QVERIFY(error == CoveragePlanningError::InvalidSwathWidth);
+
+    task = createTask();
+    task.coverage.safetyMarginM = 4.01;
+    QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QVERIFY(error == CoveragePlanningError::InvalidSafetyMargin);
+}
+
+void CoverageTaskAdapterTest::_testUnsupportedNoGoRegion()
+{
+    MarineTask task = createTask();
+    task.region.noGoRegions.push_back({{
+        {38.0005, 121.0005, 0.0},
+        {38.0005, 121.0008, 0.0},
+        {38.0008, 121.0005, 0.0},
+    }});
+
+    CoveragePlanningProblem problem;
+    std::optional<GeoReference> reference;
+    CoveragePlanningError error = CoveragePlanningError::None;
+    QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QVERIFY(error == CoveragePlanningError::UnsupportedNoGoRegion);
+    QVERIFY(!reference.has_value());
 }
 
 void CoverageTaskAdapterTest::_testSolutionMapping()

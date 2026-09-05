@@ -84,11 +84,6 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
                                           {.latitudeDeg = 47.3987, .longitudeDeg = 8.5465, .altitudeM = 0.0},
                                           {.latitudeDeg = 47.3987, .longitudeDeg = 8.5455, .altitudeM = 0.0},
                                       }};
-    const GeoPolygon expectedNoGo{.vertices = {
-                                      {.latitudeDeg = 47.3980, .longitudeDeg = 8.5458, .altitudeM = 0.0},
-                                      {.latitudeDeg = 47.3980, .longitudeDeg = 8.5460, .altitudeM = 0.0},
-                                      {.latitudeDeg = 47.3982, .longitudeDeg = 8.5460, .altitudeM = 0.0},
-                                  }};
     const std::string expectedName = "Harbor inspection";
     const std::string expectedVehicleId = "usv-01";
     const std::string expectedPlannerId = "marine.coverage.mock";
@@ -122,7 +117,6 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         configuredTask.name = expectedName;
         configuredTask.vehicleId = expectedVehicleId;
         configuredTask.region.outerBoundary = expectedBoundary;
-        configuredTask.region.noGoRegions = {expectedNoGo};
         configuredTask.coverage.swathWidthM = ExpectedSwathWidthM;
         configuredTask.coverage.safetyMarginM = ExpectedSafetyMarginM;
         configuredTask.sensors.cameraEnabled = true;
@@ -180,11 +174,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     for (std::size_t index = 0; index < expectedBoundary.vertices.size(); ++index) {
         comparePoint(restoredTask->region.outerBoundary.vertices.at(index), expectedBoundary.vertices.at(index));
     }
-    QCOMPARE(restoredTask->region.noGoRegions.size(), std::size_t{1});
-    QCOMPARE(restoredTask->region.noGoRegions.front().vertices.size(), expectedNoGo.vertices.size());
-    for (std::size_t index = 0; index < expectedNoGo.vertices.size(); ++index) {
-        comparePoint(restoredTask->region.noGoRegions.front().vertices.at(index), expectedNoGo.vertices.at(index));
-    }
+    QVERIFY(restoredTask->region.noGoRegions.empty());
 
     const PlanningResult& restoredResult = restoredItem->planningResult();
     QCOMPARE(restoredResult.status, expectedPlanningResult.status);

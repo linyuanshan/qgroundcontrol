@@ -92,6 +92,19 @@ void CoveragePlannerTest::_testInvalidProblem()
     QVERIFY(!solution.message.empty());
 }
 
+void CoveragePlannerTest::_testCapabilityGate()
+{
+    const MockCoveragePlanner planner;
+    CoveragePlanningProblem problem = createValidProblem();
+    problem.region.noGoRegions.push_back({{{2.0, 2.0}, {3.0, 2.0}, {2.0, 3.0}}});
+
+    const CoveragePlanningSolution solution = planner.plan(problem);
+    QVERIFY(solution.status == PlanningStatus::Failed);
+    QVERIFY(solution.error == CoveragePlanningError::UnsupportedNoGoRegion);
+    QVERIFY(solution.path.empty());
+    QVERIFY(solution.message.find("P2") != std::string::npos);
+}
+
 void CoveragePlannerTest::_testDeterministicPath()
 {
     const MockCoveragePlanner planner;

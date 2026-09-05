@@ -12,5 +12,6 @@ private slots:
     void _testMissingPlanner();
     void _testValidProblem();
     void _testInvalidProblem();
+    void _testCapabilityGate();
     void _testDeterministicPath();
 };
