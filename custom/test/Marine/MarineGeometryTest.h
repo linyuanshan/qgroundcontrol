@@ -18,4 +18,6 @@ private slots:
     void _testPolygonMonotonicity();
     void _testScanlineIntervals();
     void _testScanlineVertexAndBoundaryCases();
+    void _testPointContainment();
+    void _testSegmentContainment();
 };

@@ -236,4 +236,26 @@ void MarineGeometryTest::_testScanlineVertexAndBoundaryCases()
              Geometry::ScanlineStatus::InvalidInput);
 }
 
+void MarineGeometryTest::_testPointContainment()
+{
+    const Polygon2D polygon = rectangle();
+
+    QVERIFY(Geometry::containsPoint(polygon, {10.0, 5.0}));
+    QVERIFY(Geometry::containsPoint(polygon, {0.0, 5.0}));
+    QVERIFY(Geometry::containsPoint(polygon, {0.0, 0.0}));
+    QVERIFY(!Geometry::containsPoint(polygon, {-1.0, 5.0}));
+    QVERIFY(!Geometry::containsPoint(polygon, {std::numeric_limits<double>::infinity(), 5.0}));
+}
+
+void MarineGeometryTest::_testSegmentContainment()
+{
+    const Polygon2D concave{{{0.0, 0.0}, {10.0, 0.0}, {10.0, 1.5}, {3.0, 3.0}, {10.0, 4.5}, {10.0, 10.0}, {0.0, 10.0}}};
+
+    QVERIFY(Geometry::containsSegment(concave, {0.0, 1.0}, {8.0, 1.0}));
+    QVERIFY(Geometry::containsSegment(concave, {0.0, 0.0}, {10.0, 0.0}));
+    QVERIFY(Geometry::containsSegment(concave, {1.0, 1.0}, {1.0, 9.0}));
+    QVERIFY(!Geometry::containsSegment(concave, {9.0, 1.0}, {9.0, 5.0}));
+    QVERIFY(!Geometry::containsSegment(concave, {1.0, 1.0}, {11.0, 1.0}));
+}
+
 UT_REGISTER_TEST_LIGHTWEIGHT(MarineGeometryTest, TestLabel::Unit)

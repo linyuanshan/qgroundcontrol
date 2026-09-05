@@ -137,6 +137,24 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     if ((path.size() < 2) || (generatedLaneCount == 0)) {
         return failureSolution(CoveragePlanningError::InvalidGeneratedPath);
     }
+    if (!std::isfinite(spacingM) || (spacingM > normalizedProblem.swathWidthM + Geometry::LengthEpsilonM)) {
+        return failureSolution(CoveragePlanningError::InvalidGeneratedPath);
+    }
+    for (const Point2D& point : path) {
+        if (!point.isFinite() || !Geometry::containsPoint(inset.polygon, point)) {
+            return failureSolution(CoveragePlanningError::InvalidGeneratedPath);
+        }
+    }
+    Point2D previousPoint = path.front();
+    std::size_t segmentEndIndex = 1;
+    for (auto iterator = std::next(path.cbegin()); iterator != path.cend(); ++iterator, ++segmentEndIndex) {
+        if (!Geometry::containsSegment(inset.polygon, previousPoint, *iterator)) {
+            const bool connector = (segmentEndIndex % 2) == 0;
+            return failureSolution(connector ? CoveragePlanningError::UnsafeConnector
+                                             : CoveragePlanningError::InvalidGeneratedPath);
+        }
+        previousPoint = *iterator;
+    }
 
     const double pathLengthM = pathLength(path);
     if (!std::isfinite(pathLengthM) || (pathLengthM <= 0.0)) {

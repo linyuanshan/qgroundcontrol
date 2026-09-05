@@ -4,6 +4,7 @@
 #include <clipper2/clipper.h>
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <numbers>
 #include <utility>
 
@@ -40,6 +41,74 @@ bool pointOnSegment(const Marine::Point2D& point, const Marine::Point2D& first, 
            (point.xM <= std::max(first.xM, second.xM) + Marine::Geometry::LengthEpsilonM) &&
            (point.yM >= std::min(first.yM, second.yM) - Marine::Geometry::LengthEpsilonM) &&
            (point.yM <= std::max(first.yM, second.yM) + Marine::Geometry::LengthEpsilonM);
+}
+
+bool containsPointUnchecked(const Marine::Polygon2D& polygon, const Marine::Point2D& point)
+{
+    bool inside = false;
+    Marine::Point2D first = polygon.vertices.back();
+    for (const Marine::Point2D& second : polygon.vertices) {
+        if (pointOnSegment(point, first, second)) {
+            return true;
+        }
+
+        const bool crosses = (first.yM > point.yM) != (second.yM > point.yM);
+        if (crosses) {
+            const double intersectionX =
+                first.xM + ((point.yM - first.yM) * (second.xM - first.xM) / (second.yM - first.yM));
+            if (point.xM < intersectionX) {
+                inside = !inside;
+            }
+        }
+        first = second;
+    }
+    return inside;
+}
+
+double vectorCross(double firstX, double firstY, double secondX, double secondY)
+{
+    return (firstX * secondY) - (firstY * secondX);
+}
+
+void appendSegmentBoundaryParameter(std::vector<double>& parameters, const Marine::Point2D& segmentStart,
+                                    const Marine::Point2D& segmentEnd, const Marine::Point2D& edgeStart,
+                                    const Marine::Point2D& edgeEnd, double parameterTolerance)
+{
+    const double segmentX = segmentEnd.xM - segmentStart.xM;
+    const double segmentY = segmentEnd.yM - segmentStart.yM;
+    const double edgeX = edgeEnd.xM - edgeStart.xM;
+    const double edgeY = edgeEnd.yM - edgeStart.yM;
+    const double offsetX = edgeStart.xM - segmentStart.xM;
+    const double offsetY = edgeStart.yM - segmentStart.yM;
+    const double denominator = vectorCross(segmentX, segmentY, edgeX, edgeY);
+    const double crossTolerance =
+        Marine::Geometry::LengthEpsilonM * std::max({std::hypot(segmentX, segmentY), std::hypot(edgeX, edgeY), 1.0});
+
+    if (std::abs(denominator) <= crossTolerance) {
+        if (std::abs(vectorCross(offsetX, offsetY, segmentX, segmentY)) > crossTolerance) {
+            return;
+        }
+
+        const double segmentLengthSquared = (segmentX * segmentX) + (segmentY * segmentY);
+        for (const Marine::Point2D& edgePoint : {edgeStart, edgeEnd}) {
+            const double parameter =
+                (((edgePoint.xM - segmentStart.xM) * segmentX) + ((edgePoint.yM - segmentStart.yM) * segmentY)) /
+                segmentLengthSquared;
+            if ((parameter >= -parameterTolerance) && (parameter <= 1.0 + parameterTolerance)) {
+                parameters.push_back(std::clamp(parameter, 0.0, 1.0));
+            }
+        }
+        return;
+    }
+
+    const double segmentParameter = vectorCross(offsetX, offsetY, edgeX, edgeY) / denominator;
+    const double edgeParameter = vectorCross(offsetX, offsetY, segmentX, segmentY) / denominator;
+    const double edgeParameterTolerance =
+        Marine::Geometry::LengthEpsilonM / std::max(std::hypot(edgeX, edgeY), Marine::Geometry::LengthEpsilonM);
+    if ((segmentParameter >= -parameterTolerance) && (segmentParameter <= 1.0 + parameterTolerance) &&
+        (edgeParameter >= -edgeParameterTolerance) && (edgeParameter <= 1.0 + edgeParameterTolerance)) {
+        parameters.push_back(std::clamp(segmentParameter, 0.0, 1.0));
+    }
 }
 
 bool segmentsIntersect(const Marine::Point2D& firstStart, const Marine::Point2D& firstEnd,
@@ -377,6 +446,58 @@ ScanlineResult intersectScanline(const Polygon2D& sweepAlignedPolygon, double yM
         return {ScanlineStatus::NoIntersection, {}};
     }
     return {ScanlineStatus::Success, std::move(intervals)};
+}
+
+bool containsPoint(const Polygon2D& polygon, const Point2D& point)
+{
+    return point.isFinite() && isSimpleNonDegeneratePolygon(polygon) && containsPointUnchecked(polygon, point);
+}
+
+bool containsSegment(const Polygon2D& polygon, const Point2D& first, const Point2D& second)
+{
+    if (!first.isFinite() || !second.isFinite() || !isSimpleNonDegeneratePolygon(polygon) ||
+        !containsPointUnchecked(polygon, first) || !containsPointUnchecked(polygon, second)) {
+        return false;
+    }
+
+    const double segmentLength = std::hypot(second.xM - first.xM, second.yM - first.yM);
+    if (segmentLength <= LengthEpsilonM) {
+        return true;
+    }
+
+    const double parameterTolerance = LengthEpsilonM / segmentLength;
+    std::vector<double> parameters{0.0, 1.0};
+    parameters.reserve(polygon.vertices.size() + 2);
+    Point2D edgeStart = polygon.vertices.back();
+    for (const Point2D& edgeEnd : polygon.vertices) {
+        appendSegmentBoundaryParameter(parameters, first, second, edgeStart, edgeEnd, parameterTolerance);
+        edgeStart = edgeEnd;
+    }
+
+    std::sort(parameters.begin(), parameters.end());
+    parameters.erase(std::unique(parameters.begin(), parameters.end(),
+                                 [parameterTolerance](double left, double right) {
+                                     return std::abs(left - right) <= parameterTolerance;
+                                 }),
+                     parameters.end());
+
+    double previousParameter = parameters.front();
+    for (auto iterator = std::next(parameters.cbegin()); iterator != parameters.cend(); ++iterator) {
+        if ((*iterator - previousParameter) <= parameterTolerance) {
+            previousParameter = *iterator;
+            continue;
+        }
+        const double midpointParameter = (previousParameter + *iterator) * 0.5;
+        const Point2D midpoint{
+            .xM = first.xM + (midpointParameter * (second.xM - first.xM)),
+            .yM = first.yM + (midpointParameter * (second.yM - first.yM)),
+        };
+        if (!containsPointUnchecked(polygon, midpoint)) {
+            return false;
+        }
+        previousParameter = *iterator;
+    }
+    return true;
 }
 
 }  // namespace Marine::Geometry

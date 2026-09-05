@@ -49,5 +49,7 @@ struct ScanlineResult
 [[nodiscard]] Point2D fromSweepFrame(const Point2D& point, double sweepAngleDeg);
 [[nodiscard]] bool isSweepMonotone(const Polygon2D& polygon, double sweepAngleDeg);
 [[nodiscard]] ScanlineResult intersectScanline(const Polygon2D& sweepAlignedPolygon, double yM);
+[[nodiscard]] bool containsPoint(const Polygon2D& polygon, const Point2D& point);
+[[nodiscard]] bool containsSegment(const Polygon2D& polygon, const Point2D& first, const Point2D& second);
 
 }  // namespace Marine::Geometry

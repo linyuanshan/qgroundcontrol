@@ -15,5 +15,7 @@ private slots:
     void _testGeneralConvexDeterminism();
     void _testSafetyInsetFailure();
     void _testNonMonotoneSweepFailure();
+    void _testUnsafeConnectorFailure();
+    void _testSuccessfulPathInvariants();
     void _testAutoModeIsDeferred();
 };

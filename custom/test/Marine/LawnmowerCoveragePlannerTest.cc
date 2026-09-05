@@ -167,6 +167,51 @@ void LawnmowerCoveragePlannerTest::_testNonMonotoneSweepFailure()
     QVERIFY(solution.path.empty());
 }
 
+void LawnmowerCoveragePlannerTest::_testUnsafeConnectorFailure()
+{
+    CoveragePlanningProblem problem;
+    problem.region.outerBoundary.vertices = {
+        {0.0, 0.0}, {10.0, 0.0}, {10.0, 1.5}, {3.0, 3.0}, {10.0, 4.5}, {10.0, 10.0}, {0.0, 10.0},
+    };
+    problem.swathWidthM = 4.0;
+    problem.sweepAngleMode = SweepAngleMode::Manual;
+    problem.requestedSweepAngleDeg = 0.0;
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+
+    QCOMPARE(solution.status, PlanningStatus::Failed);
+    QCOMPARE(solution.error, CoveragePlanningError::UnsafeConnector);
+    QVERIFY(solution.path.empty());
+}
+
+void LawnmowerCoveragePlannerTest::_testSuccessfulPathInvariants()
+{
+    const CoveragePlanningProblem problem = rectangleProblem(20.0, 10.0, 4.0, 0.0, 1.0);
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+    const Geometry::PolygonInsetResult inset =
+        Geometry::insetPolygon(problem.region.outerBoundary, problem.safetyMarginM);
+
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    QCOMPARE(inset.status, Geometry::PolygonInsetStatus::Success);
+    QVERIFY(solution.path.size() >= 2);
+    for (const Point2D& point : solution.path) {
+        QVERIFY(point.isFinite());
+        QVERIFY(Geometry::containsPoint(inset.polygon, point));
+    }
+    for (std::size_t index = 1; index < solution.path.size(); ++index) {
+        QVERIFY(Geometry::containsSegment(inset.polygon, solution.path[index - 1], solution.path[index]));
+    }
+    QVERIFY(std::isfinite(solution.pathLengthM));
+    QVERIFY(solution.pathLengthM > 0.0);
+    for (std::size_t index = 2; index < solution.path.size(); index += 2) {
+        QVERIFY(std::abs(solution.path[index].yM - solution.path[index - 2].yM) <=
+                problem.swathWidthM + Geometry::LengthEpsilonM);
+    }
+    QCOMPARE(solution.turnCount, static_cast<int>((solution.path.size() / 2) - 1));
+}
+
 void LawnmowerCoveragePlannerTest::_testAutoModeIsDeferred()
 {
     CoveragePlanningProblem problem = rectangleProblem(20.0, 10.0, 4.0, 0.0);
