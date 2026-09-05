@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, ClassVar
 
@@ -17,7 +18,7 @@ class ClangTidyAnalyzer(AnalyzerBase):
     """Clang-tidy static analyzer."""
 
     name: ClassVar[str] = "clang-tidy"
-    install_hint: ClassVar[str] = "Install with: sudo apt install clang-tidy"
+    install_hint: ClassVar[str] = "Install clang-tidy and ensure it is available on PATH."
 
     def __init__(self, repo_root: Path, build_dir: Path, jobs: int = 1) -> None:
         super().__init__(repo_root, build_dir)
@@ -25,7 +26,16 @@ class ClangTidyAnalyzer(AnalyzerBase):
 
     def _analyze_file(self, file: Path) -> tuple[str, bool]:
         rel_path = self.relative_path(file)
-        result = run_captured(["clang-tidy", "-p", str(self.build_dir), str(file)])
+        command = ["clang-tidy", "-p", str(self.build_dir)]
+        if sys.platform == "win32":
+            command.extend(
+                [
+                    "--extra-arg=/Y-",
+                    "--extra-arg=-Wno-unused-command-line-argument",
+                ]
+            )
+        command.append(str(file))
+        result = run_captured(command)
         return rel_path, result.returncode != 0
 
     def run(self, files: list[Path], fix: bool = False) -> AnalysisResult:
@@ -35,6 +45,8 @@ class ClangTidyAnalyzer(AnalyzerBase):
                 passed=False,
                 output="compile_commands.json not found",
             )
+
+        log_info(f"Using compilation database: {self.compile_commands.resolve()}")
 
         if not self.require_tool("clang-tidy"):
             return AnalysisResult(tool=self.name, passed=False, output="Tool not found")
