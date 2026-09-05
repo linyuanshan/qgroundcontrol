@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "LawnmowerCoveragePlanner.h"
 #include "MockCoveragePlanner.h"
 #include "PlannerRegistry.h"
 
@@ -36,10 +37,13 @@ void comparePoints(const Point2D& actual, const Point2D& expected)
 void CoveragePlannerTest::_testRegisterAndLookup()
 {
     PlannerRegistry registry;
-    const auto planner = std::make_shared<MockCoveragePlanner>();
+    const auto mockPlanner = std::make_shared<MockCoveragePlanner>();
+    const auto lawnmowerPlanner = std::make_shared<LawnmowerCoveragePlanner>();
 
-    QVERIFY(registry.registerPlanner(planner));
-    QCOMPARE(registry.planner(planner->id()), planner);
+    QVERIFY(registry.registerPlanner(mockPlanner));
+    QVERIFY(registry.registerPlanner(lawnmowerPlanner));
+    QCOMPARE(registry.planner(mockPlanner->id()), mockPlanner);
+    QCOMPARE(registry.planner(lawnmowerPlanner->id()), lawnmowerPlanner);
     QVERIFY(!registry.registerPlanner(nullptr));
 }
 

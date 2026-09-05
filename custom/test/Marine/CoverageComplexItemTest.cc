@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "CoverageInspectionComplexItem.h"
+#include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
 #include "MissionItem.h"
 #include "MockCoveragePlanner.h"
@@ -40,6 +41,7 @@ void CoverageComplexItemTest::init()
     OfflineMissionTest::init();
     _marineContext = new MarinePlanContext(planController());
     QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<LawnmowerCoveragePlanner>()));
     _item = new CoverageInspectionComplexItem(planController(), false, _marineContext);
 }
 
@@ -98,6 +100,31 @@ void CoverageComplexItemTest::_testPlanning()
         QCOMPARE(items.at(index)->sequenceNumber(), index);
         QCOMPARE(items.at(index)->command(), MAV_CMD_NAV_WAYPOINT);
     }
+}
+
+void CoverageComplexItemTest::_testLawnmowerPlanning()
+{
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.lawnmower";
+    task.coverage.swathWidthM = 30.0;
+    task.coverage.safetyMarginM = 1.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 0.0;
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+
+    const PlanningResult& result = _item->planningResult();
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QVERIFY(result.path.size() >= 4);
+    QCOMPARE(result.path.size() % 2, std::size_t{0});
+    QCOMPARE(result.selectedSweepAngleDeg, 0.0);
+    QCOMPARE(result.turnCount, static_cast<int>((result.path.size() / 2) - 1));
+    QCOMPARE(_item->generatedPath().size(), static_cast<qsizetype>(result.path.size()));
+    QCOMPARE(_item->complexDistance(), result.pathLengthM);
+    QVERIFY(result.message.find("Manual") != std::string::npos);
 }
 
 void CoverageComplexItemTest::_testPlanningFailures()

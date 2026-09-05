@@ -5,6 +5,7 @@
 
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
+#include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
 #include "MissionController.h"
 #include "MissionItem.h"
@@ -27,6 +28,9 @@ void CoverageInspectionPlanCreatorTest::init()
     }
     if (!_marineContext->plannerRegistry().planner("marine.coverage.mock")) {
         QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
+    }
+    if (!_marineContext->plannerRegistry().planner("marine.coverage.lawnmower")) {
+        QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<LawnmowerCoveragePlanner>()));
     }
     _creator = new CoverageInspectionPlanCreator(planController(), _marineContext);
 }
@@ -64,7 +68,7 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlan()
     QVERIFY(task != nullptr);
     QCOMPARE(task->type, MarineTaskType::CoverageInspection);
     QCOMPARE(task->name, std::string("Coverage Inspection"));
-    QCOMPARE(task->planner.plannerId, std::string("marine.coverage.mock"));
+    QCOMPARE(task->planner.plannerId, std::string("marine.coverage.lawnmower"));
     QCOMPARE(task->region.outerBoundary.vertices.size(), std::size_t(4));
     QVERIFY(task->region.outerBoundary.vertices.front().latitudeDeg != mapCenter.latitude());
     QVERIFY(task->region.outerBoundary.vertices.front().longitudeDeg != mapCenter.longitude());
@@ -104,10 +108,14 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
     QVERIFY(coverageItem != nullptr);
     coverageItem->setSwathWidthM(5.0);
     QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
+    QCOMPARE(coverageItem->planningResult().status, PlanningStatus::Success);
+    QVERIFY(coverageItem->planningResult().path.size() > 3);
+    QVERIFY(coverageItem->planningResult().turnCount > 0);
+    QVERIFY(coverageItem->planningResult().message.find("Automatic") != std::string::npos);
 
     QList<MissionItem*> missionItems;
     coverageItem->appendMissionItems(missionItems, this);
-    QVERIFY(!missionItems.isEmpty());
+    QCOMPARE(missionItems.size(), static_cast<qsizetype>(coverageItem->planningResult().path.size()));
     for (const MissionItem* missionItem : missionItems) {
         QVERIFY(std::isfinite(missionItem->param5()));
         QVERIFY(std::isfinite(missionItem->param6()));

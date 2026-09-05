@@ -25,8 +25,7 @@ void CoverageInspectionPlanCreator::createPlan(const QGeoCoordinate& mapCenterCo
 
     Marine::MarineTask task;
     task.name = CoverageInspectionComplexItem::canonicalName;
-    task.planner.plannerId = "marine.coverage.mock";
-    // Keep the creator deterministic and immediately plannable; the editor can replace this test region.
+    task.planner.plannerId = "marine.coverage.lawnmower";
     const double latitude = mapCenterCoord.latitude();
     const double longitude = mapCenterCoord.longitude();
     constexpr double delta = 0.0005;
