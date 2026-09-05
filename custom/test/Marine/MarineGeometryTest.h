@@ -14,4 +14,8 @@ private slots:
     void _testOrientationIndependence();
     void _testInvalidInput();
     void _testDeterminismAndPrecision();
+    void _testSweepFrameTransform();
+    void _testPolygonMonotonicity();
+    void _testScanlineIntervals();
+    void _testScanlineVertexAndBoundaryCases();
 };

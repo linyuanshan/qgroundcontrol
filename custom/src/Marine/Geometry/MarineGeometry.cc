@@ -4,6 +4,7 @@
 #include <clipper2/clipper.h>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <utility>
 
 namespace {
@@ -121,6 +122,92 @@ Marine::Polygon2D fromClipperPath(const Clipper2Lib::Path64& path)
     return polygon;
 }
 
+double normalizedSweepAngle(double sweepAngleDeg)
+{
+    double normalized = std::fmod(sweepAngleDeg, 180.0);
+    if (normalized < 0.0) {
+        normalized += 180.0;
+    }
+    return normalized;
+}
+
+std::size_t extremeVertexIndex(const Marine::Polygon2D& polygon, bool minimum)
+{
+    const auto yIsMoreExtreme = [minimum](double candidate, double current) {
+        return minimum ? (candidate < current) : (candidate > current);
+    };
+
+    double extremeY = polygon.vertices.front().yM;
+    for (const Marine::Point2D& vertex : polygon.vertices) {
+        if (yIsMoreExtreme(vertex.yM, extremeY)) {
+            extremeY = vertex.yM;
+        }
+    }
+
+    std::size_t result = 0;
+    bool found = false;
+    for (std::size_t index = 0; index < polygon.vertices.size(); ++index) {
+        const Marine::Point2D& vertex = polygon.vertices[index];
+        if ((std::abs(vertex.yM - extremeY) <= Marine::Geometry::LengthEpsilonM) &&
+            (!found || (vertex.xM < polygon.vertices[result].xM))) {
+            result = index;
+            found = true;
+        }
+    }
+    return result;
+}
+
+bool chainYIsNonDecreasing(const Marine::Polygon2D& polygon, std::size_t start, std::size_t end, int direction)
+{
+    const std::size_t vertexCount = polygon.vertices.size();
+    std::size_t current = start;
+    while (current != end) {
+        const std::size_t next =
+            (direction > 0) ? ((current + 1) % vertexCount) : ((current + vertexCount - 1) % vertexCount);
+        if (polygon.vertices[next].yM + Marine::Geometry::LengthEpsilonM < polygon.vertices[current].yM) {
+            return false;
+        }
+        current = next;
+    }
+    return true;
+}
+
+void appendInterval(std::vector<Marine::Geometry::ScanlineInterval>& intervals, double firstX, double secondX)
+{
+    const double minimumX = std::min(firstX, secondX);
+    const double maximumX = std::max(firstX, secondX);
+    if ((maximumX - minimumX) > Marine::Geometry::LengthEpsilonM) {
+        intervals.push_back({minimumX, maximumX});
+    }
+}
+
+std::vector<Marine::Geometry::ScanlineInterval> mergeIntervals(
+    std::vector<Marine::Geometry::ScanlineInterval> intervals)
+{
+    if (intervals.empty()) {
+        return {};
+    }
+
+    std::sort(intervals.begin(), intervals.end(), [](const auto& left, const auto& right) {
+        return (left.minimumXM < right.minimumXM) ||
+               ((left.minimumXM == right.minimumXM) && (left.maximumXM < right.maximumXM));
+    });
+
+    std::vector<Marine::Geometry::ScanlineInterval> merged;
+    merged.reserve(intervals.size());
+    merged.push_back(intervals.front());
+    for (std::size_t index = 1; index < intervals.size(); ++index) {
+        Marine::Geometry::ScanlineInterval& current = merged.back();
+        const Marine::Geometry::ScanlineInterval& next = intervals[index];
+        if (next.minimumXM <= current.maximumXM + Marine::Geometry::LengthEpsilonM) {
+            current.maximumXM = std::max(current.maximumXM, next.maximumXM);
+        } else {
+            merged.push_back(next);
+        }
+    }
+    return merged;
+}
+
 }  // namespace
 
 namespace Marine::Geometry {
@@ -199,6 +286,97 @@ PolygonInsetResult insetPolygon(const Polygon2D& polygon, double marginM)
         return {PolygonInsetStatus::GeometryFailure, {}};
     }
     return {PolygonInsetStatus::Success, std::move(inset)};
+}
+
+Point2D toSweepFrame(const Point2D& point, double sweepAngleDeg)
+{
+    const double angleRad = normalizedSweepAngle(sweepAngleDeg) * std::numbers::pi / 180.0;
+    const double cosine = std::cos(angleRad);
+    const double sine = std::sin(angleRad);
+    return {(cosine * point.xM) + (sine * point.yM), (-sine * point.xM) + (cosine * point.yM)};
+}
+
+Polygon2D toSweepFrame(const Polygon2D& polygon, double sweepAngleDeg)
+{
+    Polygon2D transformed;
+    transformed.vertices.reserve(polygon.vertices.size());
+    for (const Point2D& vertex : polygon.vertices) {
+        transformed.vertices.push_back(toSweepFrame(vertex, sweepAngleDeg));
+    }
+    return transformed;
+}
+
+Point2D fromSweepFrame(const Point2D& point, double sweepAngleDeg)
+{
+    const double angleRad = normalizedSweepAngle(sweepAngleDeg) * std::numbers::pi / 180.0;
+    const double cosine = std::cos(angleRad);
+    const double sine = std::sin(angleRad);
+    return {(cosine * point.xM) - (sine * point.yM), (sine * point.xM) + (cosine * point.yM)};
+}
+
+bool isSweepMonotone(const Polygon2D& polygon, double sweepAngleDeg)
+{
+    if (!isSimpleNonDegeneratePolygon(polygon) || !std::isfinite(sweepAngleDeg)) {
+        return false;
+    }
+
+    const Polygon2D sweepPolygon = toSweepFrame(polygon, sweepAngleDeg);
+    const std::size_t minimum = extremeVertexIndex(sweepPolygon, true);
+    const std::size_t maximum = extremeVertexIndex(sweepPolygon, false);
+    return chainYIsNonDecreasing(sweepPolygon, minimum, maximum, 1) &&
+           chainYIsNonDecreasing(sweepPolygon, minimum, maximum, -1);
+}
+
+ScanlineResult intersectScanline(const Polygon2D& sweepAlignedPolygon, double yM)
+{
+    if (!isSimpleNonDegeneratePolygon(sweepAlignedPolygon) || !std::isfinite(yM)) {
+        return {ScanlineStatus::InvalidInput, {}};
+    }
+
+    double scanY = yM;
+    double closestDistance = LengthEpsilonM;
+    for (const Point2D& vertex : sweepAlignedPolygon.vertices) {
+        const double distance = std::abs(vertex.yM - yM);
+        if (distance <= closestDistance) {
+            scanY = vertex.yM;
+            closestDistance = distance;
+        }
+    }
+
+    std::vector<double> crossings;
+    std::vector<ScanlineInterval> intervals;
+    for (std::size_t index = 0; index < sweepAlignedPolygon.vertices.size(); ++index) {
+        const Point2D& first = sweepAlignedPolygon.vertices[index];
+        const Point2D& second = sweepAlignedPolygon.vertices[(index + 1) % sweepAlignedPolygon.vertices.size()];
+        const double deltaY = second.yM - first.yM;
+        if (std::abs(deltaY) <= LengthEpsilonM) {
+            if (std::abs(scanY - first.yM) <= LengthEpsilonM) {
+                appendInterval(intervals, first.xM, second.xM);
+            }
+            continue;
+        }
+
+        const bool crosses =
+            ((first.yM <= scanY) && (scanY < second.yM)) || ((second.yM <= scanY) && (scanY < first.yM));
+        if (crosses) {
+            const double ratio = (scanY - first.yM) / deltaY;
+            crossings.push_back(first.xM + (ratio * (second.xM - first.xM)));
+        }
+    }
+
+    std::sort(crossings.begin(), crossings.end());
+    if ((crossings.size() % 2) != 0) {
+        return {ScanlineStatus::GeometryFailure, {}};
+    }
+    for (std::size_t index = 0; index < crossings.size(); index += 2) {
+        appendInterval(intervals, crossings[index], crossings[index + 1]);
+    }
+
+    intervals = mergeIntervals(std::move(intervals));
+    if (intervals.empty()) {
+        return {ScanlineStatus::NoIntersection, {}};
+    }
+    return {ScanlineStatus::Success, std::move(intervals)};
 }
 
 }  // namespace Marine::Geometry
