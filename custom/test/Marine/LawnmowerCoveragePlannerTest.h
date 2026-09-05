@@ -17,5 +17,10 @@ private slots:
     void _testNonMonotoneSweepFailure();
     void _testUnsafeConnectorFailure();
     void _testSuccessfulPathInvariants();
-    void _testAutoModeIsDeferred();
+    void _testAutoRectangleRanksTurnCount();
+    void _testAutoRanksPathLengthBeforeAngle();
+    void _testAutoAngleTieBreak();
+    void _testAutoRotatedRectangle();
+    void _testAutoFiltersNonMonotoneCandidates();
+    void _testAutoIrregularPolygonDeterminism();
 };

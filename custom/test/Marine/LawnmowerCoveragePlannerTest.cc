@@ -212,7 +212,7 @@ void LawnmowerCoveragePlannerTest::_testSuccessfulPathInvariants()
     QCOMPARE(solution.turnCount, static_cast<int>((solution.path.size() / 2) - 1));
 }
 
-void LawnmowerCoveragePlannerTest::_testAutoModeIsDeferred()
+void LawnmowerCoveragePlannerTest::_testAutoRectangleRanksTurnCount()
 {
     CoveragePlanningProblem problem = rectangleProblem(20.0, 10.0, 4.0, 0.0);
     problem.sweepAngleMode = SweepAngleMode::Auto;
@@ -220,10 +220,100 @@ void LawnmowerCoveragePlannerTest::_testAutoModeIsDeferred()
     const LawnmowerCoveragePlanner planner;
     const CoveragePlanningSolution solution = planner.plan(problem);
 
-    QCOMPARE(solution.status, PlanningStatus::Failed);
-    QCOMPARE(solution.error, CoveragePlanningError::GeometryFailure);
-    QVERIFY(solution.path.empty());
-    QVERIFY(solution.message.find("P1-08") != std::string::npos);
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    QCOMPARE(solution.error, CoveragePlanningError::None);
+    QCOMPARE(solution.selectedSweepAngleDeg, 0.0);
+    QCOMPARE(solution.turnCount, 2);
+}
+
+void LawnmowerCoveragePlannerTest::_testAutoRanksPathLengthBeforeAngle()
+{
+    CoveragePlanningProblem problem = rectangleProblem(20.0, 10.0, 25.0, 0.0);
+    problem.sweepAngleMode = SweepAngleMode::Auto;
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    QCOMPARE(solution.turnCount, 0);
+    QCOMPARE(solution.selectedSweepAngleDeg, 90.0);
+    compareWithinTolerance(solution.pathLengthM, 10.0);
+}
+
+void LawnmowerCoveragePlannerTest::_testAutoAngleTieBreak()
+{
+    CoveragePlanningProblem problem = rectangleProblem(10.0, 10.0, 20.0, 0.0);
+    problem.sweepAngleMode = SweepAngleMode::Auto;
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    QCOMPARE(solution.turnCount, 0);
+    QCOMPARE(solution.selectedSweepAngleDeg, 0.0);
+    compareWithinTolerance(solution.pathLengthM, 10.0);
+}
+
+void LawnmowerCoveragePlannerTest::_testAutoRotatedRectangle()
+{
+    CoveragePlanningProblem problem;
+    problem.region.outerBoundary.vertices = {
+        {0.0, 0.0},
+        {17.3205080757, 10.0},
+        {12.3205080757, 18.6602540378},
+        {-5.0, 8.6602540378},
+    };
+    problem.swathWidthM = 4.0;
+    problem.sweepAngleMode = SweepAngleMode::Auto;
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    compareWithinTolerance(solution.selectedSweepAngleDeg, 30.0);
+    QCOMPARE(solution.turnCount, 2);
+}
+
+void LawnmowerCoveragePlannerTest::_testAutoFiltersNonMonotoneCandidates()
+{
+    CoveragePlanningProblem problem;
+    problem.region.outerBoundary.vertices = {
+        {0.0, 0.0}, {10.0, 0.0}, {10.0, 3.0}, {3.0, 3.0}, {3.0, 7.0}, {10.0, 7.0}, {10.0, 10.0}, {0.0, 10.0},
+    };
+    problem.swathWidthM = 20.0;
+    problem.sweepAngleMode = SweepAngleMode::Auto;
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    QCOMPARE(solution.selectedSweepAngleDeg, 0.0);
+    QCOMPARE(solution.turnCount, 0);
+}
+
+void LawnmowerCoveragePlannerTest::_testAutoIrregularPolygonDeterminism()
+{
+    CoveragePlanningProblem problem;
+    problem.region.outerBoundary.vertices = {
+        {-2.0, 4.0}, {0.0, 0.0}, {12.0, -1.0}, {18.0, 5.0}, {13.0, 10.0}, {2.0, 9.0},
+    };
+    problem.swathWidthM = 3.0;
+    problem.sweepAngleMode = SweepAngleMode::Auto;
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution first = planner.plan(problem);
+    const CoveragePlanningSolution second = planner.plan(problem);
+
+    QCOMPARE(first.status, PlanningStatus::Success);
+    QCOMPARE(first.error, CoveragePlanningError::None);
+    QCOMPARE(first.selectedSweepAngleDeg, second.selectedSweepAngleDeg);
+    QCOMPARE(first.turnCount, second.turnCount);
+    QCOMPARE(first.pathLengthM, second.pathLengthM);
+    QCOMPARE(first.path.size(), second.path.size());
+    for (std::size_t index = 0; index < first.path.size(); ++index) {
+        QCOMPARE(first.path[index].xM, second.path[index].xM);
+        QCOMPARE(first.path[index].yM, second.path[index].yM);
+    }
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(LawnmowerCoveragePlannerTest, TestLabel::Unit)
