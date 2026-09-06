@@ -89,6 +89,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     const std::string expectedPlannerId = "marine.coverage.mock";
     constexpr double ExpectedSwathWidthM = 8.5;
     constexpr double ExpectedSafetyMarginM = 2.25;
+    constexpr double ExpectedSweepAngleDeg = 37.5;
 
     QString expectedTaskId;
     PlanningResult expectedPlanningResult;
@@ -119,6 +120,8 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         configuredTask.region.outerBoundary = expectedBoundary;
         configuredTask.coverage.swathWidthM = ExpectedSwathWidthM;
         configuredTask.coverage.safetyMarginM = ExpectedSafetyMarginM;
+        configuredTask.coverage.sweepAngleMode = SweepAngleMode::Manual;
+        configuredTask.coverage.sweepAngleDeg = ExpectedSweepAngleDeg;
         configuredTask.sensors.cameraEnabled = true;
         configuredTask.sensors.cameraRecord = false;
         configuredTask.sensors.sonarEnabled = false;
@@ -166,6 +169,8 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     QCOMPARE(restoredTask->planner.plannerId, expectedPlannerId);
     QCOMPARE(restoredTask->coverage.swathWidthM, ExpectedSwathWidthM);
     QCOMPARE(restoredTask->coverage.safetyMarginM, ExpectedSafetyMarginM);
+    QCOMPARE(restoredTask->coverage.sweepAngleMode, SweepAngleMode::Manual);
+    QCOMPARE(restoredTask->coverage.sweepAngleDeg, ExpectedSweepAngleDeg);
     QVERIFY(restoredTask->sensors.cameraEnabled);
     QVERIFY(!restoredTask->sensors.cameraRecord);
     QVERIFY(!restoredTask->sensors.sonarEnabled);
@@ -178,6 +183,8 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
 
     const PlanningResult& restoredResult = restoredItem->planningResult();
     QCOMPARE(restoredResult.status, expectedPlanningResult.status);
+    QCOMPARE(restoredResult.selectedSweepAngleDeg, expectedPlanningResult.selectedSweepAngleDeg);
+    QCOMPARE(restoredResult.turnCount, expectedPlanningResult.turnCount);
     QCOMPARE(restoredResult.path.size(), expectedPlanningResult.path.size());
     QVERIFY(qAbs(restoredResult.pathLengthM - expectedPlanningResult.pathLengthM) < DistanceToleranceM);
     for (std::size_t index = 0; index < expectedPlanningResult.path.size(); ++index) {

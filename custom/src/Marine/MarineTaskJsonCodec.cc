@@ -20,6 +20,8 @@ constexpr const char* noGoRegionsKey = "noGoRegions";
 constexpr const char* coverageKey = "coverage";
 constexpr const char* swathWidthMKey = "swathWidthM";
 constexpr const char* safetyMarginMKey = "safetyMarginM";
+constexpr const char* sweepAngleModeKey = "sweepAngleMode";
+constexpr const char* sweepAngleDegKey = "sweepAngleDeg";
 constexpr const char* plannerKey = "planner";
 constexpr const char* plannerIdKey = "id";
 constexpr const char* sensorsKey = "sensors";
@@ -30,6 +32,24 @@ constexpr const char* sonarRecordKey = "sonarRecord";
 constexpr const char* latitudeKey = "lat";
 constexpr const char* longitudeKey = "lon";
 constexpr const char* coverageInspectionType = "coverageInspection";
+
+QString sweepAngleModeToString(Marine::SweepAngleMode mode)
+{
+    return mode == Marine::SweepAngleMode::Manual ? QStringLiteral("manual") : QStringLiteral("auto");
+}
+
+bool sweepAngleModeFromString(const QString& value, Marine::SweepAngleMode& mode)
+{
+    if (value == QStringLiteral("auto")) {
+        mode = Marine::SweepAngleMode::Auto;
+        return true;
+    }
+    if (value == QStringLiteral("manual")) {
+        mode = Marine::SweepAngleMode::Manual;
+        return true;
+    }
+    return false;
+}
 
 QJsonArray savePolygon(const Marine::GeoPolygon& polygon)
 {
@@ -91,7 +111,9 @@ bool MarineTaskJsonCodec::save(const MarineTask& task, QJsonObject& json, QStrin
     const QJsonObject regionObject{{outerBoundaryKey, savePolygon(task.region.outerBoundary)},
                                    {noGoRegionsKey, noGoRegions}};
     const QJsonObject coverageObject{{swathWidthMKey, task.coverage.swathWidthM},
-                                     {safetyMarginMKey, task.coverage.safetyMarginM}};
+                                     {safetyMarginMKey, task.coverage.safetyMarginM},
+                                     {sweepAngleModeKey, sweepAngleModeToString(task.coverage.sweepAngleMode)},
+                                     {sweepAngleDegKey, task.coverage.sweepAngleDeg}};
     const QJsonObject plannerObject{{plannerIdKey, QString::fromStdString(task.planner.plannerId)}};
     const QJsonObject sensorsObject{{cameraEnabledKey, task.sensors.cameraEnabled},
                                     {cameraRecordKey, task.sensors.cameraRecord},
@@ -152,6 +174,8 @@ bool MarineTaskJsonCodec::load(const QJsonObject& json, MarineTask& task, QStrin
     const QList<JsonParsing::KeyValidateInfo> coverageKeys = {
         {swathWidthMKey, QJsonValue::Double, true},
         {safetyMarginMKey, QJsonValue::Double, true},
+        {sweepAngleModeKey, QJsonValue::String, false},
+        {sweepAngleDegKey, QJsonValue::Double, false},
     };
     if (!JsonParsing::validateKeys(coverageObject, coverageKeys, errorString)) {
         return false;
@@ -200,6 +224,15 @@ bool MarineTaskJsonCodec::load(const QJsonObject& json, MarineTask& task, QStrin
 
     loadedTask.coverage.swathWidthM = coverageObject.value(swathWidthMKey).toDouble();
     loadedTask.coverage.safetyMarginM = coverageObject.value(safetyMarginMKey).toDouble();
+    if (coverageObject.contains(sweepAngleModeKey) &&
+        !sweepAngleModeFromString(coverageObject.value(sweepAngleModeKey).toString(),
+                                  loadedTask.coverage.sweepAngleMode)) {
+        errorString = QStringLiteral("Invalid sweep angle mode");
+        return false;
+    }
+    if (coverageObject.contains(sweepAngleDegKey)) {
+        loadedTask.coverage.sweepAngleDeg = coverageObject.value(sweepAngleDegKey).toDouble();
+    }
     loadedTask.planner.plannerId = plannerObject.value(plannerIdKey).toString().toStdString();
     loadedTask.sensors.cameraEnabled = sensorsObject.value(cameraEnabledKey).toBool();
     loadedTask.sensors.cameraRecord = sensorsObject.value(cameraRecordKey).toBool();

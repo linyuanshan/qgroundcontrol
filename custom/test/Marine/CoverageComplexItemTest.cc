@@ -358,6 +358,8 @@ void CoverageComplexItemTest::_testSaveLoad()
     const QJsonObject object = items.first().toObject();
     QVERIFY(object.contains(QStringLiteral("taskId")));
     QCOMPARE(object.value(QStringLiteral("planningStatus")).toString(), QStringLiteral("success"));
+    QVERIFY(object.contains(QStringLiteral("selectedSweepAngleDeg")));
+    QVERIFY(object.contains(QStringLiteral("turnCount")));
     QVERIFY(!object.contains(QStringLiteral("task")));
     QVERIFY(!object.contains(QStringLiteral("marine")));
 
@@ -367,6 +369,8 @@ void CoverageComplexItemTest::_testSaveLoad()
     QCOMPARE(loadedItem->taskId(), _item->taskId());
     QCOMPARE(loadedItem->planningState(), CoverageInspectionComplexItem::Planned);
     QCOMPARE(loadedItem->planningResult().status, PlanningStatus::Success);
+    QCOMPARE(loadedItem->selectedSweepAngleDeg(), _item->selectedSweepAngleDeg());
+    QCOMPARE(loadedItem->turnCount(), _item->turnCount());
     QCOMPARE(loadedItem->generatedPath(), _item->generatedPath());
     QCOMPARE(loadedItem->complexDistance(), _item->complexDistance());
     QCOMPARE(loadedItem->sequenceNumber(), 12);

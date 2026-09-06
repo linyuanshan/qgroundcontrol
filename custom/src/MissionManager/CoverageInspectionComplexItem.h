@@ -187,4 +187,6 @@ private:
     static constexpr const char* _jsonGeneratedPathKey = "generatedPath";
     static constexpr const char* _jsonPathLengthKey = "pathLengthM";
     static constexpr const char* _jsonPlanningMessageKey = "planningMessage";
+    static constexpr const char* _jsonSelectedSweepAngleKey = "selectedSweepAngleDeg";
+    static constexpr const char* _jsonTurnCountKey = "turnCount";
 };

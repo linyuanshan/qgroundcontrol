@@ -22,6 +22,8 @@ MarineTask createTask()
     };
     task.coverage.swathWidthM = 10.0;
     task.coverage.safetyMarginM = 2.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 37.5;
     task.planner.plannerId = "marine.coverage.mock";
     task.sensors.cameraEnabled = true;
     task.sensors.cameraRecord = false;
@@ -69,6 +71,8 @@ void MarineTaskJsonTest::_testRoundTrip()
     QCOMPARE(loaded.region.outerBoundary.vertices[1].longitudeDeg, 121.2);
     QCOMPARE(loaded.coverage.swathWidthM, source.coverage.swathWidthM);
     QCOMPARE(loaded.coverage.safetyMarginM, source.coverage.safetyMarginM);
+    QCOMPARE(loaded.coverage.sweepAngleMode, source.coverage.sweepAngleMode);
+    QCOMPARE(loaded.coverage.sweepAngleDeg, source.coverage.sweepAngleDeg);
     QVERIFY(loaded.planner.plannerId == source.planner.plannerId);
 }
 

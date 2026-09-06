@@ -465,6 +465,8 @@ void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
     object.insert(_jsonPlanningStatusKey, planningStatusToString(_planningResult.status));
     object.insert(_jsonPathLengthKey, _planningResult.pathLengthM);
     object.insert(_jsonPlanningMessageKey, QString::fromStdString(_planningResult.message));
+    object.insert(_jsonSelectedSweepAngleKey, _planningResult.selectedSweepAngleDeg);
+    object.insert(_jsonTurnCountKey, _planningResult.turnCount);
 
     QJsonValue pathValue;
     GeoJsonHelper::saveGeoCoordinateArray(generatedPath(), true, pathValue);
@@ -483,6 +485,8 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         {.key = _jsonGeneratedPathKey, .type = QJsonValue::Array, .required = true},
         {.key = _jsonPathLengthKey, .type = QJsonValue::Double, .required = true},
         {.key = _jsonPlanningMessageKey, .type = QJsonValue::String, .required = true},
+        {.key = _jsonSelectedSweepAngleKey, .type = QJsonValue::Double, .required = false},
+        {.key = _jsonTurnCountKey, .type = QJsonValue::Double, .required = false},
     };
     if (!JsonParsing::validateKeys(object, keyInfoList, errorString)) {
         return false;
@@ -518,6 +522,8 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
     result.status = status;
     result.pathLengthM = object.value(_jsonPathLengthKey).toDouble();
     result.message = object.value(_jsonPlanningMessageKey).toString().toStdString();
+    result.selectedSweepAngleDeg = object.value(_jsonSelectedSweepAngleKey).toDouble();
+    result.turnCount = object.value(_jsonTurnCountKey).toInt();
     result.path.reserve(static_cast<std::size_t>(path.size()));
     for (const QVariant& value : std::as_const(path)) {
         const auto coordinate = value.value<QGeoCoordinate>();
@@ -527,6 +533,11 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
     }
     if (!std::isfinite(result.pathLengthM) || (result.pathLengthM < 0.0)) {
         errorString = tr("Coverage inspection path length is invalid");
+        return false;
+    }
+    if (!std::isfinite(result.selectedSweepAngleDeg) || (result.selectedSweepAngleDeg < 0.0) ||
+        (result.selectedSweepAngleDeg >= 180.0) || (result.turnCount < 0)) {
+        errorString = tr("Coverage inspection planning metrics are invalid");
         return false;
     }
     if ((result.status == PlanningStatus::Success) && result.path.empty()) {
