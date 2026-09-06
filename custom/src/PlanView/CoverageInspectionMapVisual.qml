@@ -13,6 +13,8 @@ Item {
 
     readonly property var _missionItem: object
     readonly property bool _currentItem: root._missionItem.isCurrentItem
+    readonly property var _generatedPath: root._missionItem.generatedPath
+    readonly property bool _vertexDrag: root._missionItem.workRegionPolygon.vertexDrag
     property bool interactive: true
     property var map
     property var vehicle
@@ -20,7 +22,8 @@ Item {
     signal clicked(int sequenceNumber)
 
     Component.onCompleted: {
-        objectManager.createObjects([noGoRegionsComponent, generatedPathComponent], root.map, true);
+        objectManager.createObject(noGoRegionsComponent, root.map, false);
+        objectManager.createObject(generatedPathComponent, root.map, true);
     }
     Component.onDestruction: {
         objectManager.destroyObjects();
@@ -72,13 +75,11 @@ Item {
         id: generatedPathComponent
 
         MapPolyline {
-            id: generatedPathVisual
-
-            line.color: qgcPal.mapMissionTrajectory
+            line.color: "white"
             line.width: 3
             opacity: root.opacity
-            path: root._missionItem.generatedPath
-            visible: generatedPathVisual.path.length >= 2 && !root._missionItem.workRegionPolygon.vertexDrag
+            path: root._generatedPath
+            visible: root._currentItem && !root._vertexDrag && root._generatedPath.length >= 2
             z: QGroundControl.zOrderWaypointLines + 2
         }
     }
