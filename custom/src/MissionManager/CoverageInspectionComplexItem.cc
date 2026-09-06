@@ -28,6 +28,15 @@ bool pathsEqual(const std::vector<GeoPoint>& first, const std::vector<GeoPoint>&
     });
 }
 
+bool coordinatePathsEqual(const QList<QGeoCoordinate>& first, const QList<QGeoCoordinate>& second)
+{
+    return std::ranges::equal(first, second,
+                              [](const QGeoCoordinate& firstCoordinate, const QGeoCoordinate& secondCoordinate) {
+                                  return (firstCoordinate.latitude() == secondCoordinate.latitude()) &&
+                                         (firstCoordinate.longitude() == secondCoordinate.longitude());
+                              });
+}
+
 QString planningStatusToString(PlanningStatus status)
 {
     switch (status) {
@@ -64,15 +73,19 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
                                                              MarinePlanContext* marineContext)
     : ComplexMissionItem(masterController, flyView), _marineContext(marineContext)
 {
+    connect(&_workRegionPolygon, &QGCMapPolygon::pathChanged, this,
+            &CoverageInspectionComplexItem::_workRegionPolygonChanged);
     if (_marineContext) {
         connect(_marineContext, &MarinePlanContext::taskChanged, this, [this](const QString& changedTaskId) {
             if (changedTaskId == taskId()) {
+                _syncWorkRegionPolygonFromTask();
                 emit taskDataChanged();
                 invalidatePlan();
             }
         });
         connect(_marineContext, &MarinePlanContext::tasksCleared, this, [this]() {
             if (!_taskId.empty()) {
+                _syncWorkRegionPolygonFromTask();
                 emit taskDataChanged();
                 invalidatePlan();
             }
@@ -95,6 +108,7 @@ void CoverageInspectionComplexItem::setTaskId(const QString& taskId)
     }
 
     _taskId = newTaskId;
+    _syncWorkRegionPolygonFromTask();
     emit taskIdChanged();
     emit taskDataChanged();
     invalidatePlan();
@@ -149,6 +163,47 @@ void CoverageInspectionComplexItem::setSafetyMarginM(double safetyMarginM)
     MarineTask updatedTask = *marineTask;
     updatedTask.coverage.safetyMarginM = safetyMarginM;
     _replaceTask(updatedTask);
+}
+
+bool CoverageInspectionComplexItem::automaticSweepAngle() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask == nullptr) || (marineTask->coverage.sweepAngleMode == SweepAngleMode::Auto);
+}
+
+void CoverageInspectionComplexItem::setAutomaticSweepAngle(bool automatic)
+{
+    const MarineTask* marineTask = _task();
+    const SweepAngleMode mode = automatic ? SweepAngleMode::Auto : SweepAngleMode::Manual;
+    if ((marineTask == nullptr) || (marineTask->coverage.sweepAngleMode == mode)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.coverage.sweepAngleMode = mode;
+    _replaceTask(updatedTask);
+}
+
+double CoverageInspectionComplexItem::sweepAngleDeg() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) ? marineTask->coverage.sweepAngleDeg : 0.0;
+}
+
+void CoverageInspectionComplexItem::setSweepAngleDeg(double sweepAngleDeg)
+{
+    const MarineTask* marineTask = _task();
+    if ((marineTask == nullptr) || (marineTask->coverage.sweepAngleDeg == sweepAngleDeg)) {
+        return;
+    }
+    MarineTask updatedTask = *marineTask;
+    updatedTask.coverage.sweepAngleDeg = sweepAngleDeg;
+    _replaceTask(updatedTask);
+}
+
+QString CoverageInspectionComplexItem::plannerId() const
+{
+    const MarineTask* marineTask = _task();
+    return (marineTask != nullptr) ? QString::fromStdString(marineTask->planner.plannerId) : QString();
 }
 
 bool CoverageInspectionComplexItem::cameraEnabled() const
@@ -485,6 +540,7 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
 
     _taskId = loadedTaskId;
     _sequenceNumber = sequenceNumber;
+    _syncWorkRegionPolygonFromTask();
     _applyPlanningResult(std::move(result));
     setDirty(false);
     return true;
@@ -505,6 +561,7 @@ void CoverageInspectionComplexItem::_applyPlanningResult(PlanningResult result)
     if (stateChanged) {
         emit planningStateChanged();
     }
+    emit planningResultChanged();
     if (incompleteChanged) {
         emit isIncompleteChanged();
     }
@@ -538,6 +595,47 @@ void CoverageInspectionComplexItem::_replaceTask(const MarineTask& task)
     if (_marineContext) {
         (void) _marineContext->updateTask(task);
     }
+}
+
+void CoverageInspectionComplexItem::_workRegionPolygonChanged()
+{
+    if (_syncingWorkRegionPolygon) {
+        return;
+    }
+
+    const MarineTask* marineTask = _task();
+    if (marineTask == nullptr) {
+        return;
+    }
+
+    MarineTask updatedTask = *marineTask;
+    updatedTask.region.outerBoundary.vertices.clear();
+    const QList<QGeoCoordinate> coordinates = _workRegionPolygon.coordinateList();
+    updatedTask.region.outerBoundary.vertices.reserve(static_cast<std::size_t>(coordinates.size()));
+    for (const QGeoCoordinate& coordinate : coordinates) {
+        updatedTask.region.outerBoundary.vertices.push_back(
+            {.latitudeDeg = coordinate.latitude(), .longitudeDeg = coordinate.longitude(), .altitudeM = 0.0});
+    }
+    _replaceTask(updatedTask);
+}
+
+void CoverageInspectionComplexItem::_syncWorkRegionPolygonFromTask()
+{
+    QList<QGeoCoordinate> coordinates;
+    const MarineTask* marineTask = _task();
+    if (marineTask != nullptr) {
+        coordinates.reserve(static_cast<qsizetype>(marineTask->region.outerBoundary.vertices.size()));
+        for (const GeoPoint& point : marineTask->region.outerBoundary.vertices) {
+            coordinates.append(_toQGeoCoordinate(point));
+        }
+    }
+    if (coordinatePathsEqual(_workRegionPolygon.coordinateList(), coordinates)) {
+        return;
+    }
+
+    _syncingWorkRegionPolygon = true;
+    _workRegionPolygon.setPath(coordinates);
+    _syncingWorkRegionPolygon = false;
 }
 
 QVariantList CoverageInspectionComplexItem::_toQGeoCoordinates(const GeoPolygon& polygon)

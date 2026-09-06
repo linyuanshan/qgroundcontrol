@@ -24,6 +24,8 @@ private slots:
     void _testInvalidation();
     void _testQmlRegistration();
     void _testQmlTaskProperties();
+    void _testWorkRegionEditing();
+    void _testSweepAngleProperties();
     void _testSaveLoad();
     void _testLoadValidation();
 

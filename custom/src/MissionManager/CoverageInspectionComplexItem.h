@@ -9,6 +9,7 @@
 #include "ComplexMissionItem.h"
 #include "MarinePlanContext.h"
 #include "PlanningResult.h"
+#include "QGCMapPolygon.h"
 
 class CoverageInspectionComplexItem final : public ComplexMissionItem
 {
@@ -29,14 +30,21 @@ public:
     Q_PROPERTY(QString taskName READ taskName WRITE setTaskName NOTIFY taskDataChanged)
     Q_PROPERTY(double swathWidthM READ swathWidthM WRITE setSwathWidthM NOTIFY taskDataChanged)
     Q_PROPERTY(double safetyMarginM READ safetyMarginM WRITE setSafetyMarginM NOTIFY taskDataChanged)
+    Q_PROPERTY(bool automaticSweepAngle READ automaticSweepAngle WRITE setAutomaticSweepAngle NOTIFY taskDataChanged)
+    Q_PROPERTY(double sweepAngleDeg READ sweepAngleDeg WRITE setSweepAngleDeg NOTIFY taskDataChanged)
+    Q_PROPERTY(QString plannerId READ plannerId NOTIFY taskDataChanged)
     Q_PROPERTY(bool cameraEnabled READ cameraEnabled WRITE setCameraEnabled NOTIFY taskDataChanged)
     Q_PROPERTY(bool cameraRecord READ cameraRecord WRITE setCameraRecord NOTIFY taskDataChanged)
     Q_PROPERTY(bool sonarEnabled READ sonarEnabled WRITE setSonarEnabled NOTIFY taskDataChanged)
     Q_PROPERTY(bool sonarRecord READ sonarRecord WRITE setSonarRecord NOTIFY taskDataChanged)
     Q_PROPERTY(QVariantList outerBoundary READ outerBoundary NOTIFY taskDataChanged)
+    Q_PROPERTY(QGCMapPolygon* workRegionPolygon READ workRegionPolygon CONSTANT)
     Q_PROPERTY(QVariantList noGoRegions READ noGoRegions NOTIFY taskDataChanged)
     Q_PROPERTY(PlanningState planningState READ planningState NOTIFY planningStateChanged)
     Q_PROPERTY(QVariantList generatedPath READ generatedPath NOTIFY generatedPathChanged)
+    Q_PROPERTY(QString planningMessage READ planningMessage NOTIFY planningResultChanged)
+    Q_PROPERTY(double selectedSweepAngleDeg READ selectedSweepAngleDeg NOTIFY planningResultChanged)
+    Q_PROPERTY(int turnCount READ turnCount NOTIFY planningResultChanged)
 
     static constexpr const char* canonicalName = "Coverage Inspection";
     static constexpr const char* jsonComplexItemTypeValue = "coverageInspection";
@@ -50,6 +58,11 @@ public:
     void setSwathWidthM(double swathWidthM);
     double safetyMarginM() const;
     void setSafetyMarginM(double safetyMarginM);
+    bool automaticSweepAngle() const;
+    void setAutomaticSweepAngle(bool automatic);
+    double sweepAngleDeg() const;
+    void setSweepAngleDeg(double sweepAngleDeg);
+    QString plannerId() const;
     bool cameraEnabled() const;
     void setCameraEnabled(bool enabled);
     bool cameraRecord() const;
@@ -59,11 +72,20 @@ public:
     bool sonarRecord() const;
     void setSonarRecord(bool record);
     QVariantList outerBoundary() const;
+
+    QGCMapPolygon* workRegionPolygon() { return &_workRegionPolygon; }
+
     QVariantList noGoRegions() const;
 
     PlanningState planningState() const { return _planningState; }
 
     QVariantList generatedPath() const;
+
+    QString planningMessage() const { return QString::fromStdString(_planningResult.message); }
+
+    double selectedSweepAngleDeg() const { return _planningResult.selectedSweepAngleDeg; }
+
+    int turnCount() const { return _planningResult.turnCount; }
 
     const Marine::PlanningResult& planningResult() const { return _planningResult; }
 
@@ -141,9 +163,12 @@ signals:
     void taskDataChanged();
     void planningStateChanged();
     void generatedPathChanged();
+    void planningResultChanged();
 
 private:
+    void _workRegionPolygonChanged();
     void _applyPlanningResult(Marine::PlanningResult result);
+    void _syncWorkRegionPolygonFromTask();
     const Marine::MarineTask* _task() const;
     void _replaceTask(const Marine::MarineTask& task);
     static QVariantList _toQGeoCoordinates(const Marine::GeoPolygon& polygon);
@@ -151,9 +176,11 @@ private:
 
     std::string _taskId;
     Marine::PlanningResult _planningResult;
+    QGCMapPolygon _workRegionPolygon;
     QPointer<Marine::MarinePlanContext> _marineContext;
     PlanningState _planningState = Unplanned;
     int _sequenceNumber = 0;
+    bool _syncingWorkRegionPolygon = false;
 
     static constexpr const char* _jsonTaskIdKey = "taskId";
     static constexpr const char* _jsonPlanningStatusKey = "planningStatus";
