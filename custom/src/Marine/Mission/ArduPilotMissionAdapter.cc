@@ -39,13 +39,13 @@ bool ArduPilotMissionAdapter::appendWaypoints(const PlanningResult& result, QLis
 
     for (const GeoPoint& point : result.path) {
         items.append(new MissionItem(sequenceNumber++, MAV_CMD_NAV_WAYPOINT, MAV_FRAME_GLOBAL_RELATIVE_ALT,
-                                     0.0,                                       // Hold time
-                                     0.0,                                       // Acceptance radius
-                                     0.0,                                       // Pass through waypoint
-                                     std::numeric_limits<double>::quiet_NaN(),  // Yaw unchanged
-                                     point.latitudeDeg, point.longitudeDeg, point.altitudeM,
-                                     true,                                      // autoContinue
-                                     false,                                     // isCurrentItem
+                                     0.0,                                         // Hold time
+                                     0.0,                                         // Use ArduRover WP_RADIUS
+                                     0.0,                                         // Pass through waypoint
+                                     std::numeric_limits<double>::quiet_NaN(),    // Yaw unchanged
+                                     point.latitudeDeg, point.longitudeDeg, 0.0,  // Surface vehicle altitude
+                                     true,                                        // autoContinue
+                                     false,                                       // isCurrentItem
                                      parent));
     }
 
