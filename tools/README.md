@@ -85,6 +85,8 @@ tools/
 ├── setup/                     # Environment setup scripts
 ├── simulation/                # Vehicle simulators
 │   ├── mock_vehicle.py      # Lightweight MAVLink simulator
+│   ├── ardurover_sitl.py    # Pinned ArduRover SITL launcher (Docker)
+│   ├── ardurover-sitl/      # ArduRover SITL container build
 │   └── run-arducopter-sitl.sh  # ArduCopter SITL (Docker)
 └── translations/              # Translation tools
 ```
@@ -431,6 +433,17 @@ pip install pymavlink
 ./tools/simulation/mock_vehicle.py              # QGC connects to UDP 14550
 ./tools/simulation/mock_vehicle.py --tcp --port 5760  # TCP mode
 ```
+
+### ArduRover SITL (Marine P1)
+
+```bash
+python tools/simulation/ardurover_sitl.py start
+python tools/simulation/ardurover_sitl.py logs
+python tools/simulation/ardurover_sitl.py stop
+```
+
+The first start builds a Docker image containing the pinned ArduRover release. Connect QGroundControl to
+`tcp://127.0.0.1:5760` and use the Marine P1 SITL protocol under `docs/marine/`.
 
 ### ArduCopter SITL (Full Simulation)
 
