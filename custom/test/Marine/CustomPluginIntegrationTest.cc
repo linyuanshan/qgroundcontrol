@@ -3,6 +3,8 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 
+#include <memory>
+
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
 #include "MarinePlanContext.h"
@@ -223,7 +225,7 @@ void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()
         {QStringLiteral("planningMessage"), QStringLiteral("")},
     };
     errorString.clear();
-    auto* item = new CoverageInspectionComplexItem(planController(), false, context);
+    auto item = std::make_unique<CoverageInspectionComplexItem>(planController(), false, context);
     QVERIFY(!item->load(brokenReference, 0, errorString));
     QVERIFY(errorString.contains(QStringLiteral("missing-task")));
 }
