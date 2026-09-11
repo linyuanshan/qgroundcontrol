@@ -74,8 +74,8 @@ std::vector<double> edgeAngleCandidates(const Marine::Polygon2D& polygon)
     candidates.reserve(polygon.vertices.size());
     Marine::Point2D first = polygon.vertices.back();
     for (const Marine::Point2D& second : polygon.vertices) {
-        const double angleDeg = std::atan2(second.yM - first.yM, second.xM - first.xM) * 180.0 / std::numbers::pi;
-        candidates.push_back(normalizedSweepAngle(angleDeg));
+        const double mathAngleDeg = std::atan2(second.yM - first.yM, second.xM - first.xM) * 180.0 / std::numbers::pi;
+        candidates.push_back(Marine::Geometry::mathAngleToNavigationAngle(mathAngleDeg));
         first = second;
     }
 
@@ -109,37 +109,71 @@ bool candidateIsBetter(const Marine::CoveragePlanningSolution& candidate,
 }
 
 Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlanningProblem& problem,
-                                                   const Marine::Polygon2D& navigablePolygon, double sweepAngleDeg)
+                                                   const Marine::Polygon2D& navigablePolygon, double navigationAngleDeg)
 {
-    if (!Marine::Geometry::isSweepMonotone(navigablePolygon, sweepAngleDeg)) {
+    const double mathAngleDeg = Marine::Geometry::navigationAngleToMathAngle(navigationAngleDeg);
+    if (!Marine::Geometry::isSweepMonotone(navigablePolygon, mathAngleDeg)) {
         return failureSolution(Marine::CoveragePlanningError::NonMonotoneSweep);
     }
 
-    const Marine::Polygon2D sweepPolygon = Marine::Geometry::toSweepFrame(navigablePolygon, sweepAngleDeg);
-    double minimumY = std::numeric_limits<double>::max();
-    double maximumY = std::numeric_limits<double>::lowest();
-    for (const Marine::Point2D& vertex : sweepPolygon.vertices) {
-        minimumY = std::min(minimumY, vertex.yM);
-        maximumY = std::max(maximumY, vertex.yM);
+    const Marine::Polygon2D targetSweepPolygon =
+        Marine::Geometry::toSweepFrame(problem.region.outerBoundary, mathAngleDeg);
+    const Marine::Polygon2D safeSweepPolygon = Marine::Geometry::toSweepFrame(navigablePolygon, mathAngleDeg);
+    const auto crossTrackExtents = [](const Marine::Polygon2D& polygon) {
+        std::pair<double, double> extents{std::numeric_limits<double>::max(), std::numeric_limits<double>::lowest()};
+        for (const Marine::Point2D& vertex : polygon.vertices) {
+            extents.first = std::min(extents.first, vertex.yM);
+            extents.second = std::max(extents.second, vertex.yM);
+        }
+        return extents;
+    };
+    const auto [targetMinimumY, targetMaximumY] = crossTrackExtents(targetSweepPolygon);
+    const auto [safeMinimumY, safeMaximumY] = crossTrackExtents(safeSweepPolygon);
+    const double halfSwathM = problem.swathWidthM / 2.0;
+    const double firstLaneMaximumY = targetMinimumY + halfSwathM;
+    const double lastLaneMinimumY = targetMaximumY - halfSwathM;
+
+    if ((safeMinimumY > firstLaneMaximumY + Marine::Geometry::LengthEpsilonM) ||
+        (safeMaximumY < lastLaneMinimumY - Marine::Geometry::LengthEpsilonM)) {
+        return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
     }
 
-    const double heightM = maximumY - minimumY;
-    const double laneCountValue = (heightM <= problem.swathWidthM) ? 1.0 : std::ceil(heightM / problem.swathWidthM);
-    if (!std::isfinite(laneCountValue) || (laneCountValue < 1.0) ||
-        (laneCountValue > static_cast<double>(std::numeric_limits<int>::max()))) {
-        return failureSolution(Marine::CoveragePlanningError::GeometryFailure);
+    std::vector<double> lanePositionsY;
+    double spacingM = 0.0;
+    if (lastLaneMinimumY <= firstLaneMaximumY + Marine::Geometry::LengthEpsilonM) {
+        const double feasibleMinimumY = std::max(safeMinimumY, lastLaneMinimumY);
+        const double feasibleMaximumY = std::min(safeMaximumY, firstLaneMaximumY);
+        if (feasibleMinimumY > feasibleMaximumY + Marine::Geometry::LengthEpsilonM) {
+            return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
+        }
+        lanePositionsY.push_back((feasibleMinimumY + feasibleMaximumY) / 2.0);
+    } else {
+        const double firstLaneY = std::clamp(firstLaneMaximumY, safeMinimumY, safeMaximumY);
+        const double lastLaneY = std::clamp(lastLaneMinimumY, safeMinimumY, safeMaximumY);
+        const double laneSpanM = lastLaneY - firstLaneY;
+        const double intervalCountValue = std::ceil(laneSpanM / problem.swathWidthM);
+        if (!std::isfinite(intervalCountValue) || (intervalCountValue < 1.0) ||
+            (intervalCountValue >= static_cast<double>(std::numeric_limits<int>::max()))) {
+            return failureSolution(Marine::CoveragePlanningError::GeometryFailure);
+        }
+        const auto intervalCount = static_cast<std::size_t>(intervalCountValue);
+        spacingM = laneSpanM / intervalCountValue;
+        lanePositionsY.reserve(intervalCount + 1);
+        for (std::size_t laneIndex = 0; laneIndex <= intervalCount; ++laneIndex) {
+            lanePositionsY.push_back(firstLaneY + (static_cast<double>(laneIndex) * spacingM));
+        }
     }
 
-    const auto laneCount = static_cast<std::size_t>(laneCountValue);
-    const double spacingM = heightM / laneCountValue;
     std::vector<Marine::Point2D> path;
-    path.reserve(laneCount * 2);
+    path.reserve(lanePositionsY.size() * 2);
     std::size_t generatedLaneCount = 0;
-    for (std::size_t laneIndex = 0; laneIndex < laneCount; ++laneIndex) {
-        const double laneY = minimumY + ((static_cast<double>(laneIndex) + 0.5) * spacingM);
-        const Marine::Geometry::ScanlineResult intersection = Marine::Geometry::intersectScanline(sweepPolygon, laneY);
+    double generatedMinimumY = std::numeric_limits<double>::max();
+    double generatedMaximumY = std::numeric_limits<double>::lowest();
+    for (const double laneY : lanePositionsY) {
+        const Marine::Geometry::ScanlineResult intersection =
+            Marine::Geometry::intersectScanline(safeSweepPolygon, laneY);
         if (intersection.status == Marine::Geometry::ScanlineStatus::NoIntersection) {
-            continue;
+            return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
         }
         if (intersection.status != Marine::Geometry::ScanlineStatus::Success) {
             return failureSolution(Marine::CoveragePlanningError::GeometryFailure);
@@ -154,8 +188,10 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
         if ((generatedLaneCount % 2) != 0) {
             std::swap(first, second);
         }
-        path.push_back(Marine::Geometry::fromSweepFrame(first, sweepAngleDeg));
-        path.push_back(Marine::Geometry::fromSweepFrame(second, sweepAngleDeg));
+        path.push_back(Marine::Geometry::fromSweepFrame(first, mathAngleDeg));
+        path.push_back(Marine::Geometry::fromSweepFrame(second, mathAngleDeg));
+        generatedMinimumY = std::min(generatedMinimumY, laneY);
+        generatedMaximumY = std::max(generatedMaximumY, laneY);
         ++generatedLaneCount;
     }
 
@@ -164,6 +200,10 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
     }
     if (!std::isfinite(spacingM) || (spacingM > problem.swathWidthM + Marine::Geometry::LengthEpsilonM)) {
         return failureSolution(Marine::CoveragePlanningError::InvalidGeneratedPath);
+    }
+    if (((generatedMinimumY - halfSwathM) > targetMinimumY + Marine::Geometry::LengthEpsilonM) ||
+        ((generatedMaximumY + halfSwathM) < targetMaximumY - Marine::Geometry::LengthEpsilonM)) {
+        return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
     }
     for (const Marine::Point2D& point : path) {
         if (!point.isFinite() || !Marine::Geometry::containsPoint(navigablePolygon, point)) {
@@ -190,7 +230,7 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
     solution.status = Marine::PlanningStatus::Success;
     solution.path = std::move(path);
     solution.pathLengthM = candidatePathLengthM;
-    solution.selectedSweepAngleDeg = sweepAngleDeg;
+    solution.selectedSweepAngleDeg = navigationAngleDeg;
     solution.turnCount = static_cast<int>(generatedLaneCount - 1);
     return solution;
 }
@@ -237,12 +277,13 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     bool foundCandidate = false;
     bool foundMonotoneAngle = false;
     CoveragePlanningError candidateFailure = CoveragePlanningError::InvalidGeneratedPath;
-    for (const double sweepAngleDeg : edgeAngleCandidates(normalizedProblem.region.outerBoundary)) {
-        if (!Geometry::isSweepMonotone(inset.polygon, sweepAngleDeg)) {
+    for (const double navigationAngleDeg : edgeAngleCandidates(normalizedProblem.region.outerBoundary)) {
+        const double mathAngleDeg = Geometry::navigationAngleToMathAngle(navigationAngleDeg);
+        if (!Geometry::isSweepMonotone(inset.polygon, mathAngleDeg)) {
             continue;
         }
         foundMonotoneAngle = true;
-        CoveragePlanningSolution candidate = generateCandidate(normalizedProblem, inset.polygon, sweepAngleDeg);
+        CoveragePlanningSolution candidate = generateCandidate(normalizedProblem, inset.polygon, navigationAngleDeg);
         if (candidate.status != PlanningStatus::Success) {
             if ((candidate.error == CoveragePlanningError::UnsafeConnector) ||
                 (candidateFailure != CoveragePlanningError::UnsafeConnector)) {

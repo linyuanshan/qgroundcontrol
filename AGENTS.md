@@ -167,6 +167,10 @@ Manual / Auto Sweep Direction
     ↓
 Lawnmower Coverage
     ↓
+CoveragePlanningSolution
+    ↓
+CoverageTaskAdapter
+    ↓
 PlanningResult
     ↓
 ArduPilotMissionAdapter
@@ -215,7 +219,15 @@ Canonical flow:
 ```text
 MarineTask
     ↓
+CoverageTaskAdapter
+    ↓
+CoveragePlanningProblem
+    ↓
 Coverage Planner
+    ↓
+CoveragePlanningSolution
+    ↓
+CoverageTaskAdapter
     ↓
 PlanningResult
     ↓
@@ -242,7 +254,7 @@ PlanMasterController
 
 Planner logic should operate on Marine-owned data structures and be independently unit-testable.
 
-A planner returns a `PlanningResult`.
+A planner returns a `CoveragePlanningSolution`. `CoverageTaskAdapter` converts that solution to a `PlanningResult`.
 
 A planner must never directly create `MissionItem` objects.
 

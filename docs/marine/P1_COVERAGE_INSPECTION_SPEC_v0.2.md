@@ -865,6 +865,16 @@ P1 正式定义：
 
 > `safetyMarginM` 是 **USV 规划中心线** 与 Work Region 外边界之间要求保持的最小几何距离。
 
+`WorkRegion` 始终是名义 Coverage Target，而不是 inset 后的区域。固定 swath 的首、尾航线必须在保持
+中心线位于 NavigableRegion 的同时，使各自半个 swath 到达名义 WorkRegion 的 cross-track 边界。
+若两项约束不能同时成立，Planner 必须返回：
+
+```text
+CoverageImpossibleWithSafetyMargin
+```
+
+不得仅覆盖 inset region 后返回 Success。
+
 不表示：
 
 ```text
@@ -1337,6 +1347,7 @@ all segments safe
 pathLength finite
 pathLength > 0
 spacing <= swathWidth
+first/last swath reaches the nominal WorkRegion cross-track boundary
 ```
 
 若任一失败：
@@ -1362,6 +1373,8 @@ enum class CoveragePlanningError
     InvalidSwathWidth,
     InvalidSafetyMargin,
     InvalidSweepAngle,
+
+    CoverageImpossibleWithSafetyMargin,
 
     UnsupportedNoGoRegion,
     SafetyInsetEmpty,
@@ -1415,6 +1428,7 @@ InvalidInput
 而：
 
 ```text
+CoverageImpossibleWithSafetyMargin
 UnsupportedNoGoRegion
 NonMonotoneSweep
 SafetyInsetDisconnected

@@ -16,7 +16,7 @@ Full text: [LICENSE-GPL](../LICENSE-GPL) · <http://www.gnu.org/licenses/gpl-3.0
 
 ## Contributing
 
-Contributions must be compatible with **both** licenses. Acceptable sources: original work, or code under BSD-2-Clause, BSD-3-Clause, MIT, Apache 2.0, or Boost Software License 1.0. GPL-only code cannot be accepted.
+Contributions must be compatible with **both** licenses. Acceptable sources: original work, or code under BSD-2-Clause, BSD-3-Clause, MIT, or Apache 2.0. GPL-only code cannot be accepted.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full process.
 

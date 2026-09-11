@@ -85,7 +85,7 @@ void CoverageProblemValidatorTest::_testNumericValidation()
 
     problem = validProblem();
     problem.safetyMarginM = 3.01;
-    QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::InvalidSafetyMargin);
+    QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
 
     problem = validProblem();
     problem.safetyMarginM = problem.swathWidthM / 2.0;
@@ -145,12 +145,14 @@ void CoverageProblemValidatorTest::_testErrorMapping()
              PlanningStatus::InvalidInput);
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::UnsupportedNoGoRegion),
              PlanningStatus::Failed);
+    QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::CoverageImpossibleWithSafetyMargin),
+             PlanningStatus::Failed);
 
     QVERIFY(!CoverageProblemValidator::messageForError(CoveragePlanningError::InvalidOuterBoundary).empty());
     QVERIFY(CoverageProblemValidator::messageForError(CoveragePlanningError::UnsupportedNoGoRegion).find("P2") !=
             std::string::npos);
-    QVERIFY(CoverageProblemValidator::messageForError(CoveragePlanningError::InvalidSafetyMargin).find("swath") !=
-            std::string::npos);
+    QVERIFY(CoverageProblemValidator::messageForError(CoveragePlanningError::CoverageImpossibleWithSafetyMargin)
+                .find("nominal") != std::string::npos);
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(CoverageProblemValidatorTest, TestLabel::Unit)

@@ -357,39 +357,49 @@ PolygonInsetResult insetPolygon(const Polygon2D& polygon, double marginM)
     return {PolygonInsetStatus::Success, std::move(inset)};
 }
 
-Point2D toSweepFrame(const Point2D& point, double sweepAngleDeg)
+double navigationAngleToMathAngle(double navigationAngleDeg)
 {
-    const double angleRad = normalizedSweepAngle(sweepAngleDeg) * std::numbers::pi / 180.0;
+    return normalizedSweepAngle(90.0 - navigationAngleDeg);
+}
+
+double mathAngleToNavigationAngle(double mathAngleDeg)
+{
+    return normalizedSweepAngle(90.0 - mathAngleDeg);
+}
+
+Point2D toSweepFrame(const Point2D& point, double mathAngleDeg)
+{
+    const double angleRad = normalizedSweepAngle(mathAngleDeg) * std::numbers::pi / 180.0;
     const double cosine = std::cos(angleRad);
     const double sine = std::sin(angleRad);
     return {(cosine * point.xM) + (sine * point.yM), (-sine * point.xM) + (cosine * point.yM)};
 }
 
-Polygon2D toSweepFrame(const Polygon2D& polygon, double sweepAngleDeg)
+Polygon2D toSweepFrame(const Polygon2D& polygon, double mathAngleDeg)
 {
     Polygon2D transformed;
     transformed.vertices.reserve(polygon.vertices.size());
     for (const Point2D& vertex : polygon.vertices) {
-        transformed.vertices.push_back(toSweepFrame(vertex, sweepAngleDeg));
+        transformed.vertices.push_back(toSweepFrame(vertex, mathAngleDeg));
     }
     return transformed;
 }
 
-Point2D fromSweepFrame(const Point2D& point, double sweepAngleDeg)
+Point2D fromSweepFrame(const Point2D& point, double mathAngleDeg)
 {
-    const double angleRad = normalizedSweepAngle(sweepAngleDeg) * std::numbers::pi / 180.0;
+    const double angleRad = normalizedSweepAngle(mathAngleDeg) * std::numbers::pi / 180.0;
     const double cosine = std::cos(angleRad);
     const double sine = std::sin(angleRad);
     return {(cosine * point.xM) - (sine * point.yM), (sine * point.xM) + (cosine * point.yM)};
 }
 
-bool isSweepMonotone(const Polygon2D& polygon, double sweepAngleDeg)
+bool isSweepMonotone(const Polygon2D& polygon, double mathAngleDeg)
 {
-    if (!isSimpleNonDegeneratePolygon(polygon) || !std::isfinite(sweepAngleDeg)) {
+    if (!isSimpleNonDegeneratePolygon(polygon) || !std::isfinite(mathAngleDeg)) {
         return false;
     }
 
-    const Polygon2D sweepPolygon = toSweepFrame(polygon, sweepAngleDeg);
+    const Polygon2D sweepPolygon = toSweepFrame(polygon, mathAngleDeg);
     const std::size_t minimum = extremeVertexIndex(sweepPolygon, true);
     const std::size_t maximum = extremeVertexIndex(sweepPolygon, false);
     return chainYIsNonDecreasing(sweepPolygon, minimum, maximum, 1) &&

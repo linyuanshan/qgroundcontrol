@@ -104,7 +104,7 @@ void CoveragePlannerTest::_testCapabilityGate()
 
     const CoveragePlanningSolution solution = planner.plan(problem);
     QVERIFY(solution.status == PlanningStatus::Failed);
-    QVERIFY(solution.error == CoveragePlanningError::UnsupportedNoGoRegion);
+    QCOMPARE(solution.error, CoveragePlanningError::UnsupportedNoGoRegion);
     QVERIFY(solution.path.empty());
     QVERIFY(solution.message.find("P2") != std::string::npos);
 }

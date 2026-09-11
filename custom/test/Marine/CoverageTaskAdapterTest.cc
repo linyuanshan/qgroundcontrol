@@ -117,8 +117,8 @@ void CoverageTaskAdapterTest::_testValidationAndNormalization()
 
     task = createTask();
     task.coverage.safetyMarginM = 4.01;
-    QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
-    QVERIFY(error == CoveragePlanningError::InvalidSafetyMargin);
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(problem.safetyMarginM, 4.01);
 }
 
 void CoverageTaskAdapterTest::_testUnsupportedNoGoRegion()

@@ -24,6 +24,7 @@ struct CoverageConfig
     double swathWidthM = 0.0;
     double safetyMarginM = 0.0;
     SweepAngleMode sweepAngleMode = SweepAngleMode::Auto;
+    // Navigation bearing: 0 degrees North, 90 degrees East, clockwise positive.
     double sweepAngleDeg = 0.0;
 };
 

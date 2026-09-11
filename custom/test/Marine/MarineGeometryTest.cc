@@ -145,6 +145,10 @@ void MarineGeometryTest::_testDeterminismAndPrecision()
 
 void MarineGeometryTest::_testSweepFrameTransform()
 {
+    compareWithinTolerance(Geometry::navigationAngleToMathAngle(0.0), 90.0);
+    compareWithinTolerance(Geometry::navigationAngleToMathAngle(90.0), 0.0);
+    compareWithinTolerance(Geometry::mathAngleToNavigationAngle(30.0), 60.0);
+
     const Point2D input{3.0, 4.0};
     const Point2D sweepPoint = Geometry::toSweepFrame(input, 90.0);
     compareWithinTolerance(sweepPoint.xM, 4.0);

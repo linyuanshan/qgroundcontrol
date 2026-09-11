@@ -44,10 +44,12 @@ struct ScanlineResult
 
 [[nodiscard]] bool isSimpleNonDegeneratePolygon(const Polygon2D& polygon);
 [[nodiscard]] PolygonInsetResult insetPolygon(const Polygon2D& polygon, double marginM);
-[[nodiscard]] Point2D toSweepFrame(const Point2D& point, double sweepAngleDeg);
-[[nodiscard]] Polygon2D toSweepFrame(const Polygon2D& polygon, double sweepAngleDeg);
-[[nodiscard]] Point2D fromSweepFrame(const Point2D& point, double sweepAngleDeg);
-[[nodiscard]] bool isSweepMonotone(const Polygon2D& polygon, double sweepAngleDeg);
+[[nodiscard]] double navigationAngleToMathAngle(double navigationAngleDeg);
+[[nodiscard]] double mathAngleToNavigationAngle(double mathAngleDeg);
+[[nodiscard]] Point2D toSweepFrame(const Point2D& point, double mathAngleDeg);
+[[nodiscard]] Polygon2D toSweepFrame(const Polygon2D& polygon, double mathAngleDeg);
+[[nodiscard]] Point2D fromSweepFrame(const Point2D& point, double mathAngleDeg);
+[[nodiscard]] bool isSweepMonotone(const Polygon2D& polygon, double mathAngleDeg);
 [[nodiscard]] ScanlineResult intersectScanline(const Polygon2D& sweepAlignedPolygon, double yM);
 [[nodiscard]] bool containsPoint(const Polygon2D& polygon, const Point2D& point);
 [[nodiscard]] bool containsSegment(const Polygon2D& polygon, const Point2D& first, const Point2D& second);

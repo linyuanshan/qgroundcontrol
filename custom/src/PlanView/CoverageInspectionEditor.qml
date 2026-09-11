@@ -146,7 +146,7 @@ Rectangle {
             }
 
             QGCLabel {
-                text: qsTr("Manual Angle")
+                text: qsTr("Manual Angle (0° N, 90° E)")
                 visible: !root.missionItem.automaticSweepAngle
             }
 
@@ -235,7 +235,7 @@ Rectangle {
             rowSpacing: root._margin
             visible: root.missionItem.planningState === 1
 
-            QGCLabel { text: qsTr("Selected Angle") }
+            QGCLabel { text: qsTr("Selected Angle (0° N, 90° E)") }
             QGCLabel { text: qsTr("%1°").arg(root.missionItem.selectedSweepAngleDeg.toFixed(1)) }
             QGCLabel { text: qsTr("Path Length") }
             QGCLabel { text: qsTr("%1 m").arg(root.missionItem.complexDistance.toFixed(1)) }

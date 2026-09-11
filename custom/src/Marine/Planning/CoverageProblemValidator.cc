@@ -14,8 +14,7 @@ CoveragePlanningError CoverageProblemValidator::validateAndNormalize(CoveragePla
     if (!std::isfinite(problem.swathWidthM) || (problem.swathWidthM <= 0.0)) {
         return CoveragePlanningError::InvalidSwathWidth;
     }
-    if (!std::isfinite(problem.safetyMarginM) || (problem.safetyMarginM < 0.0) ||
-        (problem.safetyMarginM > (problem.swathWidthM / 2.0))) {
+    if (!std::isfinite(problem.safetyMarginM) || (problem.safetyMarginM < 0.0)) {
         return CoveragePlanningError::InvalidSafetyMargin;
     }
 
@@ -55,6 +54,7 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::InvalidSafetyMargin:
         case CoveragePlanningError::InvalidSweepAngle:
             return PlanningStatus::InvalidInput;
+        case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
         case CoveragePlanningError::UnsupportedNoGoRegion:
         case CoveragePlanningError::SafetyInsetEmpty:
         case CoveragePlanningError::SafetyInsetDisconnected:
@@ -78,9 +78,11 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
         case CoveragePlanningError::InvalidSwathWidth:
             return "Coverage swath width must be finite and greater than zero";
         case CoveragePlanningError::InvalidSafetyMargin:
-            return "Safety margin must be finite, non-negative, and no greater than half the swath width";
+            return "Safety margin must be finite and non-negative";
         case CoveragePlanningError::InvalidSweepAngle:
             return "Manual sweep angle must be finite";
+        case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
+            return "The nominal work region cannot be fully covered while keeping centerlines inside the safety inset";
         case CoveragePlanningError::UnsupportedNoGoRegion:
             return "Internal no-go coverage routing is reserved for P2.";
         case CoveragePlanningError::SafetyInsetEmpty:
