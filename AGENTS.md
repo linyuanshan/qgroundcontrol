@@ -24,7 +24,8 @@ Before modifying repository files:
 3. Read `test/README.md` when changing or adding tests.
 4. Read `.github/ci-overview.md` when changing build, CI, or test integration.
 5. For Marine work, read the current Marine phase specification, especially:
-   - `docs/marine/P1_COVERAGE_INSPECTION_SPEC_v0.2.md` during P1;
+   - `docs/marine/P2_COMPLEX_COVERAGE_SPEC_v0.2.md` during P2;
+   - `docs/marine/P1_COVERAGE_INSPECTION_SPEC_v0.2.md` for the frozen P1 coverage baseline;
    - `docs/marine/P0_FOUNDATION_SPEC_v0.2.md` for frozen P0 architecture and persistence invariants.
 6. Inspect the current repository implementation before assuming an API from documentation or previous discussion.
 7. Before the first edit, report which instruction/design files were read and any important API differences discovered.
@@ -142,30 +143,42 @@ ROS 2
 
 QGroundControl must remain ROS-independent. Do not directly link ROS 2 runtime libraries such as `rclcpp` into QGC unless a future approved design explicitly changes this boundary.
 
-### 7. Current Phase: P1
+### 7. Current Phase: P2
 
 The current implementation target is:
 
 ```text
-P1 — USV Coverage Inspection V1
+P2 — Complex Coverage Planning V1
 ```
 
-P0 is frozen. P1 adds a real, bounded coverage planner for general convex and supported sweep-monotone simple regions without weakening the P0 vertical-slice boundaries.
+P0 and the P1 software baseline are frozen. P1 Engineering Freeze is approved; P1 real-USV field validation is
+deferred and not executed. P2 adds static complex coverage for a simple outer boundary with finite static No-Go
+polygons while preserving P0/P1 behavior and architecture.
 
-Required P1 flow:
+Required P2 flow:
 
 ```text
 MarineTask
     ↓
 CoverageTaskAdapter
     ↓
-Local ENU CoveragePlanningProblem
+Local ENU CoveragePlanningProblem with outer boundary and No-Go regions
     ↓
-Safety Inset
+CoverageTarget + TrackFeasibleRegion
     ↓
-Manual / Auto Sweep Direction
+Restricted event-driven slab BCD
     ↓
-Lawnmower Coverage
+P1 MonotoneCoverage primitive per cell
+    ↓
+Forward / Reverse cell traversal
+    ↓
+Visibility Graph + Dijkstra transit
+    ↓
+Greedy oriented-cell ordering
+    ↓
+Canonical path + Coverage/Transit leg roles
+    ↓
+Nominal coverage completeness
     ↓
 CoveragePlanningSolution
     ↓
@@ -177,20 +190,22 @@ ArduPilotMissionAdapter
     ↓
 MAVLink Mission
     ↓
-ArduRover SITL / real USV validation
+ArduRover SITL
 ```
 
-Do not reopen or redesign P0 merely to implement P1.
+P2 solves static complex coverage planning. Do not reopen or redesign P0/P1 merely to implement P2.
 
-### 8. P1 Design Authority
+### 8. P2 Design Authority
 
-Before P1 changes, read:
+Before P2 changes, read:
 
 ```text
-docs/marine/P1_COVERAGE_INSPECTION_SPEC_v0.2.md
+docs/marine/P2_COMPLEX_COVERAGE_SPEC_v0.2.md
 ```
 
-That frozen document defines the P1 implementation baseline. The P0 specification remains authoritative for the already-frozen Task/Plan/Mission separation, persistence, adapter boundaries, and plan-scoped context.
+That frozen document defines the P2 implementation baseline. The P0 and P1 specifications remain authoritative
+for frozen Task/Plan/Mission separation, persistence, adapter boundaries, plan-scoped context, navigation-angle
+semantics, centerline safety, nominal coverage-target semantics, and P1 planner compatibility.
 
 If the current QGroundControl API differs from the specification:
 
@@ -282,6 +297,10 @@ lawnmower planning
 polygon clipping
 polygon offset
 BCD decomposition
+visibility graph construction
+static safe routing
+cell traversal ordering
+nominal coverage completeness
 path ordering/optimization
 turn-radius planning
 current-aware optimization
@@ -304,7 +323,8 @@ MissionItem[]
 
 It must not silently rerun the planner.
 
-P0 waypoint behavior remains frozen. During P1, extend `ArduPilotMissionAdapter` only as explicitly required by the P1 specification and ArduRover validation.
+P0/P1 waypoint behavior remains frozen. P2 path-leg metadata must not force a MissionAdapter refactor;
+`ArduPilotMissionAdapter` may continue consuming only the canonical `PlanningResult.path`.
 
 Do not add speed, camera, sonar, RTL, hold, or other execution commands unless the active phase specification requires them.
 
@@ -351,19 +371,42 @@ outerBoundary
 noGoRegions[]
 ```
 
-and P1 builds on that structure.
+and P2 uses both parts of that structure.
 
-Extend only fields and types required by the frozen P1 specification; centralize persistence in `MarineTaskJsonCodec`.
+Extend only fields and types required by the frozen P2 specification; centralize task persistence in
+`MarineTaskJsonCodec`. P2 planning-artifact evolution must load P1 version 1 artifacts without replanning or
+changing waypoint order.
 
-### 15. P1 Features Explicitly Out of Scope
+#### P2 Shared-Layer Evolution
 
-Do not implement the following during P1:
+- `CoverageTaskAdapter` converts the outer boundary and every No-Go polygon through the same plan-scoped
+  `GeoReference`. It must not retain a P1-specific No-Go rejection gate.
+- `CoverageProblemValidator` retains generic numeric validity, generic outer-geometry validity, and angle
+  normalization. Concrete planners own capability checks: the P1 Lawnmower planner rejects No-Go, while the P2
+  BCD planner supports valid No-Go input.
+- P2 must extract the tested P1 monotone coverage core into a pure `MonotoneCoverage` primitive. Do not call the
+  complete `LawnmowerCoveragePlanner::plan()` for each P2 cell and do not duplicate the algorithm.
+- The canonical coordinate source remains `path`. Add `PathLegRole` metadata for Coverage/Transit semantics; do
+  not replace the canonical path with geographic path-segment objects.
+- `MissionAdapter` remains path-only during P2-01.
+
+Clipper2 remains pinned, Marine-private, and hidden behind the Marine geometry backend. Keep fork-level
+attribution in `custom/src/Marine/THIRD_PARTY.md`; do not modify upstream `.github/COPYING.md` to establish a
+license policy, and do not make new legal compatibility conclusions.
+
+### 15. P2 Features Explicitly Out of Scope
+
+Do not implement the following during P2:
 
 ```text
-no-go routing
-full No-Go editor unless it is near-direct reuse with no new workflow
-BCD/cellular decomposition
+dynamic obstacle avoidance
+online replanning
+vehicle footprint modelling
 turn-radius / kinematic planning
+Dubins or Hybrid A*
+Grid A* or NavMesh
+TSP or global optimization
+per-cell sweep optimization
 sensor recording protocol
 MarineTaskBridge
 ROS 2 integration
@@ -380,11 +423,11 @@ TaskDispatcher
 multi-vehicle assignment framework
 ```
 
-If a proposed abstraction exists only to support one of these future capabilities, defer it to P2+.
+If a proposed abstraction exists only to support one of these future capabilities, defer it to P3+.
 
 ### 16. Avoid Premature Generalization
 
-During P1:
+During P2:
 
 - Do not add a generic `IPathPlanner` above `ICoveragePlanner`.
 - Do not build a general planner capability/version negotiation system.
@@ -394,7 +437,8 @@ During P1:
 - Do not build a fleet/multi-robot assignment model.
 - Do not create a 3D planning hierarchy.
 
-Prefer the smallest interface that satisfies the frozen P1 specification and can be extended cleanly in P2.
+Do not introduce decomposer, router, or orderer registries while P2 has only one implementation of each. Prefer
+plain functions, small classes, and pure data structures behind the existing `ICoveragePlanner` plugin boundary.
 
 ### 17. QGroundControl Extension Strategy
 
@@ -452,7 +496,7 @@ Takeoff
 Land
 ```
 
-P0/P1 USV plans should be based on the Marine task and the appropriate mission settings/waypoints for ArduPilot Rover.
+P0/P1/P2 USV plans should be based on the Marine task and the appropriate mission settings/waypoints for ArduPilot Rover.
 
 Use current QGC and ArduPilot APIs rather than hardcoding assumptions.
 
@@ -488,31 +532,31 @@ Marine task state must be scoped to the relevant QGC plan.
 
 Do not introduce a global Marine task singleton that can accidentally mix state between different `PlanMasterController` instances.
 
-P1 must retain the plan-scoped `MarinePlanContext` design.
+P2 must retain the plan-scoped `MarinePlanContext` design.
 
 Do not add a global `MarinePlanContextRegistry` unless an actual lifecycle/use-case proves it necessary.
 
-### 22. P1 Work-Package Order
+### 22. P2 Work-Package Order
 
-Implement P1 incrementally in this order:
+Implement P2 incrementally in this order:
 
 ```text
-P1-00  Implementation Readiness Audit and specification freeze
-P1-01  Local Geometry + GeoReference
-P1-02  CoveragePlanningProblem + CoverageTaskAdapter
-P1-03  Input Validation + Capability Gate
-P1-04  Clipper2 + Safety Inset
-P1-05  Monotonicity + Scanline
-P1-06  Manual-Angle Lawnmower
-P1-07  Connector + Path Validation
-P1-08  Auto Sweep Angle
-P1-09  ComplexItem + PlannerRegistry integration
-P1-10  Work Region UI + No-Go read-only visual
-P1-11  MissionAdapter + ArduRover semantics
-P1-12  Persistence + SensorConfig UI
-P1-13  ArduRover SITL
-P1-14  Real USV field validation
-P1-15  Freeze
+P2-00  Implementation Readiness Audit
+P2-01  Path Leg Semantics + P1 Monotone Coverage Primitive Extraction
+P2-02  No-Go Validation + Free-Space Geometry
+P2-03  Restricted Event-driven Slab BCD
+P2-04  Decomposition Validation
+P2-05  Cell Coverage + Traversal States
+P2-06  Visibility Graph + Dijkstra
+P2-07  Greedy Oriented-Cell Ordering
+P2-08  Complex Plan Assembly
+P2-09  Nominal Coverage Completeness
+P2-10  Planner Integration
+P2-11  No-Go UI
+P2-12  Persistence + Mission Integration
+P2-13  Integrated + SITL Validation
+P2-14  Real USV Validation
+P2-15  Final Freeze
 ```
 
 Do not skip ahead to later work packages without a concrete dependency reason.
@@ -537,21 +581,25 @@ stop/report
 
 Do not implement the next package automatically unless requested.
 
-### 23. P1 Required Tests
+### 23. P2 Required Tests
 
-Maintain every P0 Marine test and add focused coverage for:
+Maintain every P0/P1 Marine test and add the P2 matrix defined by the frozen specification, including focused
+coverage for:
 
 ```text
-GeoReference round-trip and known-distance accuracy
-geometry validation and deterministic tolerance
-safety inset empty/disconnected handling
-safetyMarginM > swathWidthM / 2 explicit failure
-monotonicity, scanline, connector, and path invariants
-manual and auto angle determinism
-No-Go rejection without silent ignore
-save/load without replanning
-PlanningResult to ArduRover mission conversion
-SITL and field-validation evidence before Freeze
+strict No-Go topology validation
+CoverageTarget and TrackFeasibleRegion geometry
+reachability and connectivity failures
+event-driven slab BCD cell invariants
+MonotoneCoverage primitive P1 equivalence
+Forward/Reverse traversal equivalence
+Visibility Graph and Dijkstra route safety
+deterministic oriented-cell ordering
+canonical path and PathLegRole invariants
+nominal coverage completeness
+P2 save/load and P1 version 1 compatibility
+unchanged MissionAdapter waypoint semantics
+P2-A through P2-D SITL validation
 ```
 
 Test the smallest layer first, then the full vertical slice.
@@ -576,56 +624,77 @@ verify task + planning path + mission
 
 Also run relevant existing QGC mission/planning regression tests.
 
-### 24. P1 Planning State
+### 24. Planning State
 
 When a planning-relevant task field changes, an existing plan must no longer be treated as current.
 
-Use only the stale-detection mechanism frozen in the P1 specification; do not invent a general cache/version negotiation framework.
+No-Go add/edit/delete is planning-relevant in P2. Continue using the stale-detection mechanism frozen in P1; do
+not invent a general cache/version negotiation framework.
 
-### 25. P1 Freeze Definition of Done
+### 25. Frozen P1 Baseline and P2 Freeze Definition of Done
 
-P1 is frozen only when the following vertical slice works:
+P1 Engineering Freeze is approved. The following P1 behavior is frozen and must remain compatible:
 
 ```text
-Create Coverage Inspection
+Task / Plan / Mission separation
+MarineTask, WorkRegion, and CoverageConfig
+CoveragePlanningProblem and ICoveragePlanner boundaries
+CoveragePlanningSolution → CoverageTaskAdapter → PlanningResult
+0 degrees North, 90 degrees East, clockwise-positive navigation angles
+safetyMargin as centerline clearance and WorkRegion as nominal Coverage Target
+P1 LawnmowerCoveragePlanner behavior
+ArduPilotMissionAdapter waypoint semantics
+P1 persistence and save/load without replanning
+```
+
+Shared-layer evolution must preserve P1 compatibility and pass P1 regression.
+
+P1 real-USV field validation is **DEFERRED and NOT EXECUTED**. Do not claim it is complete. Do not delete or
+weaken `docs/marine/P1_REAL_USV_FIELD_VALIDATION_PROTOCOL.md`; it must be completed before P2 real-USV field
+acceptance.
+
+P2 is frozen only when the following vertical slice works:
+
+```text
+Draw WorkRegion and static No-Go polygons
         ↓
-Draw supported Work Region
+Build CoverageTarget and TrackFeasibleRegion
         ↓
-Validate and convert to local meter geometry
+Restricted event-driven slab BCD
         ↓
-Apply centerline safety inset
+Cover every cell with the P1 MonotoneCoverage primitive
         ↓
-Generate and validate fixed-swath coverage path
+Connect cells with Visibility Graph + Dijkstra transit
         ↓
-ArduPilotMissionAdapter
+Assemble canonical path + Coverage/Transit leg roles
         ↓
-MAV_CMD_NAV_WAYPOINT
+Validate static centerline safety and nominal coverage completeness
         ↓
-Save .plan
+Save/load without replanning and preserve P1 version 1 compatibility
         ↓
-Reload .plan
+Generate unchanged ArduRover waypoint missions
         ↓
-Task + path + selected angle + mission restored without replanning
-        ↓
-ArduRover SITL and real USV validation
+Pass P1 regression, P2 SITL, and required field gates
 ```
 
 Additionally:
 
-- general convex regions pass the frozen acceptance matrix;
-- safety/coverage impossibility and unsupported No-Go are explicit failures;
-- modifying a planning-relevant task field invalidates the existing plan state;
+- simple concave regions and finite valid static No-Go polygons pass the frozen P2 matrix;
+- every coverage cell is valid, monotone, deterministic, and visited once;
+- every transit leg lies in `TrackFeasibleRegion`;
+- `CoverageTarget` passes nominal completeness validation;
+- modifying any planning-relevant task field invalidates the artifact;
 - Marine tests pass;
 - relevant QGC regression tests pass;
 - no unnecessary QGC core changes were introduced;
 - Clipper2 remains a pinned, attributed, Marine-private dependency;
-- no P2+ feature was implemented opportunistically.
+- no P3+ feature was implemented opportunistically.
 
-Once the P1 Freeze Definition of Done is satisfied:
+Once the P2 Freeze Definition of Done is satisfied:
 
-**STOP P1 DEVELOPMENT.**
+**STOP P2 DEVELOPMENT.**
 
-Do not continue adding abstractions or features. Report Freeze completion and wait for P2 design instructions.
+Do not continue adding abstractions or features. Report Freeze completion and wait for the next approved phase.
 
 ### 26. Agent Reporting Requirements for Marine Work
 
