@@ -4,6 +4,19 @@
 
 namespace Marine {
 
+enum class SweepAngleMode
+{
+    Manual,
+    Auto,
+};
+
+enum class PlanningStatus
+{
+    Success,
+    InvalidInput,
+    Failed,
+};
+
 struct GeoPoint
 {
     double latitudeDeg = 0.0;

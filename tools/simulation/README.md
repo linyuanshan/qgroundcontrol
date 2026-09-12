@@ -7,7 +7,8 @@ Tools for testing QGroundControl without physical hardware.
 | Tool | Use Case | Setup |
 | --- | --- | --- |
 | `mock_vehicle.py` | UI testing, quick checks | `pip install pymavlink` |
-| `run-arducopter-sitl.sh` | Full simulation, mission testing | Docker required |
+| `ardurover_sitl.py` | Marine ArduRover mission validation | Docker required |
+| `run-arducopter-sitl.sh` | ArduCopter simulation | Docker required |
 
 ## Mock Vehicle (Lightweight)
 
@@ -74,6 +75,20 @@ docker rm arducopter-sitl        # Remove container
 
 Mock Vehicle auto-connects over UDP 14550. For SITL, add a TCP comm link in QGC
 (**Application Settings → Comm Links → Add**, Host `localhost`, Port `5760`).
+
+## ArduRover SITL (Marine P1)
+
+The Marine P1 validation environment pins ArduPilot `Rover-4.7.0` and builds a dedicated Rover SITL image:
+
+```bash
+python tools/simulation/ardurover_sitl.py start
+python tools/simulation/ardurover_sitl.py logs
+python tools/simulation/ardurover_sitl.py stop
+```
+
+Connect QGroundControl to TCP host `127.0.0.1`, port `5760`. Follow
+[`P1_ARDUROVER_SITL_TEST_PROTOCOL.md`](../../docs/marine/P1_ARDUROVER_SITL_TEST_PROTOCOL.md) and retain the
+required mission and trajectory evidence. The first build downloads and compiles the pinned ArduPilot release.
 
 ## Comparison
 

@@ -19,10 +19,13 @@ protected:
 private slots:
     void _testDefaults();
     void _testPlanning();
+    void _testLawnmowerPlanning();
     void _testPlanningFailures();
     void _testInvalidation();
     void _testQmlRegistration();
     void _testQmlTaskProperties();
+    void _testWorkRegionEditing();
+    void _testSweepAngleProperties();
     void _testSaveLoad();
     void _testLoadValidation();
 

@@ -24,7 +24,8 @@ Before modifying repository files:
 3. Read `test/README.md` when changing or adding tests.
 4. Read `.github/ci-overview.md` when changing build, CI, or test integration.
 5. For Marine work, read the current Marine phase specification, especially:
-   - `docs/marine/P0_FOUNDATION_SPEC_v0.2.md` during P0.
+   - `docs/marine/P1_COVERAGE_INSPECTION_SPEC_v0.2.md` during P1;
+   - `docs/marine/P0_FOUNDATION_SPEC_v0.2.md` for frozen P0 architecture and persistence invariants.
 6. Inspect the current repository implementation before assuming an API from documentation or previous discussion.
 7. Before the first edit, report which instruction/design files were read and any important API differences discovered.
 
@@ -91,10 +92,10 @@ marine/main             # stable Marine integration branch
 feature/marine-*        # phase/work-package development
 ```
 
-For P0, use a dedicated branch such as:
+For P1, use the dedicated branch:
 
 ```text
-feature/marine-p0-foundation
+feature/marine-p1-coverage
 ```
 
 Keep commits coherent and reviewable. Prefer Conventional Commit style, for example:
@@ -141,49 +142,55 @@ ROS 2
 
 QGroundControl must remain ROS-independent. Do not directly link ROS 2 runtime libraries such as `rclcpp` into QGC unless a future approved design explicitly changes this boundary.
 
-### 7. Current Phase: P0
+### 7. Current Phase: P1
 
 The current implementation target is:
 
 ```text
-P0 — Marine Robotics Platform Foundation
+P1 — USV Coverage Inspection V1
 ```
 
-P0 has one purpose: prove the minimum architecture vertical slice.
+P0 is frozen. P1 adds a real, bounded coverage planner for general convex and supported sweep-monotone simple regions without weakening the P0 vertical-slice boundaries.
 
-Required P0 flow:
+Required P1 flow:
 
 ```text
 MarineTask
     ↓
-ICoveragePlanner
+CoverageTaskAdapter
     ↓
-MockCoveragePlanner
+Local ENU CoveragePlanningProblem
+    ↓
+Safety Inset
+    ↓
+Manual / Auto Sweep Direction
+    ↓
+Lawnmower Coverage
+    ↓
+CoveragePlanningSolution
+    ↓
+CoverageTaskAdapter
     ↓
 PlanningResult
     ↓
-CoverageInspectionComplexItem
-    ↓
 ArduPilotMissionAdapter
     ↓
-MAVLink MissionItem
+MAVLink Mission
     ↓
-.plan save/load
+ArduRover SITL / real USV validation
 ```
 
-P0 is complete when this chain works reliably and is tested.
+Do not reopen or redesign P0 merely to implement P1.
 
-Do not expand P0 merely to make the platform look more complete.
+### 8. P1 Design Authority
 
-### 8. P0 Design Authority
-
-Before P0 changes, read:
+Before P1 changes, read:
 
 ```text
-docs/marine/P0_FOUNDATION_SPEC_v0.2.md
+docs/marine/P1_COVERAGE_INSPECTION_SPEC_v0.2.md
 ```
 
-That document defines the P0 implementation baseline.
+That frozen document defines the P1 implementation baseline. The P0 specification remains authoritative for the already-frozen Task/Plan/Mission separation, persistence, adapter boundaries, and plan-scoped context.
 
 If the current QGroundControl API differs from the specification:
 
@@ -212,7 +219,15 @@ Canonical flow:
 ```text
 MarineTask
     ↓
+CoverageTaskAdapter
+    ↓
+CoveragePlanningProblem
+    ↓
 Coverage Planner
+    ↓
+CoveragePlanningSolution
+    ↓
+CoverageTaskAdapter
     ↓
 PlanningResult
     ↓
@@ -239,7 +254,7 @@ PlanMasterController
 
 Planner logic should operate on Marine-owned data structures and be independently unit-testable.
 
-A planner returns a `PlanningResult`.
+A planner returns a `CoveragePlanningSolution`. `CoverageTaskAdapter` converts that solution to a `PlanningResult`.
 
 A planner must never directly create `MissionItem` objects.
 
@@ -289,7 +304,7 @@ MissionItem[]
 
 It must not silently rerun the planner.
 
-During P0, `ArduPilotMissionAdapter` only needs to generate waypoint mission items required by the P0 specification.
+P0 waypoint behavior remains frozen. During P1, extend `ArduPilotMissionAdapter` only as explicitly required by the P1 specification and ArduRover validation.
 
 Do not add speed, camera, sonar, RTL, hold, or other execution commands unless the active phase specification requires them.
 
@@ -314,11 +329,11 @@ Do not duplicate the complete Marine task definition inside the complex mission 
 
 Centralize task JSON conversion in `MarineTaskJsonCodec`; do not scatter serialization across planners, QML, and mission adapters.
 
-### 14. Minimum P0 Data Model
+### 14. Frozen P0 Data Model
 
-Keep the P0 model intentionally small.
+Keep the frozen P0 model and JSON schema backward compatible.
 
-P0 needs only the concepts required by `P0_FOUNDATION_SPEC_v0.2.md`, including:
+The retained concepts include:
 
 ```text
 MarineTask
@@ -336,23 +351,19 @@ outerBoundary
 noGoRegions[]
 ```
 
-because P1 immediately depends on that structure.
+and P1 builds on that structure.
 
-Do not introduce future framework layers without a demonstrated P0 need.
+Extend only fields and types required by the frozen P1 specification; centralize persistence in `MarineTaskJsonCodec`.
 
-### 15. P0 Features Explicitly Out of Scope
+### 15. P1 Features Explicitly Out of Scope
 
-Do not implement the following during P0:
+Do not implement the following during P1:
 
 ```text
-real lawnmower coverage
-polygon-offset safety geometry
 no-go routing
+full No-Go editor unless it is near-direct reuse with no new workflow
 BCD/cellular decomposition
-automatic sweep-angle optimization
 turn-radius / kinematic planning
-real camera control
-real sonar control
 sensor recording protocol
 MarineTaskBridge
 ROS 2 integration
@@ -369,21 +380,21 @@ TaskDispatcher
 multi-vehicle assignment framework
 ```
 
-If a proposed abstraction exists only to support one of these future capabilities, defer it unless it is strictly necessary to complete the P0 vertical slice.
+If a proposed abstraction exists only to support one of these future capabilities, defer it to P2+.
 
 ### 16. Avoid Premature Generalization
 
-During P0:
+During P1:
 
 - Do not add a generic `IPathPlanner` above `ICoveragePlanner`.
 - Do not build a general planner capability/version negotiation system.
 - Do not build a full execution-state machine.
 - Do not build a ROS/telemetry bridge abstraction.
-- Do not build a JSON migration framework before there is a real second schema version.
+- Do not build a JSON migration framework without an approved schema-version need.
 - Do not build a fleet/multi-robot assignment model.
 - Do not create a 3D planning hierarchy.
 
-Prefer the smallest interface that satisfies P0 and can be extended cleanly in P1.
+Prefer the smallest interface that satisfies the frozen P1 specification and can be extended cleanly in P2.
 
 ### 17. QGroundControl Extension Strategy
 
@@ -477,29 +488,31 @@ Marine task state must be scoped to the relevant QGC plan.
 
 Do not introduce a global Marine task singleton that can accidentally mix state between different `PlanMasterController` instances.
 
-P0 should use the minimum `MarinePlanContext` design required by the specification.
+P1 must retain the plan-scoped `MarinePlanContext` design.
 
 Do not add a global `MarinePlanContextRegistry` unless an actual lifecycle/use-case proves it necessary.
 
-### 22. P0 Work-Package Order
+### 22. P1 Work-Package Order
 
-Implement P0 incrementally in this order:
+Implement P1 incrementally in this order:
 
 ```text
-P0-00  Implementation Readiness Audit
-
-P0-01  MarineTypes + MarineTask
-P0-02  MarineTaskJsonCodec
-P0-03  ICoveragePlanner + PlannerRegistry + MockCoveragePlanner
-P0-04  MarinePlanContext
-P0-05  CoverageInspectionComplexItem
-P0-06  ArduPilotMissionAdapter
-P0-07  CoverageInspectionPlanCreator
-P0-08  CustomPlugin integration
-P0-09  CoverageInspectionEditor.qml + CoverageInspectionMapVisual.qml
-P0-10  .plan Marine save/load integration
-P0-11  integration/regression tests
-P0-12  manual smoke test
+P1-00  Implementation Readiness Audit and specification freeze
+P1-01  Local Geometry + GeoReference
+P1-02  CoveragePlanningProblem + CoverageTaskAdapter
+P1-03  Input Validation + Capability Gate
+P1-04  Clipper2 + Safety Inset
+P1-05  Monotonicity + Scanline
+P1-06  Manual-Angle Lawnmower
+P1-07  Connector + Path Validation
+P1-08  Auto Sweep Angle
+P1-09  ComplexItem + PlannerRegistry integration
+P1-10  Work Region UI + No-Go read-only visual
+P1-11  MissionAdapter + ArduRover semantics
+P1-12  Persistence + SensorConfig UI
+P1-13  ArduRover SITL
+P1-14  Real USV field validation
+P1-15  Freeze
 ```
 
 Do not skip ahead to later work packages without a concrete dependency reason.
@@ -524,21 +537,26 @@ stop/report
 
 Do not implement the next package automatically unless requested.
 
-### 23. P0 Required Tests
+### 23. P1 Required Tests
 
-At minimum, maintain:
+Maintain every P0 Marine test and add focused coverage for:
 
 ```text
-MarineTaskModelTest
-MarineTaskJsonTest
-CoveragePlannerTest
-CoverageComplexItemTest
-MarinePlanIntegrationTest
+GeoReference round-trip and known-distance accuracy
+geometry validation and deterministic tolerance
+safety inset empty/disconnected handling
+safetyMarginM > swathWidthM / 2 explicit failure
+monotonicity, scanline, connector, and path invariants
+manual and auto angle determinism
+No-Go rejection without silent ignore
+save/load without replanning
+PlanningResult to ArduRover mission conversion
+SITL and field-validation evidence before Freeze
 ```
 
 Test the smallest layer first, then the full vertical slice.
 
-The key integration test must cover:
+The P0 integration chain must remain covered:
 
 ```text
 create task
@@ -558,30 +576,26 @@ verify task + planning path + mission
 
 Also run relevant existing QGC mission/planning regression tests.
 
-### 24. P0 Planning State
-
-P0 requires only the minimum planning state defined by the P0 specification.
+### 24. P1 Planning State
 
 When a planning-relevant task field changes, an existing plan must no longer be treated as current.
 
-Do not implement hash/digest-based stale detection during P0 unless the approved P0 specification is revised.
+Use only the stale-detection mechanism frozen in the P1 specification; do not invent a general cache/version negotiation framework.
 
-That more rigorous mechanism belongs to P1.
+### 25. P1 Freeze Definition of Done
 
-### 25. P0 Definition of Done
-
-P0 is done only when the following vertical slice works:
+P1 is frozen only when the following vertical slice works:
 
 ```text
 Create Coverage Inspection
         ↓
-MarineTask
+Draw supported Work Region
         ↓
-MockCoveragePlanner
+Validate and convert to local meter geometry
         ↓
-PlanningResult
+Apply centerline safety inset
         ↓
-Map Display
+Generate and validate fixed-swath coverage path
         ↓
 ArduPilotMissionAdapter
         ↓
@@ -591,22 +605,27 @@ Save .plan
         ↓
 Reload .plan
         ↓
-Task + Path + Mission restored correctly
+Task + path + selected angle + mission restored without replanning
+        ↓
+ArduRover SITL and real USV validation
 ```
 
 Additionally:
 
-- modifying a planning-relevant task field invalidates the existing P0 plan state;
+- general convex regions pass the frozen acceptance matrix;
+- safety/coverage impossibility and unsupported No-Go are explicit failures;
+- modifying a planning-relevant task field invalidates the existing plan state;
 - Marine tests pass;
 - relevant QGC regression tests pass;
 - no unnecessary QGC core changes were introduced;
-- no P1+ feature was implemented opportunistically.
+- Clipper2 remains a pinned, attributed, Marine-private dependency;
+- no P2+ feature was implemented opportunistically.
 
-Once the P0 Definition of Done is satisfied:
+Once the P1 Freeze Definition of Done is satisfied:
 
-**STOP P0 DEVELOPMENT.**
+**STOP P1 DEVELOPMENT.**
 
-Do not continue adding abstractions or features. Report completion and wait for P1 design/implementation instructions.
+Do not continue adding abstractions or features. Report Freeze completion and wait for P2 design instructions.
 
 ### 26. Agent Reporting Requirements for Marine Work
 

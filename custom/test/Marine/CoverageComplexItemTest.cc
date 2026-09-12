@@ -11,9 +11,11 @@
 #include <memory>
 
 #include "CoverageInspectionComplexItem.h"
+#include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
 #include "MissionItem.h"
 #include "MockCoveragePlanner.h"
+#include "QGCMapPolygon.h"
 
 using namespace Marine;
 
@@ -23,6 +25,7 @@ MarineTask validTask()
 {
     MarineTask task;
     task.planner.plannerId = "marine.coverage.mock";
+    task.coverage.swathWidthM = 5.0;
     task.region.outerBoundary.vertices = {
         {47.3977, 8.5455, 0.0},
         {47.3977, 8.5465, 0.0},
@@ -39,6 +42,7 @@ void CoverageComplexItemTest::init()
     OfflineMissionTest::init();
     _marineContext = new MarinePlanContext(planController());
     QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<LawnmowerCoveragePlanner>()));
     _item = new CoverageInspectionComplexItem(planController(), false, _marineContext);
 }
 
@@ -97,6 +101,35 @@ void CoverageComplexItemTest::_testPlanning()
         QCOMPARE(items.at(index)->sequenceNumber(), index);
         QCOMPARE(items.at(index)->command(), MAV_CMD_NAV_WAYPOINT);
     }
+}
+
+void CoverageComplexItemTest::_testLawnmowerPlanning()
+{
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.lawnmower";
+    task.coverage.swathWidthM = 30.0;
+    task.coverage.safetyMarginM = 1.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 0.0;
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+
+    const PlanningResult& result = _item->planningResult();
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QVERIFY(result.path.size() >= 4);
+    QCOMPARE(result.path.size() % 2, std::size_t{0});
+    QCOMPARE(result.selectedSweepAngleDeg, 0.0);
+    QCOMPARE(result.turnCount, static_cast<int>((result.path.size() / 2) - 1));
+    QCOMPARE(_item->plannerId(), QStringLiteral("marine.coverage.lawnmower"));
+    QCOMPARE(_item->selectedSweepAngleDeg(), result.selectedSweepAngleDeg);
+    QCOMPARE(_item->turnCount(), result.turnCount);
+    QCOMPARE(_item->planningMessage(), QString::fromStdString(result.message));
+    QCOMPARE(_item->generatedPath().size(), static_cast<qsizetype>(result.path.size()));
+    QCOMPARE(_item->complexDistance(), result.pathLengthM);
+    QVERIFY(result.message.find("Manual") != std::string::npos);
 }
 
 void CoverageComplexItemTest::_testPlanningFailures()
@@ -179,6 +212,19 @@ void CoverageComplexItemTest::_testQmlRegistration()
     QQmlComponent mapVisualComponent(&engine, QUrl(mapVisualUrl));
     QVERIFY2(editorComponent.isReady(), qPrintable(editorComponent.errorString()));
     QVERIFY2(mapVisualComponent.isReady(), qPrintable(mapVisualComponent.errorString()));
+
+    QFile editorFile(QStringLiteral(":/qml/Marine/Plan/CoverageInspectionEditor.qml"));
+    QVERIFY(editorFile.open(QIODevice::ReadOnly));
+    const QByteArray editorSource = editorFile.readAll();
+    QVERIFY(editorSource.contains("automaticSweepAngle"));
+    QVERIFY(editorSource.contains("selectedSweepAngleDeg"));
+    QVERIFY(editorSource.contains("No-Go regions are read-only"));
+
+    QFile mapVisualFile(QStringLiteral(":/qml/Marine/Plan/CoverageInspectionMapVisual.qml"));
+    QVERIFY(mapVisualFile.open(QIODevice::ReadOnly));
+    const QByteArray mapVisualSource = mapVisualFile.readAll();
+    QVERIFY(mapVisualSource.contains("QGCMapPolygonVisuals"));
+    QVERIFY(mapVisualSource.contains("workRegionPolygon"));
 }
 
 void CoverageComplexItemTest::_testQmlTaskProperties()
@@ -211,7 +257,9 @@ void CoverageComplexItemTest::_testQmlTaskProperties()
     QCOMPARE(noGoRegions.size(), 1);
     QCOMPARE(noGoRegions.constFirst().toList().size(), 3);
 
-    QVERIFY(_item->plan());
+    QVERIFY(!_item->plan());
+    QCOMPARE(_item->planningResult().status, PlanningStatus::Failed);
+    QVERIFY(_item->planningResult().message.find("P2") != std::string::npos);
     QSignalSpy taskDataSpy(_item, &CoverageInspectionComplexItem::taskDataChanged);
     _item->setTaskName(QStringLiteral("Updated inspection"));
     _item->setSwathWidthM(11.0);
@@ -234,6 +282,67 @@ void CoverageComplexItemTest::_testQmlTaskProperties()
     QCOMPARE(taskDataSpy.count(), 7);
 }
 
+void CoverageComplexItemTest::_testWorkRegionEditing()
+{
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.lawnmower";
+    task.coverage.swathWidthM = 30.0;
+    task.coverage.safetyMarginM = 1.0;
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QGCMapPolygon* polygon = _item->workRegionPolygon();
+    QVERIFY(polygon != nullptr);
+    QCOMPARE(polygon->count(), 4);
+    QCOMPARE(polygon->vertexCoordinate(0).latitude(), task.region.outerBoundary.vertices[0].latitudeDeg);
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+
+    QSignalSpy taskDataSpy(_item, &CoverageInspectionComplexItem::taskDataChanged);
+    const QGeoCoordinate editedCoordinate(47.3978, 8.5456);
+    polygon->adjustVertex(0, editedCoordinate);
+
+    QTRY_VERIFY(taskDataSpy.count() >= 1);
+    const MarineTask* editedTask = _marineContext->task(task.id);
+    QVERIFY(editedTask != nullptr);
+    QCOMPARE(editedTask->region.outerBoundary.vertices[0].latitudeDeg, editedCoordinate.latitude());
+    QCOMPARE(editedTask->region.outerBoundary.vertices[0].longitudeDeg, editedCoordinate.longitude());
+    QCOMPARE(editedTask->region.outerBoundary.vertices[0].altitudeM, 0.0);
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+
+    MarineTask externallyUpdatedTask = *editedTask;
+    externallyUpdatedTask.region.outerBoundary.vertices.resize(3);
+    QVERIFY(_marineContext->updateTask(externallyUpdatedTask));
+    QCOMPARE(polygon->count(), 3);
+    QCOMPARE(_item->outerBoundary().size(), 3);
+}
+
+void CoverageComplexItemTest::_testSweepAngleProperties()
+{
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.lawnmower";
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QVERIFY(_item->automaticSweepAngle());
+    QCOMPARE(_item->sweepAngleDeg(), 0.0);
+    QCOMPARE(_item->plannerId(), QStringLiteral("marine.coverage.lawnmower"));
+
+    _item->setAutomaticSweepAngle(false);
+    _item->setSweepAngleDeg(37.5);
+
+    const MarineTask* updatedTask = _marineContext->task(task.id);
+    QVERIFY(updatedTask != nullptr);
+    QCOMPARE(updatedTask->coverage.sweepAngleMode, SweepAngleMode::Manual);
+    QCOMPARE(updatedTask->coverage.sweepAngleDeg, 37.5);
+    QVERIFY(!_item->automaticSweepAngle());
+    QCOMPARE(_item->sweepAngleDeg(), 37.5);
+
+    _item->setAutomaticSweepAngle(true);
+    updatedTask = _marineContext->task(task.id);
+    QVERIFY(updatedTask != nullptr);
+    QCOMPARE(updatedTask->coverage.sweepAngleMode, SweepAngleMode::Auto);
+}
+
 void CoverageComplexItemTest::_testSaveLoad()
 {
     const MarineTask task = validTask();
@@ -249,6 +358,8 @@ void CoverageComplexItemTest::_testSaveLoad()
     const QJsonObject object = items.first().toObject();
     QVERIFY(object.contains(QStringLiteral("taskId")));
     QCOMPARE(object.value(QStringLiteral("planningStatus")).toString(), QStringLiteral("success"));
+    QVERIFY(object.contains(QStringLiteral("selectedSweepAngleDeg")));
+    QVERIFY(object.contains(QStringLiteral("turnCount")));
     QVERIFY(!object.contains(QStringLiteral("task")));
     QVERIFY(!object.contains(QStringLiteral("marine")));
 
@@ -258,6 +369,8 @@ void CoverageComplexItemTest::_testSaveLoad()
     QCOMPARE(loadedItem->taskId(), _item->taskId());
     QCOMPARE(loadedItem->planningState(), CoverageInspectionComplexItem::Planned);
     QCOMPARE(loadedItem->planningResult().status, PlanningStatus::Success);
+    QCOMPARE(loadedItem->selectedSweepAngleDeg(), _item->selectedSweepAngleDeg());
+    QCOMPARE(loadedItem->turnCount(), _item->turnCount());
     QCOMPARE(loadedItem->generatedPath(), _item->generatedPath());
     QCOMPARE(loadedItem->complexDistance(), _item->complexDistance());
     QCOMPARE(loadedItem->sequenceNumber(), 12);

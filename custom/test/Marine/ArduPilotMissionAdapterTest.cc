@@ -51,7 +51,7 @@ void ArduPilotMissionAdapterTest::_testAppendWaypoints()
         QVERIFY(std::isnan(item->param4()));
         QCOMPARE(item->param5(), result.path.at(static_cast<std::size_t>(index)).latitudeDeg);
         QCOMPARE(item->param6(), result.path.at(static_cast<std::size_t>(index)).longitudeDeg);
-        QCOMPARE(item->param7(), result.path.at(static_cast<std::size_t>(index)).altitudeM);
+        QCOMPARE(item->param7(), 0.0);
         QVERIFY(item->autoContinue());
         QVERIFY(!item->isCurrentItem());
         QCOMPARE(item->parent(), &parent);

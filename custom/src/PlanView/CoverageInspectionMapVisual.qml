@@ -2,6 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QGroundControl
 import QGroundControl.Controls
+import QGroundControl.FlightMap
+import QGroundControl.PlanView
 import QtLocation
 import QtPositioning
 import QtQuick
@@ -10,6 +12,9 @@ Item {
     id: root
 
     readonly property var _missionItem: object
+    readonly property bool _currentItem: root._missionItem.isCurrentItem
+    readonly property var _generatedPath: root._missionItem.generatedPath
+    readonly property bool _vertexDrag: root._missionItem.workRegionPolygon.vertexDrag
     property bool interactive: true
     property var map
     property var vehicle
@@ -17,7 +22,8 @@ Item {
     signal clicked(int sequenceNumber)
 
     Component.onCompleted: {
-        objectManager.createObjects([outerBoundaryComponent, noGoRegionsComponent, generatedPathComponent], root.map, true);
+        objectManager.createObject(noGoRegionsComponent, root.map, false);
+        objectManager.createObject(generatedPathComponent, root.map, true);
     }
     Component.onDestruction: {
         objectManager.destroyObjects();
@@ -33,20 +39,14 @@ Item {
         id: objectManager
     }
 
-    Component {
-        id: outerBoundaryComponent
-
-        MapPolygon {
-            id: outerBoundaryVisual
-
-            border.color: qgcPal.mapMissionTrajectory
-            border.width: 2
-            color: qgcPal.mapMissionTrajectory
-            opacity: 0.18 * root.opacity
-            path: root._missionItem.outerBoundary
-            visible: outerBoundaryVisual.path.length >= 3
-            z: QGroundControl.zOrderWaypointLines
-        }
+    QGCMapPolygonVisuals {
+        mapControl: root.map
+        mapPolygon: root._missionItem.workRegionPolygon
+        interactive: root._currentItem && root.interactive
+        borderColor: qgcPal.mapMissionTrajectory
+        borderWidth: 2
+        interiorColor: qgcPal.mapMissionTrajectory
+        interiorOpacity: 0.18 * root.opacity
     }
 
     Component {
@@ -75,13 +75,11 @@ Item {
         id: generatedPathComponent
 
         MapPolyline {
-            id: generatedPathVisual
-
-            line.color: qgcPal.mapMissionTrajectory
+            line.color: "white"
             line.width: 3
             opacity: root.opacity
-            path: root._missionItem.generatedPath
-            visible: generatedPathVisual.path.length >= 2
+            path: root._generatedPath
+            visible: root._currentItem && !root._vertexDrag && root._generatedPath.length >= 2
             z: QGroundControl.zOrderWaypointLines + 2
         }
     }

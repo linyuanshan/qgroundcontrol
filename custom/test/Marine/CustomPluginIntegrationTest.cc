@@ -3,6 +3,8 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 
+#include <memory>
+
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
 #include "MarinePlanContext.h"
@@ -22,6 +24,7 @@ MarineTask validTask(const std::string& id)
     task.id = id;
     task.name = "Harbor inspection";
     task.planner.plannerId = "marine.coverage.mock";
+    task.coverage.swathWidthM = 5.0;
     task.region.outerBoundary.vertices = {
         {.latitudeDeg = 47.3977, .longitudeDeg = 8.5455, .altitudeM = 0.0},
         {.latitudeDeg = 47.3977, .longitudeDeg = 8.5465, .altitudeM = 0.0},
@@ -66,6 +69,7 @@ void CustomPluginIntegrationTest::_testPlanContextAndCreatorRegistration()
         planController()->findChildren<Marine::MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
     QCOMPARE(contexts.size(), 1);
     QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.mock") != nullptr);
+    QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.lawnmower") != nullptr);
 
     QmlObjectListModel* creators = planController()->planCreators();
     QVERIFY(creators != nullptr);
@@ -179,6 +183,7 @@ void CustomPluginIntegrationTest::_testMarinePlanPreload()
     QVERIFY(restoredTask != nullptr);
     QCOMPARE(restoredTask->name, loadedTask.name);
     QVERIFY(context->plannerRegistry().planner("marine.coverage.mock") != nullptr);
+    QVERIFY(context->plannerRegistry().planner("marine.coverage.lawnmower") != nullptr);
 }
 
 void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()
@@ -220,7 +225,7 @@ void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()
         {QStringLiteral("planningMessage"), QStringLiteral("")},
     };
     errorString.clear();
-    auto* item = new CoverageInspectionComplexItem(planController(), false, context);
+    auto item = std::make_unique<CoverageInspectionComplexItem>(planController(), false, context);
     QVERIFY(!item->load(brokenReference, 0, errorString));
     QVERIFY(errorString.contains(QStringLiteral("missing-task")));
 }

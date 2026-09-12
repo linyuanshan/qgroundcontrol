@@ -84,16 +84,12 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
                                           {.latitudeDeg = 47.3987, .longitudeDeg = 8.5465, .altitudeM = 0.0},
                                           {.latitudeDeg = 47.3987, .longitudeDeg = 8.5455, .altitudeM = 0.0},
                                       }};
-    const GeoPolygon expectedNoGo{.vertices = {
-                                      {.latitudeDeg = 47.3980, .longitudeDeg = 8.5458, .altitudeM = 0.0},
-                                      {.latitudeDeg = 47.3980, .longitudeDeg = 8.5460, .altitudeM = 0.0},
-                                      {.latitudeDeg = 47.3982, .longitudeDeg = 8.5460, .altitudeM = 0.0},
-                                  }};
     const std::string expectedName = "Harbor inspection";
     const std::string expectedVehicleId = "usv-01";
     const std::string expectedPlannerId = "marine.coverage.mock";
     constexpr double ExpectedSwathWidthM = 8.5;
     constexpr double ExpectedSafetyMarginM = 2.25;
+    constexpr double ExpectedSweepAngleDeg = 37.5;
 
     QString expectedTaskId;
     PlanningResult expectedPlanningResult;
@@ -122,9 +118,10 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         configuredTask.name = expectedName;
         configuredTask.vehicleId = expectedVehicleId;
         configuredTask.region.outerBoundary = expectedBoundary;
-        configuredTask.region.noGoRegions = {expectedNoGo};
         configuredTask.coverage.swathWidthM = ExpectedSwathWidthM;
         configuredTask.coverage.safetyMarginM = ExpectedSafetyMarginM;
+        configuredTask.coverage.sweepAngleMode = SweepAngleMode::Manual;
+        configuredTask.coverage.sweepAngleDeg = ExpectedSweepAngleDeg;
         configuredTask.sensors.cameraEnabled = true;
         configuredTask.sensors.cameraRecord = false;
         configuredTask.sensors.sonarEnabled = false;
@@ -172,6 +169,8 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     QCOMPARE(restoredTask->planner.plannerId, expectedPlannerId);
     QCOMPARE(restoredTask->coverage.swathWidthM, ExpectedSwathWidthM);
     QCOMPARE(restoredTask->coverage.safetyMarginM, ExpectedSafetyMarginM);
+    QCOMPARE(restoredTask->coverage.sweepAngleMode, SweepAngleMode::Manual);
+    QCOMPARE(restoredTask->coverage.sweepAngleDeg, ExpectedSweepAngleDeg);
     QVERIFY(restoredTask->sensors.cameraEnabled);
     QVERIFY(!restoredTask->sensors.cameraRecord);
     QVERIFY(!restoredTask->sensors.sonarEnabled);
@@ -180,14 +179,12 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     for (std::size_t index = 0; index < expectedBoundary.vertices.size(); ++index) {
         comparePoint(restoredTask->region.outerBoundary.vertices.at(index), expectedBoundary.vertices.at(index));
     }
-    QCOMPARE(restoredTask->region.noGoRegions.size(), std::size_t{1});
-    QCOMPARE(restoredTask->region.noGoRegions.front().vertices.size(), expectedNoGo.vertices.size());
-    for (std::size_t index = 0; index < expectedNoGo.vertices.size(); ++index) {
-        comparePoint(restoredTask->region.noGoRegions.front().vertices.at(index), expectedNoGo.vertices.at(index));
-    }
+    QVERIFY(restoredTask->region.noGoRegions.empty());
 
     const PlanningResult& restoredResult = restoredItem->planningResult();
     QCOMPARE(restoredResult.status, expectedPlanningResult.status);
+    QCOMPARE(restoredResult.selectedSweepAngleDeg, expectedPlanningResult.selectedSweepAngleDeg);
+    QCOMPARE(restoredResult.turnCount, expectedPlanningResult.turnCount);
     QCOMPARE(restoredResult.path.size(), expectedPlanningResult.path.size());
     QVERIFY(qAbs(restoredResult.pathLengthM - expectedPlanningResult.pathLengthM) < DistanceToleranceM);
     for (std::size_t index = 0; index < expectedPlanningResult.path.size(); ++index) {

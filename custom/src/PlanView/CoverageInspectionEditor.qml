@@ -9,6 +9,7 @@ Rectangle {
 
     readonly property real _fieldWidth: ScreenTools.defaultFontPixelWidth * 11
     readonly property real _margin: ScreenTools.defaultFontPixelWidth / 2
+    readonly property bool _hasNoGoRegions: root.missionItem.noGoRegions.length > 0
     required property real availableWidth
     required property var missionItem
 
@@ -76,7 +77,17 @@ Rectangle {
 
             QGCLabel {
                 Layout.fillWidth: true
-                text: qsTr("Architecture Test Planner")
+                text: root.missionItem.plannerId
+                wrapMode: Text.WordWrap
+            }
+
+            QGCLabel {
+                text: qsTr("Work Region")
+            }
+
+            QGCLabel {
+                Layout.fillWidth: true
+                text: qsTr("%1 vertices — edit with Polygon Tools on the map").arg(root.missionItem.workRegionPolygon.count)
                 wrapMode: Text.WordWrap
             }
 
@@ -120,6 +131,38 @@ Rectangle {
 
             QGCLabel {
                 text: root.missionItem.planningState === 1 ? qsTr("Planned") : qsTr("Unplanned")
+            }
+
+            QGCLabel {
+                text: qsTr("Sweep Angle")
+            }
+
+            QGCComboBox {
+                Layout.preferredWidth: root._fieldWidth
+                model: [qsTr("Auto"), qsTr("Manual")]
+                currentIndex: root.missionItem.automaticSweepAngle ? 0 : 1
+
+                onActivated: (index) => { root.missionItem.automaticSweepAngle = index === 0 }
+            }
+
+            QGCLabel {
+                text: qsTr("Manual Angle (0° N, 90° E)")
+                visible: !root.missionItem.automaticSweepAngle
+            }
+
+            QGCTextField {
+                id: sweepAngleField
+
+                Layout.preferredWidth: root._fieldWidth
+                text: root.missionItem.sweepAngleDeg.toString()
+                visible: !root.missionItem.automaticSweepAngle
+
+                validator: DoubleValidator {
+                    bottom: 0
+                    top: 179.999
+                }
+
+                onEditingFinished: root.missionItem.sweepAngleDeg = Number(sweepAngleField.text)
             }
         }
 
@@ -180,13 +223,39 @@ Rectangle {
             Layout.fillWidth: true
             color: qgcPal.warningText
             horizontalAlignment: Text.AlignHCenter
-            text: qsTr("Architecture Test Planner\nNot for field operation")
+            text: qsTr("No-Go regions are read-only in P1. The LawnMower planner does not route around them and will reject generation.")
+            visible: root._hasNoGoRegions
+            wrapMode: Text.WordWrap
+        }
+
+        GridLayout {
+            Layout.fillWidth: true
+            columnSpacing: root._margin
+            columns: 2
+            rowSpacing: root._margin
+            visible: root.missionItem.planningState === 1
+
+            QGCLabel { text: qsTr("Selected Angle (0° N, 90° E)") }
+            QGCLabel { text: qsTr("%1°").arg(root.missionItem.selectedSweepAngleDeg.toFixed(1)) }
+            QGCLabel { text: qsTr("Path Length") }
+            QGCLabel { text: qsTr("%1 m").arg(root.missionItem.complexDistance.toFixed(1)) }
+            QGCLabel { text: qsTr("Turns") }
+            QGCLabel { text: root.missionItem.turnCount.toString() }
+        }
+
+        QGCLabel {
+            id: planningMessageLabel
+
+            Layout.fillWidth: true
+            text: root.missionItem.planningMessage
+            visible: planningMessageLabel.text.length > 0
             wrapMode: Text.WordWrap
         }
 
         QGCButton {
             Layout.fillWidth: true
-            text: qsTr("Generate Test Plan")
+            enabled: root.missionItem.workRegionPolygon.isValid
+            text: root.missionItem.planningState === 1 ? qsTr("Replan") : qsTr("Generate Plan")
 
             onClicked: root.missionItem.plan()
         }

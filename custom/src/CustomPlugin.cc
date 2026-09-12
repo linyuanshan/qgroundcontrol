@@ -13,6 +13,7 @@
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
 #include "JsonParsing.h"
+#include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
 #include "MarineTaskJsonCodec.h"
 #include "MissionController.h"
@@ -40,6 +41,9 @@ Marine::MarinePlanContext* marinePlanContextFor(PlanMasterController* controller
     }
     if (context->plannerRegistry().planner("marine.coverage.mock") == nullptr) {
         (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::MockCoveragePlanner>());
+    }
+    if (context->plannerRegistry().planner("marine.coverage.lawnmower") == nullptr) {
+        (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::LawnmowerCoveragePlanner>());
     }
     return context;
 }
