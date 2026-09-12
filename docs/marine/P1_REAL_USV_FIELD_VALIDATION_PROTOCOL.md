@@ -1,7 +1,13 @@
 # P1 Real USV Field Validation Protocol
 
+Status: **DEFERRED — NOT EXECUTED**
+
 This protocol is the acceptance test for P1-14. It does not replace execution on a real USV. P1-14 remains
 incomplete until the field run and its evidence satisfy every acceptance criterion below.
+
+P1 Engineering Freeze does not close this protocol. It remains mandatory and must be completed before P2
+real-USV field acceptance. Deferral changes scheduling only; it does not delete, substitute, or weaken any
+precondition, procedure, acceptance criterion, or evidence requirement below.
 
 ## Test Scope
 
