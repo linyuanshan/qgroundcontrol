@@ -121,7 +121,7 @@ void CoverageTaskAdapterTest::_testValidationAndNormalization()
     QCOMPARE(problem.safetyMarginM, 4.01);
 }
 
-void CoverageTaskAdapterTest::_testUnsupportedNoGoRegion()
+void CoverageTaskAdapterTest::_testNoGoConversion()
 {
     MarineTask task = createTask();
     task.region.noGoRegions.push_back({{
@@ -133,8 +133,20 @@ void CoverageTaskAdapterTest::_testUnsupportedNoGoRegion()
     CoveragePlanningProblem problem;
     std::optional<GeoReference> reference;
     CoveragePlanningError error = CoveragePlanningError::None;
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(error, CoveragePlanningError::None);
+    QVERIFY(reference.has_value());
+    QCOMPARE(problem.region.noGoRegions.size(), std::size_t{1});
+    QCOMPARE(problem.region.noGoRegions.front().vertices.size(), task.region.noGoRegions.front().vertices.size());
+    for (std::size_t index = 0; index < problem.region.noGoRegions.front().vertices.size(); ++index) {
+        const std::optional<GeoPoint> roundTrip = reference->toGeo(problem.region.noGoRegions.front().vertices[index]);
+        QVERIFY(roundTrip.has_value());
+        compareGeoPoint(*roundTrip, task.region.noGoRegions.front().vertices[index]);
+    }
+
+    task.region.noGoRegions.front().vertices.front().latitudeDeg = 91.0;
     QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
-    QVERIFY(error == CoveragePlanningError::UnsupportedNoGoRegion);
+    QCOMPARE(error, CoveragePlanningError::InvalidNoGoRegion);
     QVERIFY(!reference.has_value());
 }
 

@@ -109,7 +109,7 @@ void CoveragePlannerTest::_testCapabilityGate()
     QVERIFY(solution.status == PlanningStatus::Failed);
     QCOMPARE(solution.error, CoveragePlanningError::UnsupportedNoGoRegion);
     QVERIFY(solution.path.empty());
-    QVERIFY(solution.message.find("P2") != std::string::npos);
+    QVERIFY(solution.message.find("selected coverage planner") != std::string::npos);
 }
 
 void CoveragePlannerTest::_testDeterministicPath()

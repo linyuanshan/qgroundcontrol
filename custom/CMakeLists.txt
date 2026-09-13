@@ -24,8 +24,12 @@ qgc_disable_dependency_warnings(MarineClipper2)
 target_compile_definitions(MarineClipper2 PUBLIC CLIPPER2_MAX_DECIMAL_PRECISION=8)
 target_include_directories(MarineClipper2 SYSTEM PUBLIC ${Clipper2_SOURCE_DIR}/CPP/Clipper2Lib/include)
 
-add_library(MarineGeometry STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.cc
-                                  ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.h
+add_library(
+    MarineGeometry STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/MarineGeometry.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/PolygonRegion.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/PolygonRegion.h
 )
 qgc_configure_target(MarineGeometry)
 target_include_directories(MarineGeometry PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine)
@@ -68,6 +72,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MonotoneCoverage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PathLegRole.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoveragePlanningProblem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageProblemValidator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageProblemValidator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageTaskAdapter.cc
@@ -93,6 +99,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageFreeSpaceTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageFreeSpaceTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.cc
@@ -178,6 +186,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         CoveragePlannerTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageFreeSpaceTest
         LABELS
         Unit
     )

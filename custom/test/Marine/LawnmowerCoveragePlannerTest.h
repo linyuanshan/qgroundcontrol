@@ -13,6 +13,7 @@ private slots:
     void _testNarrowRegionUsesOneLane();
     void _testPositiveSafetyMargin();
     void _testCoverageImpossibleWithSafetyMargin();
+    void _testNoGoCapabilityGate();
     void _testGeneralConvexDeterminism();
     void _testSafetyInsetFailure();
     void _testNonMonotoneSweepFailure();

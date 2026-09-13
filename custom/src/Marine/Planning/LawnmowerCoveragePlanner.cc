@@ -163,6 +163,9 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     if (validationError != CoveragePlanningError::None) {
         return failureSolution(validationError);
     }
+    if (!normalizedProblem.region.noGoRegions.empty()) {
+        return failureSolution(CoveragePlanningError::UnsupportedNoGoRegion);
+    }
 
     Geometry::PolygonInsetResult inset =
         Geometry::insetPolygon(normalizedProblem.region.outerBoundary, normalizedProblem.safetyMarginM);

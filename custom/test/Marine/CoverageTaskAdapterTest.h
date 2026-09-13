@@ -10,7 +10,7 @@ private slots:
     void _testBuildProblem();
     void _testInvalidTaskGeometry();
     void _testValidationAndNormalization();
-    void _testUnsupportedNoGoRegion();
+    void _testNoGoConversion();
     void _testSolutionMapping();
     void _testTaskPlannerRoundTrip();
 };

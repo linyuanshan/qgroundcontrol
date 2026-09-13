@@ -263,7 +263,7 @@ void CoverageComplexItemTest::_testQmlTaskProperties()
 
     QVERIFY(!_item->plan());
     QCOMPARE(_item->planningResult().status, PlanningStatus::Failed);
-    QVERIFY(_item->planningResult().message.find("P2") != std::string::npos);
+    QVERIFY(_item->planningResult().message.find("selected coverage planner") != std::string::npos);
     QSignalSpy taskDataSpy(_item, &CoverageInspectionComplexItem::taskDataChanged);
     _item->setTaskName(QStringLiteral("Updated inspection"));
     _item->setSwathWidthM(11.0);

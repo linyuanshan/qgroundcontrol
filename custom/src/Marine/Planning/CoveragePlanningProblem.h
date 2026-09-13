@@ -24,6 +24,12 @@ enum class CoveragePlanningError
     UnsafeConnector,
     InvalidGeneratedPath,
     GeometryFailure,
+    InvalidNoGoRegion,
+    NoGoOutsideBoundary,
+    NoGoBoundaryConflict,
+    NoGoOverlapOrTouch,
+    NoNavigableArea,
+    DisconnectedFeasibleRegion,
 };
 
 struct CoveragePlanningProblem

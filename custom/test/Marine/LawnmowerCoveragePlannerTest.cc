@@ -144,6 +144,19 @@ void LawnmowerCoveragePlannerTest::_testCoverageImpossibleWithSafetyMargin()
     QVERIFY(solution.path.empty());
 }
 
+void LawnmowerCoveragePlannerTest::_testNoGoCapabilityGate()
+{
+    CoveragePlanningProblem problem = rectangleProblem(20.0, 10.0, 4.0, 90.0);
+    problem.region.noGoRegions.push_back({{{8.0, 3.0}, {12.0, 3.0}, {12.0, 7.0}, {8.0, 7.0}}});
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+
+    QCOMPARE(solution.status, PlanningStatus::Failed);
+    QCOMPARE(solution.error, CoveragePlanningError::UnsupportedNoGoRegion);
+    QVERIFY(solution.path.empty());
+}
+
 void LawnmowerCoveragePlannerTest::_testGeneralConvexDeterminism()
 {
     CoveragePlanningProblem problem;

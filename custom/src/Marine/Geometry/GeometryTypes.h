@@ -47,4 +47,25 @@ struct Region2D
     std::vector<Polygon2D> noGoRegions;
 };
 
+struct PolygonRegion2D
+{
+    [[nodiscard]] bool isFinite() const
+    {
+        if (!outerBoundary.isFinite()) {
+            return false;
+        }
+        for (const Polygon2D& hole : holes) {
+            if (!hole.isFinite()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    Polygon2D outerBoundary;
+    std::vector<Polygon2D> holes;
+};
+
+using PolygonRegionSet2D = std::vector<PolygonRegion2D>;
+
 }  // namespace Marine

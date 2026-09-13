@@ -50,6 +50,16 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
         return false;
     }
 
+    converted.region.noGoRegions.reserve(task.region.noGoRegions.size());
+    for (const GeoPolygon& noGoRegion : task.region.noGoRegions) {
+        Polygon2D localNoGo;
+        if (!toLocalPolygon(noGoRegion, *reference, localNoGo)) {
+            error = CoveragePlanningError::InvalidNoGoRegion;
+            return false;
+        }
+        converted.region.noGoRegions.push_back(std::move(localNoGo));
+    }
+
     converted.swathWidthM = task.coverage.swathWidthM;
     converted.safetyMarginM = task.coverage.safetyMarginM;
     converted.sweepAngleMode = task.coverage.sweepAngleMode;
@@ -59,11 +69,6 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
     if (error != CoveragePlanningError::None) {
         return false;
     }
-    if (!task.region.noGoRegions.empty()) {
-        error = CoveragePlanningError::UnsupportedNoGoRegion;
-        return false;
-    }
-
     problem = std::move(converted);
     geoReference = std::move(reference);
     return true;

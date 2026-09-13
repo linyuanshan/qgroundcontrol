@@ -38,9 +38,6 @@ CoveragePlanningError CoverageProblemValidator::validateAndNormalize(CoveragePla
             return CoveragePlanningError::InvalidSweepAngle;
     }
 
-    if (!problem.region.noGoRegions.empty()) {
-        return CoveragePlanningError::UnsupportedNoGoRegion;
-    }
     return CoveragePlanningError::None;
 }
 
@@ -50,11 +47,17 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::None:
             return PlanningStatus::Success;
         case CoveragePlanningError::InvalidOuterBoundary:
+        case CoveragePlanningError::InvalidNoGoRegion:
+        case CoveragePlanningError::NoGoOutsideBoundary:
+        case CoveragePlanningError::NoGoBoundaryConflict:
+        case CoveragePlanningError::NoGoOverlapOrTouch:
         case CoveragePlanningError::InvalidSwathWidth:
         case CoveragePlanningError::InvalidSafetyMargin:
         case CoveragePlanningError::InvalidSweepAngle:
             return PlanningStatus::InvalidInput;
         case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
+        case CoveragePlanningError::NoNavigableArea:
+        case CoveragePlanningError::DisconnectedFeasibleRegion:
         case CoveragePlanningError::UnsupportedNoGoRegion:
         case CoveragePlanningError::SafetyInsetEmpty:
         case CoveragePlanningError::SafetyInsetDisconnected:
@@ -75,6 +78,15 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
         case CoveragePlanningError::InvalidOuterBoundary:
             return "Work region outer boundary must be a finite, non-self-intersecting polygon with at least three "
                    "distinct points and non-zero area";
+        case CoveragePlanningError::InvalidNoGoRegion:
+            return "Each no-go region must be a finite, simple polygon with at least three distinct points and "
+                   "non-zero area";
+        case CoveragePlanningError::NoGoOutsideBoundary:
+            return "Each no-go region must be fully inside the work-region outer boundary";
+        case CoveragePlanningError::NoGoBoundaryConflict:
+            return "No-go regions must not touch or cross the work-region outer boundary";
+        case CoveragePlanningError::NoGoOverlapOrTouch:
+            return "No-go regions must not overlap, touch, or contain one another";
         case CoveragePlanningError::InvalidSwathWidth:
             return "Coverage swath width must be finite and greater than zero";
         case CoveragePlanningError::InvalidSafetyMargin:
@@ -83,8 +95,12 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
             return "Manual sweep angle must be finite";
         case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
             return "The nominal work region cannot be fully covered while keeping centerlines inside the safety inset";
+        case CoveragePlanningError::NoNavigableArea:
+            return "Safety processing leaves no navigable centerline area";
+        case CoveragePlanningError::DisconnectedFeasibleRegion:
+            return "Safety processing produces multiple disconnected centerline regions";
         case CoveragePlanningError::UnsupportedNoGoRegion:
-            return "Internal no-go coverage routing is reserved for P2.";
+            return "The selected coverage planner does not support no-go regions";
         case CoveragePlanningError::SafetyInsetEmpty:
             return "Safety inset leaves no plannable coverage region";
         case CoveragePlanningError::SafetyInsetDisconnected:

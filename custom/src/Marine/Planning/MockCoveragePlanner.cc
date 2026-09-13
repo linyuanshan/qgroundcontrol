@@ -50,6 +50,13 @@ CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem
         solution.message = CoverageProblemValidator::messageForError(validationError);
         return solution;
     }
+    if (!normalizedProblem.region.noGoRegions.empty()) {
+        CoveragePlanningSolution solution;
+        solution.status = CoverageProblemValidator::statusForError(CoveragePlanningError::UnsupportedNoGoRegion);
+        solution.error = CoveragePlanningError::UnsupportedNoGoRegion;
+        solution.message = CoverageProblemValidator::messageForError(CoveragePlanningError::UnsupportedNoGoRegion);
+        return solution;
+    }
 
     const Polygon2D& boundary = normalizedProblem.region.outerBoundary;
     const Point2D& first = boundary.vertices.front();

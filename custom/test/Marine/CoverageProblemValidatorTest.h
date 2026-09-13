@@ -10,6 +10,6 @@ private slots:
     void _testPolygonValidation();
     void _testNumericValidation();
     void _testAngleNormalization();
-    void _testNoGoCapabilityGate();
+    void _testNoGoCapabilityBoundary();
     void _testErrorMapping();
 };
