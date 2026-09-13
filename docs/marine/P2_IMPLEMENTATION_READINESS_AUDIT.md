@@ -467,25 +467,16 @@ Paths below are relative to the repository. This is a proposal, not implemented 
 Run unchanged `ArduPilotMissionAdapterTest` and all required P1/QGC regressions. No production MissionAdapter,
 Geometry region types, Validator gate migration, No-Go conversion, MapVisual styling, BCD, routing, ordering,
 editor, or completeness work belongs in P2-01. Keep numerical threshold changes separate from extraction.
+## 16. Condition closure and final verdict
 
-## 16. Final verdict
+Project lead review date: 2026-09-13
 
-**Readiness status:** CONDITIONAL
+**Readiness status:** PASS
 
-The branch, P1 frozen behavior, Marine architecture boundaries, Debug/Release builds, all Marine tests, and the
-requested QGC regression suites are ready for P2-01 planning. No implementation blocker was found in the current
-P1 code. The conditions for proceeding are:
+- Approved the `targetPolygon` + `navigablePolygon` MonotoneCoverage interface.
+- Approved empty `legRoles` as the P1 version 1 legacy-load representation.
+- Full pre-commit: PASS.
+- The two PlanMasterController strict-log failures are accepted as unchanged upstream baseline.
+- P1 real-USV validation remains deferred and is not a P2 software-development blocker.
 
-1. Project lead reviews and accepts the lane-schedule adaptation required to extract `MonotoneCoverage` without
-   double inset or a P1 nominal-coverage regression.
-2. Project lead reviews and accepts the explicit P1 artifact-v1 role fallback/staging policy before role
-   cardinality is enforced across all consumers.
-3. Full `pre-commit run --all-files` is rerun in an environment where the pinned hook environments install and
-   completes successfully. This audit could run only document-specific hooks because Go/Node hook environment
-   setup failed (network/TLS and Windows cleanup errors); no hook verdict was bypassed.
-4. The two PlanMasterController strict-log failures remain recorded as upstream baseline and are not changed by
-   Marine work. P1 real-USV validation remains deferred and is a required gate before P2 real-USV acceptance.
-
-Subject to those conditions, the recommended next package is P2-01 with the file list and scope in section 15.
-The P2-00 audit document is complete; do not begin P2-01 in this turn. The requested Git commit remains the
-final packaging step once `.git` write access is available.
+All P2-00 readiness conditions are closed. P2-01 may begin with the scope in section 15.
