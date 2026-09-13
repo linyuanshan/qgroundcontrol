@@ -21,6 +21,7 @@ PlanningResult validResult()
         {.latitudeDeg = 38.2, .longitudeDeg = 121.2, .altitudeM = 1.5},
         {.latitudeDeg = 38.3, .longitudeDeg = 121.3, .altitudeM = 3.0},
     };
+    result.legRoles = {PathLegRole::Coverage, PathLegRole::Transit};
     return result;
 }
 
@@ -40,6 +41,7 @@ void ArduPilotMissionAdapterTest::_testAppendWaypoints()
     QCOMPARE(errorString, QString());
     QCOMPARE(items.size(), 3);
     QCOMPARE(sequenceNumber, 10);
+    QCOMPARE(result.legRoles.size(), result.path.size() - 1);
     for (int index = 0; index < items.size(); ++index) {
         const MissionItem* item = items.at(index);
         QCOMPARE(item->sequenceNumber(), 7 + index);

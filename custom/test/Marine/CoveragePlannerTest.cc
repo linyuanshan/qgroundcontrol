@@ -75,6 +75,9 @@ void CoveragePlannerTest::_testValidProblem()
     QVERIFY(solution.status == PlanningStatus::Success);
     QVERIFY(solution.error == CoveragePlanningError::None);
     QCOMPARE(solution.path.size(), std::size_t{3});
+    QCOMPARE(solution.legRoles.size(), std::size_t{2});
+    QCOMPARE(solution.legRoles[0], PathLegRole::Coverage);
+    QCOMPARE(solution.legRoles[1], PathLegRole::Transit);
     comparePoints(solution.path[0], {0.0, 0.0});
     comparePoints(solution.path[1], {10.0, 5.0});
     comparePoints(solution.path[2], {20.0, 10.0});

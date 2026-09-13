@@ -59,6 +59,7 @@ CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem
     CoveragePlanningSolution solution;
     solution.status = PlanningStatus::Success;
     solution.path = {first, center, opposite};
+    solution.legRoles = {PathLegRole::Coverage, PathLegRole::Transit};
     solution.pathLengthM = distanceM(first, center) + distanceM(center, opposite);
     solution.selectedSweepAngleDeg = normalizedProblem.requestedSweepAngleDeg;
     solution.turnCount = 1;

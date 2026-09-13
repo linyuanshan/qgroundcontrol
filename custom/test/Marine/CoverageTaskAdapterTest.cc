@@ -146,6 +146,7 @@ void CoverageTaskAdapterTest::_testSolutionMapping()
     CoveragePlanningSolution solution;
     solution.status = PlanningStatus::Success;
     solution.path = {{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}};
+    solution.legRoles = {PathLegRole::Coverage, PathLegRole::Transit};
     solution.pathLengthM = 200.0;
     solution.selectedSweepAngleDeg = 90.0;
     solution.turnCount = 1;
@@ -154,6 +155,9 @@ void CoverageTaskAdapterTest::_testSolutionMapping()
     const PlanningResult result = CoverageTaskAdapter::toPlanningResult(solution, *reference);
     QVERIFY(result.status == PlanningStatus::Success);
     QCOMPARE(result.path.size(), solution.path.size());
+    QCOMPARE(result.legRoles.size(), solution.legRoles.size());
+    QCOMPARE(result.legRoles[0], PathLegRole::Coverage);
+    QCOMPARE(result.legRoles[1], PathLegRole::Transit);
     compareGeoPoint(result.path.front(), reference->origin());
     QCOMPARE(result.pathLengthM, 200.0);
     QCOMPARE(result.selectedSweepAngleDeg, 90.0);
@@ -166,6 +170,14 @@ void CoverageTaskAdapterTest::_testSolutionMapping()
     QVERIFY(invalidResult.path.empty());
     QCOMPARE(invalidResult.pathLengthM, 0.0);
     QVERIFY(!invalidResult.message.empty());
+
+    solution = {};
+    solution.status = PlanningStatus::Success;
+    solution.path = {{0.0, 0.0}, {1.0, 0.0}};
+    const PlanningResult invalidRolesResult = CoverageTaskAdapter::toPlanningResult(solution, *reference);
+    QVERIFY(invalidRolesResult.status == PlanningStatus::Failed);
+    QVERIFY(invalidRolesResult.path.empty());
+    QVERIFY(invalidRolesResult.legRoles.empty());
 }
 
 void CoverageTaskAdapterTest::_testTaskPlannerRoundTrip()
@@ -185,6 +197,9 @@ void CoverageTaskAdapterTest::_testTaskPlannerRoundTrip()
     const PlanningResult result = CoverageTaskAdapter::toPlanningResult(solution, *reference);
     QVERIFY(result.status == PlanningStatus::Success);
     QCOMPARE(result.path.size(), std::size_t{3});
+    QCOMPARE(result.legRoles.size(), std::size_t{2});
+    QCOMPARE(result.legRoles[0], PathLegRole::Coverage);
+    QCOMPARE(result.legRoles[1], PathLegRole::Transit);
     QVERIFY(result.pathLengthM > 0.0);
     QCOMPARE(result.selectedSweepAngleDeg, 35.0);
     QCOMPARE(result.turnCount, 1);

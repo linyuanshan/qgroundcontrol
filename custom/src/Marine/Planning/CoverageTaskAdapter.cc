@@ -78,6 +78,12 @@ PlanningResult CoverageTaskAdapter::toPlanningResult(const CoveragePlanningSolut
     if (solution.status != PlanningStatus::Success) {
         return result;
     }
+    if ((solution.path.empty() && !solution.legRoles.empty()) ||
+        (!solution.path.empty() && (solution.legRoles.size() != (solution.path.size() - 1)))) {
+        result = {};
+        result.message = "Coverage solution contains invalid path leg roles";
+        return result;
+    }
 
     result.path.reserve(solution.path.size());
     for (const Point2D& point : solution.path) {
@@ -91,6 +97,7 @@ PlanningResult CoverageTaskAdapter::toPlanningResult(const CoveragePlanningSolut
     }
 
     result.pathLengthM = solution.pathLengthM;
+    result.legRoles = solution.legRoles;
     result.selectedSweepAngleDeg = solution.selectedSweepAngleDeg;
     result.turnCount = solution.turnCount;
     return result;

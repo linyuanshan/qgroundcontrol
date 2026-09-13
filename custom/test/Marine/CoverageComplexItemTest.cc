@@ -121,6 +121,10 @@ void CoverageComplexItemTest::_testLawnmowerPlanning()
     QCOMPARE(result.status, PlanningStatus::Success);
     QVERIFY(result.path.size() >= 4);
     QCOMPARE(result.path.size() % 2, std::size_t{0});
+    QCOMPARE(result.legRoles.size(), result.path.size() - 1);
+    for (std::size_t legIndex = 0; legIndex < result.legRoles.size(); ++legIndex) {
+        QCOMPARE(result.legRoles[legIndex], (legIndex % 2) == 0 ? PathLegRole::Coverage : PathLegRole::Transit);
+    }
     QCOMPARE(result.selectedSweepAngleDeg, 0.0);
     QCOMPARE(result.turnCount, static_cast<int>((result.path.size() / 2) - 1));
     QCOMPARE(_item->plannerId(), QStringLiteral("marine.coverage.lawnmower"));
@@ -369,6 +373,7 @@ void CoverageComplexItemTest::_testSaveLoad()
     QCOMPARE(loadedItem->taskId(), _item->taskId());
     QCOMPARE(loadedItem->planningState(), CoverageInspectionComplexItem::Planned);
     QCOMPARE(loadedItem->planningResult().status, PlanningStatus::Success);
+    QVERIFY(loadedItem->planningResult().legRoles.empty());
     QCOMPARE(loadedItem->selectedSweepAngleDeg(), _item->selectedSweepAngleDeg());
     QCOMPARE(loadedItem->turnCount(), _item->turnCount());
     QCOMPARE(loadedItem->generatedPath(), _item->generatedPath());

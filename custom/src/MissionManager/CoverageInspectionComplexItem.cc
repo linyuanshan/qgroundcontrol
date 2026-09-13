@@ -348,6 +348,7 @@ bool CoverageInspectionComplexItem::plan()
     }
     if (result.status != PlanningStatus::Success) {
         result.path.clear();
+        result.legRoles.clear();
         result.pathLengthM = 0.0;
     }
     const bool success = result.status == PlanningStatus::Success;
