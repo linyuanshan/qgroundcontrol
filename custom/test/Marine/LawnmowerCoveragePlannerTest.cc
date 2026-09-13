@@ -259,6 +259,29 @@ void LawnmowerCoveragePlannerTest::_testAutoRectangleRanksTurnCount()
     QCOMPARE(solution.turnCount, 2);
 }
 
+void LawnmowerCoveragePlannerTest::_testAutoTargetUsesSharedSchedule()
+{
+    CoveragePlanningProblem problem = rectangleProblem(20.0, 10.0, 4.0, 0.0, 1.0);
+    problem.sweepAngleMode = SweepAngleMode::Auto;
+
+    const LawnmowerCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(problem);
+
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    QCOMPARE(solution.error, CoveragePlanningError::None);
+    QCOMPARE(solution.selectedSweepAngleDeg, 90.0);
+    QCOMPARE(solution.path.size(), std::size_t{6});
+    QCOMPARE(solution.legRoles.size(), solution.path.size() - 1);
+    comparePoint(solution.path[0], 1.0, 2.0);
+    comparePoint(solution.path[1], 19.0, 2.0);
+    comparePoint(solution.path[2], 19.0, 5.0);
+    comparePoint(solution.path[3], 1.0, 5.0);
+    comparePoint(solution.path[4], 1.0, 8.0);
+    comparePoint(solution.path[5], 19.0, 8.0);
+    compareWithinTolerance(solution.pathLengthM, 60.0);
+    QCOMPARE(solution.turnCount, 2);
+}
+
 void LawnmowerCoveragePlannerTest::_testAutoRanksPathLengthBeforeAngle()
 {
     CoveragePlanningProblem problem = rectangleProblem(20.0, 10.0, 25.0, 0.0);

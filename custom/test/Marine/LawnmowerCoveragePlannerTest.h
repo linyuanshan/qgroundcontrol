@@ -19,6 +19,7 @@ private slots:
     void _testUnsafeConnectorFailure();
     void _testSuccessfulPathInvariants();
     void _testAutoRectangleRanksTurnCount();
+    void _testAutoTargetUsesSharedSchedule();
     void _testAutoRanksPathLengthBeforeAngle();
     void _testAutoAngleTieBreak();
     void _testAutoRotatedRectangle();

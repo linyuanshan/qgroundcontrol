@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <numbers>
 #include <utility>
 
@@ -92,55 +91,8 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
         return failureSolution(Marine::CoveragePlanningError::NonMonotoneSweep);
     }
 
-    const Marine::Polygon2D targetSweepPolygon =
-        Marine::Geometry::toSweepFrame(problem.region.outerBoundary, mathAngleDeg);
-    const Marine::Polygon2D safeSweepPolygon = Marine::Geometry::toSweepFrame(navigablePolygon, mathAngleDeg);
-    const auto crossTrackExtents = [](const Marine::Polygon2D& polygon) {
-        std::pair<double, double> extents{std::numeric_limits<double>::max(), std::numeric_limits<double>::lowest()};
-        for (const Marine::Point2D& vertex : polygon.vertices) {
-            extents.first = std::min(extents.first, vertex.yM);
-            extents.second = std::max(extents.second, vertex.yM);
-        }
-        return extents;
-    };
-    const auto [targetMinimumY, targetMaximumY] = crossTrackExtents(targetSweepPolygon);
-    const auto [safeMinimumY, safeMaximumY] = crossTrackExtents(safeSweepPolygon);
-    const double halfSwathM = problem.swathWidthM / 2.0;
-    const double firstLaneMaximumY = targetMinimumY + halfSwathM;
-    const double lastLaneMinimumY = targetMaximumY - halfSwathM;
-
-    if ((safeMinimumY > firstLaneMaximumY + Marine::Geometry::LengthEpsilonM) ||
-        (safeMaximumY < lastLaneMinimumY - Marine::Geometry::LengthEpsilonM)) {
-        return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
-    }
-
-    std::vector<double> lanePositionsY;
-    if (lastLaneMinimumY <= firstLaneMaximumY + Marine::Geometry::LengthEpsilonM) {
-        const double feasibleMinimumY = std::max(safeMinimumY, lastLaneMinimumY);
-        const double feasibleMaximumY = std::min(safeMaximumY, firstLaneMaximumY);
-        if (feasibleMinimumY > feasibleMaximumY + Marine::Geometry::LengthEpsilonM) {
-            return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
-        }
-        lanePositionsY.push_back((feasibleMinimumY + feasibleMaximumY) / 2.0);
-    } else {
-        const double firstLaneY = std::clamp(firstLaneMaximumY, safeMinimumY, safeMaximumY);
-        const double lastLaneY = std::clamp(lastLaneMinimumY, safeMinimumY, safeMaximumY);
-        const double laneSpanM = lastLaneY - firstLaneY;
-        const double intervalCountValue = std::ceil(laneSpanM / problem.swathWidthM);
-        if (!std::isfinite(intervalCountValue) || (intervalCountValue < 1.0) ||
-            (intervalCountValue >= static_cast<double>(std::numeric_limits<int>::max()))) {
-            return failureSolution(Marine::CoveragePlanningError::GeometryFailure);
-        }
-        const auto intervalCount = static_cast<std::size_t>(intervalCountValue);
-        const double spacingM = laneSpanM / intervalCountValue;
-        lanePositionsY.reserve(intervalCount + 1);
-        for (std::size_t laneIndex = 0; laneIndex <= intervalCount; ++laneIndex) {
-            lanePositionsY.push_back(firstLaneY + (static_cast<double>(laneIndex) * spacingM));
-        }
-    }
-
     const Marine::MonotoneCoverageResult primitiveResult = Marine::generateMonotoneCoverage(
-        problem.region.outerBoundary, navigablePolygon, problem.swathWidthM, navigationAngleDeg, lanePositionsY);
+        problem.region.outerBoundary, navigablePolygon, problem.swathWidthM, navigationAngleDeg);
 
     Marine::CoveragePlanningError primitiveError = Marine::CoveragePlanningError::GeometryFailure;
     switch (primitiveResult.error) {
@@ -152,6 +104,9 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
             break;
         case Marine::MonotoneCoverageError::InvalidSweepAngle:
             primitiveError = Marine::CoveragePlanningError::InvalidSweepAngle;
+            break;
+        case Marine::MonotoneCoverageError::CoverageImpossible:
+            primitiveError = Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin;
             break;
         case Marine::MonotoneCoverageError::NonMonotoneSweep:
         case Marine::MonotoneCoverageError::MultipleIntervals:

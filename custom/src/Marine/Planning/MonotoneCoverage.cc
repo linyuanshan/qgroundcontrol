@@ -35,8 +35,15 @@ std::pair<double, double> crossTrackExtents(const Polygon2D& polygon)
     return extents;
 }
 
-std::vector<double> deriveLaneSchedule(const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon,
-                                       double swathWidthM, double mathAngleDeg)
+struct LaneScheduleResult
+{
+    std::vector<double> positionsYM;
+    MonotoneCoverageError error = MonotoneCoverageError::None;
+    std::string message;
+};
+
+LaneScheduleResult deriveLaneSchedule(const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon,
+                                      double swathWidthM, double mathAngleDeg)
 {
     const Polygon2D targetSweepPolygon = Marine::Geometry::toSweepFrame(targetPolygon, mathAngleDeg);
     const Polygon2D navigableSweepPolygon = Marine::Geometry::toSweepFrame(navigablePolygon, mathAngleDeg);
@@ -48,18 +55,18 @@ std::vector<double> deriveLaneSchedule(const Polygon2D& targetPolygon, const Pol
 
     if ((navigableMinimumY > firstLaneMaximumY + Marine::Geometry::LengthEpsilonM) ||
         (navigableMaximumY < lastLaneMinimumY - Marine::Geometry::LengthEpsilonM)) {
-        return {};
+        return {.error = MonotoneCoverageError::CoverageImpossible,
+                .message = "Navigable polygon cannot cover the nominal target"};
     }
 
-    std::vector<double> lanePositionsYM;
     if (lastLaneMinimumY <= firstLaneMaximumY + Marine::Geometry::LengthEpsilonM) {
         const double feasibleMinimumY = std::max(navigableMinimumY, lastLaneMinimumY);
         const double feasibleMaximumY = std::min(navigableMaximumY, firstLaneMaximumY);
         if (feasibleMinimumY > feasibleMaximumY + Marine::Geometry::LengthEpsilonM) {
-            return {};
+            return {.error = MonotoneCoverageError::CoverageImpossible,
+                    .message = "Navigable polygon cannot cover the nominal target"};
         }
-        lanePositionsYM.push_back((feasibleMinimumY + feasibleMaximumY) / 2.0);
-        return lanePositionsYM;
+        return {.positionsYM = {(feasibleMinimumY + feasibleMaximumY) / 2.0}};
     }
 
     const double firstLaneY = std::clamp(firstLaneMaximumY, navigableMinimumY, navigableMaximumY);
@@ -68,16 +75,18 @@ std::vector<double> deriveLaneSchedule(const Polygon2D& targetPolygon, const Pol
     const double intervalCountValue = std::ceil(laneSpanM / swathWidthM);
     if (!std::isfinite(intervalCountValue) || (intervalCountValue < 1.0) ||
         (intervalCountValue >= static_cast<double>(std::numeric_limits<int>::max()))) {
-        return {};
+        return {.error = MonotoneCoverageError::GeometryFailure,
+                .message = "Coverage lane schedule cannot be represented"};
     }
 
     const auto intervalCount = static_cast<std::size_t>(intervalCountValue);
     const double spacingM = laneSpanM / intervalCountValue;
+    std::vector<double> lanePositionsYM;
     lanePositionsYM.reserve(intervalCount + 1);
     for (std::size_t laneIndex = 0; laneIndex <= intervalCount; ++laneIndex) {
         lanePositionsYM.push_back(firstLaneY + (static_cast<double>(laneIndex) * spacingM));
     }
-    return lanePositionsYM;
+    return {.positionsYM = std::move(lanePositionsYM)};
 }
 
 MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon,
@@ -253,13 +262,11 @@ MonotoneCoverageResult generateMonotoneCoverage(const Polygon2D& targetPolygon, 
         return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, {});
     }
     const double mathAngleDeg = Geometry::navigationAngleToMathAngle(navigationAngleDeg);
-    const std::vector<double> lanePositionsYM =
-        deriveLaneSchedule(targetPolygon, navigablePolygon, swathWidthM, mathAngleDeg);
-    if (lanePositionsYM.empty()) {
-        return failure(PlanningStatus::Failed, MonotoneCoverageError::InvalidGeneratedPath,
-                       "Coverage lanes cannot reach the nominal target");
+    const LaneScheduleResult schedule = deriveLaneSchedule(targetPolygon, navigablePolygon, swathWidthM, mathAngleDeg);
+    if (schedule.error != MonotoneCoverageError::None) {
+        return failure(PlanningStatus::Failed, schedule.error, schedule.message);
     }
-    return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, lanePositionsYM);
+    return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, schedule.positionsYM);
 }
 
 }  // namespace Marine

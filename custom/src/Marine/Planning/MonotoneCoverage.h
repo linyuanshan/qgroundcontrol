@@ -19,6 +19,7 @@ enum class MonotoneCoverageError
     InvalidSwathWidth,
     InvalidSweepAngle,
     InvalidLaneSchedule,
+    CoverageImpossible,
     NonMonotoneSweep,
     NoIntersection,
     MultipleIntervals,
