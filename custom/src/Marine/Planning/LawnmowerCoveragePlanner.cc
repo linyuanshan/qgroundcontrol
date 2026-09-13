@@ -2,13 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iterator>
 #include <limits>
 #include <numbers>
 #include <utility>
 
 #include "CoverageProblemValidator.h"
 #include "Geometry/MarineGeometry.h"
+#include "MonotoneCoverage.h"
 
 namespace {
 
@@ -35,30 +35,6 @@ Marine::CoveragePlanningError errorForInsetStatus(Marine::Geometry::PolygonInset
             return Marine::CoveragePlanningError::GeometryFailure;
     }
     return Marine::CoveragePlanningError::GeometryFailure;
-}
-
-double pathLength(const std::vector<Marine::Point2D>& path)
-{
-    double lengthM = 0.0;
-    if (path.empty()) {
-        return lengthM;
-    }
-
-    Marine::Point2D previous = path.front();
-    for (auto iterator = std::next(path.cbegin()); iterator != path.cend(); ++iterator) {
-        lengthM += std::hypot(iterator->xM - previous.xM, iterator->yM - previous.yM);
-        previous = *iterator;
-    }
-    return lengthM;
-}
-
-double normalizedSweepAngle(double angleDeg)
-{
-    double normalized = std::fmod(angleDeg, 180.0);
-    if (normalized < 0.0) {
-        normalized += 180.0;
-    }
-    return (normalized == 0.0) ? 0.0 : normalized;
 }
 
 bool equivalentSweepAngles(double firstDeg, double secondDeg)
@@ -139,7 +115,6 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
     }
 
     std::vector<double> lanePositionsY;
-    double spacingM = 0.0;
     if (lastLaneMinimumY <= firstLaneMaximumY + Marine::Geometry::LengthEpsilonM) {
         const double feasibleMinimumY = std::max(safeMinimumY, lastLaneMinimumY);
         const double feasibleMaximumY = std::min(safeMaximumY, firstLaneMaximumY);
@@ -157,81 +132,58 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
             return failureSolution(Marine::CoveragePlanningError::GeometryFailure);
         }
         const auto intervalCount = static_cast<std::size_t>(intervalCountValue);
-        spacingM = laneSpanM / intervalCountValue;
+        const double spacingM = laneSpanM / intervalCountValue;
         lanePositionsY.reserve(intervalCount + 1);
         for (std::size_t laneIndex = 0; laneIndex <= intervalCount; ++laneIndex) {
             lanePositionsY.push_back(firstLaneY + (static_cast<double>(laneIndex) * spacingM));
         }
     }
 
-    std::vector<Marine::Point2D> path;
-    path.reserve(lanePositionsY.size() * 2);
-    std::size_t generatedLaneCount = 0;
-    double generatedMinimumY = std::numeric_limits<double>::max();
-    double generatedMaximumY = std::numeric_limits<double>::lowest();
-    for (const double laneY : lanePositionsY) {
-        const Marine::Geometry::ScanlineResult intersection =
-            Marine::Geometry::intersectScanline(safeSweepPolygon, laneY);
-        if (intersection.status == Marine::Geometry::ScanlineStatus::NoIntersection) {
-            return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
-        }
-        if (intersection.status != Marine::Geometry::ScanlineStatus::Success) {
-            return failureSolution(Marine::CoveragePlanningError::GeometryFailure);
-        }
-        if (intersection.intervals.size() != 1) {
-            return failureSolution(Marine::CoveragePlanningError::NonMonotoneSweep);
-        }
+    const Marine::MonotoneCoverageResult primitiveResult = Marine::generateMonotoneCoverage(
+        problem.region.outerBoundary, navigablePolygon, problem.swathWidthM, navigationAngleDeg, lanePositionsY);
 
-        const Marine::Geometry::ScanlineInterval& interval = intersection.intervals.front();
-        Marine::Point2D first{.xM = interval.minimumXM, .yM = laneY};
-        Marine::Point2D second{.xM = interval.maximumXM, .yM = laneY};
-        if ((generatedLaneCount % 2) != 0) {
-            std::swap(first, second);
-        }
-        path.push_back(Marine::Geometry::fromSweepFrame(first, mathAngleDeg));
-        path.push_back(Marine::Geometry::fromSweepFrame(second, mathAngleDeg));
-        generatedMinimumY = std::min(generatedMinimumY, laneY);
-        generatedMaximumY = std::max(generatedMaximumY, laneY);
-        ++generatedLaneCount;
+    Marine::CoveragePlanningError primitiveError = Marine::CoveragePlanningError::GeometryFailure;
+    switch (primitiveResult.error) {
+        case Marine::MonotoneCoverageError::None:
+            primitiveError = Marine::CoveragePlanningError::None;
+            break;
+        case Marine::MonotoneCoverageError::InvalidSwathWidth:
+            primitiveError = Marine::CoveragePlanningError::InvalidSwathWidth;
+            break;
+        case Marine::MonotoneCoverageError::InvalidSweepAngle:
+            primitiveError = Marine::CoveragePlanningError::InvalidSweepAngle;
+            break;
+        case Marine::MonotoneCoverageError::NonMonotoneSweep:
+        case Marine::MonotoneCoverageError::MultipleIntervals:
+            primitiveError = Marine::CoveragePlanningError::NonMonotoneSweep;
+            break;
+        case Marine::MonotoneCoverageError::NoIntersection:
+            primitiveError = Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin;
+            break;
+        case Marine::MonotoneCoverageError::UnsafeConnector:
+            primitiveError = Marine::CoveragePlanningError::UnsafeConnector;
+            break;
+        case Marine::MonotoneCoverageError::GeometryFailure:
+            primitiveError = Marine::CoveragePlanningError::GeometryFailure;
+            break;
+        case Marine::MonotoneCoverageError::InvalidTargetPolygon:
+        case Marine::MonotoneCoverageError::InvalidNavigablePolygon:
+        case Marine::MonotoneCoverageError::InvalidLaneSchedule:
+        case Marine::MonotoneCoverageError::InvalidGeneratedPath:
+            primitiveError = Marine::CoveragePlanningError::InvalidGeneratedPath;
+            break;
     }
-
-    if ((path.size() < 2) || (generatedLaneCount == 0)) {
-        return failureSolution(Marine::CoveragePlanningError::InvalidGeneratedPath);
-    }
-    if (!std::isfinite(spacingM) || (spacingM > problem.swathWidthM + Marine::Geometry::LengthEpsilonM)) {
-        return failureSolution(Marine::CoveragePlanningError::InvalidGeneratedPath);
-    }
-    if (((generatedMinimumY - halfSwathM) > targetMinimumY + Marine::Geometry::LengthEpsilonM) ||
-        ((generatedMaximumY + halfSwathM) < targetMaximumY - Marine::Geometry::LengthEpsilonM)) {
-        return failureSolution(Marine::CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
-    }
-    for (const Marine::Point2D& point : path) {
-        if (!point.isFinite() || !Marine::Geometry::containsPoint(navigablePolygon, point)) {
-            return failureSolution(Marine::CoveragePlanningError::InvalidGeneratedPath);
-        }
-    }
-    Marine::Point2D previousPoint = path.front();
-    std::size_t segmentEndIndex = 1;
-    for (auto iterator = std::next(path.cbegin()); iterator != path.cend(); ++iterator, ++segmentEndIndex) {
-        if (!Marine::Geometry::containsSegment(navigablePolygon, previousPoint, *iterator)) {
-            const bool connector = (segmentEndIndex % 2) == 0;
-            return failureSolution(connector ? Marine::CoveragePlanningError::UnsafeConnector
-                                             : Marine::CoveragePlanningError::InvalidGeneratedPath);
-        }
-        previousPoint = *iterator;
-    }
-
-    const double candidatePathLengthM = pathLength(path);
-    if (!std::isfinite(candidatePathLengthM) || (candidatePathLengthM <= 0.0)) {
-        return failureSolution(Marine::CoveragePlanningError::InvalidGeneratedPath);
+    if (primitiveResult.status != Marine::PlanningStatus::Success) {
+        return failureSolution(primitiveError);
     }
 
     Marine::CoveragePlanningSolution solution;
     solution.status = Marine::PlanningStatus::Success;
-    solution.path = std::move(path);
-    solution.pathLengthM = candidatePathLengthM;
+    solution.path = primitiveResult.path;
+    solution.legRoles = primitiveResult.legRoles;
+    solution.pathLengthM = primitiveResult.pathLengthM;
     solution.selectedSweepAngleDeg = navigationAngleDeg;
-    solution.turnCount = static_cast<int>(generatedLaneCount - 1);
+    solution.turnCount = primitiveResult.turnCount;
     return solution;
 }
 

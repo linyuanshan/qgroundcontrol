@@ -1,6 +1,7 @@
 #include "LawnmowerCoveragePlannerTest.h"
 
 #include <cmath>
+#include <initializer_list>
 
 #include "Geometry/MarineGeometry.h"
 #include "Planning/LawnmowerCoveragePlanner.h"
@@ -37,6 +38,15 @@ void comparePoint(const Point2D& actual, double expectedX, double expectedY)
     compareWithinTolerance(actual.yM, expectedY);
 }
 
+void compareRoles(const CoveragePlanningSolution& solution, std::initializer_list<PathLegRole> expected)
+{
+    QCOMPARE(solution.legRoles.size(), expected.size());
+    std::size_t index = 0;
+    for (const PathLegRole role : expected) {
+        QCOMPARE(solution.legRoles[index++], role);
+    }
+}
+
 }  // namespace
 
 void LawnmowerCoveragePlannerTest::_testMetadata()
@@ -62,6 +72,9 @@ void LawnmowerCoveragePlannerTest::_testRectangleManualZeroDegrees()
     comparePoint(solution.path[8], 2.0, 0.0);
     comparePoint(solution.path[9], 2.0, 10.0);
     compareWithinTolerance(solution.pathLengthM, 66.0);
+    compareRoles(solution, {PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage, PathLegRole::Transit,
+                            PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage, PathLegRole::Transit,
+                            PathLegRole::Coverage});
     QCOMPARE(solution.selectedSweepAngleDeg, 0.0);
     QCOMPARE(solution.turnCount, 4);
 }
@@ -78,6 +91,7 @@ void LawnmowerCoveragePlannerTest::_testRectangleManualNinetyDegrees()
     comparePoint(solution.path[2], 20.0, 7.5);
     comparePoint(solution.path[3], 0.0, 7.5);
     compareWithinTolerance(solution.pathLengthM, 45.0);
+    compareRoles(solution, {PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage});
     QCOMPARE(solution.selectedSweepAngleDeg, 90.0);
     QCOMPARE(solution.turnCount, 1);
 }
@@ -92,6 +106,7 @@ void LawnmowerCoveragePlannerTest::_testNarrowRegionUsesOneLane()
     comparePoint(solution.path[0], 0.0, 1.5);
     comparePoint(solution.path[1], 12.0, 1.5);
     compareWithinTolerance(solution.pathLengthM, 12.0);
+    compareRoles(solution, {PathLegRole::Coverage});
     QCOMPARE(solution.turnCount, 0);
 }
 
@@ -110,6 +125,8 @@ void LawnmowerCoveragePlannerTest::_testPositiveSafetyMargin()
     comparePoint(solution.path[4], 1.0, 8.0);
     comparePoint(solution.path[5], 19.0, 8.0);
     compareWithinTolerance(solution.pathLengthM, 60.0);
+    compareRoles(solution, {PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage, PathLegRole::Transit,
+                            PathLegRole::Coverage});
     QCOMPARE(solution.turnCount, 2);
 
     const double halfSwathM = SwathWidthM / 2.0;
@@ -211,6 +228,7 @@ void LawnmowerCoveragePlannerTest::_testSuccessfulPathInvariants()
     QCOMPARE(solution.status, PlanningStatus::Success);
     QCOMPARE(inset.status, Geometry::PolygonInsetStatus::Success);
     QVERIFY(solution.path.size() >= 2);
+    QCOMPARE(solution.legRoles.size(), solution.path.size() - 1);
     for (const Point2D& point : solution.path) {
         QVERIFY(point.isFinite());
         QVERIFY(Geometry::containsPoint(inset.polygon, point));
