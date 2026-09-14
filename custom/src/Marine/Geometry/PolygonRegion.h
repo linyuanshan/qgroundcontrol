@@ -44,4 +44,14 @@ struct PolygonRegionContainmentResult
 [[nodiscard]] PolygonRegionContainmentResult isRegionSetContained(const PolygonRegionSet2D& target,
                                                                   const PolygonRegionSet2D& container);
 
+/// Clip each open-slab component separately, returning its closure. No vertex Y may lie inside the slab.
+[[nodiscard]] PolygonRegionOperationResult clipPolygonRegionsToSlab(const PolygonRegionSet2D& regions, double minimumYM,
+                                                                    double maximumYM);
+[[nodiscard]] PolygonRegionOperationResult unionPolygonRegions(const PolygonRegionSet2D& regions);
+/// True only for a shared boundary interval of positive, resolved length, never a point contact.
+[[nodiscard]] bool shareSlabBoundary(const Polygon2D& below, const Polygon2D& above, double eventYM);
+/// Predicates for boolean/offset output on the backend lattice, without the Task input proximity gate.
+[[nodiscard]] bool isValidPolygonRegion(const PolygonRegion2D& region);
+[[nodiscard]] bool isMonotoneCellPolygon(const Polygon2D& polygon, double mathAngleDeg);
+
 }  // namespace Marine::Geometry

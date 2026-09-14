@@ -266,6 +266,63 @@ bool allRegionsValid(const PolygonRegionSet2D& regions)
     return true;
 }
 
+bool latticePointOnSegment(const Clipper2Lib::Point64& point, const Clipper2Lib::Point64& a,
+                           const Clipper2Lib::Point64& b)
+{
+    return (Clipper2Lib::CrossProductSign(a, b, point) == 0) && (point.x >= std::min(a.x, b.x)) &&
+           (point.x <= std::max(a.x, b.x)) && (point.y >= std::min(a.y, b.y)) && (point.y <= std::max(a.y, b.y));
+}
+
+bool latticeSegmentsIntersect(const Clipper2Lib::Point64& a, const Clipper2Lib::Point64& b,
+                              const Clipper2Lib::Point64& c, const Clipper2Lib::Point64& d)
+{
+    const int ac = Clipper2Lib::CrossProductSign(a, b, c);
+    const int ad = Clipper2Lib::CrossProductSign(a, b, d);
+    const int ca = Clipper2Lib::CrossProductSign(c, d, a);
+    const int cb = Clipper2Lib::CrossProductSign(c, d, b);
+    return ((ac * ad < 0) && (ca * cb < 0)) || latticePointOnSegment(c, a, b) || latticePointOnSegment(d, a, b) ||
+           latticePointOnSegment(a, c, d) || latticePointOnSegment(b, c, d);
+}
+
+bool simpleLatticePath(const Clipper2Lib::Path64& path)
+{
+    if (!isValidClipperPath(path)) {
+        return false;
+    }
+    double perimeter = 0.0;
+    for (std::size_t i = 0; i < path.size(); ++i) {
+        const auto& a = path[i];
+        const auto& b = path[(i + 1) % path.size()];
+        const auto& c = path[(i + 2) % path.size()];
+        if ((a == b) || latticePointOnSegment(c, a, b) || latticePointOnSegment(a, b, c)) {
+            return false;
+        }
+        perimeter += std::hypot(static_cast<double>(b.x - a.x), static_cast<double>(b.y - a.y));
+        for (std::size_t j = i + 1; j < path.size(); ++j) {
+            if ((j == i + 1) || ((j + 1) % path.size() == i)) {
+                continue;
+            }
+            if (latticeSegmentsIntersect(a, b, path[j], path[(j + 1) % path.size()])) {
+                return false;
+            }
+        }
+    }
+    return 2.0 * std::abs(Clipper2Lib::Area(path)) >
+           Marine::Geometry::LengthEpsilonM * Marine::Geometry::CoordinateScalePerM * perimeter;
+}
+
+bool latticeBoundariesIntersect(const Clipper2Lib::Path64& a, const Clipper2Lib::Path64& b)
+{
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        for (std::size_t j = 0; j < b.size(); ++j) {
+            if (latticeSegmentsIntersect(a[i], a[(i + 1) % a.size()], b[j], b[(j + 1) % b.size()])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 namespace Marine::Geometry {
@@ -404,6 +461,175 @@ PolygonRegionContainmentResult isRegionSetContained(const PolygonRegionSet2D& ta
         return {difference.status, false};
     }
     return {PolygonRegionOperationStatus::Success, difference.regions.empty()};
+}
+
+PolygonRegionOperationResult clipPolygonRegionsToSlab(const PolygonRegionSet2D& regions, double minimumYM,
+                                                      double maximumYM)
+{
+    if (!std::isfinite(minimumYM) || !std::isfinite(maximumYM) || (maximumYM <= minimumYM) ||
+        !allRegionsValid(regions)) {
+        return {.status = PolygonRegionOperationStatus::InvalidInput};
+    }
+    if (regions.empty()) {
+        return {.status = PolygonRegionOperationStatus::Success};
+    }
+    Clipper2Lib::Paths64 subjects;
+    const double bottom = std::round(minimumYM * CoordinateScalePerM);
+    const double top = std::round(maximumYM * CoordinateScalePerM);
+    if (!regionSetToPaths(regions, subjects) || !std::isfinite(bottom) || !std::isfinite(top) ||
+        (std::abs(bottom) > 1e15) || (std::abs(top) > 1e15) || (top <= bottom)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+
+    struct Crossing
+    {
+        double probeX;
+        int64_t bottomX;
+        int64_t topX;
+    };
+
+    std::vector<Crossing> crossings;
+    const double probeY = (bottom + top) / 2.0;
+    for (const auto& path : subjects) {
+        for (std::size_t index = 0; index < path.size(); ++index) {
+            const auto& a = path[index];
+            const auto& b = path[(index + 1) % path.size()];
+            if ((a.y > bottom) && (a.y < top)) {
+                return {.status = PolygonRegionOperationStatus::InvalidInput};
+            }
+            if ((a.y > probeY) == (b.y > probeY)) {
+                continue;
+            }
+            const auto xAt = [&a, &b](double y) {
+                return static_cast<double>(a.x) +
+                       (y - static_cast<double>(a.y)) * static_cast<double>(b.x - a.x) / static_cast<double>(b.y - a.y);
+            };
+            crossings.push_back(
+                {.probeX = xAt(probeY), .bottomX = std::llround(xAt(bottom)), .topX = std::llround(xAt(top))});
+        }
+    }
+    std::sort(crossings.begin(), crossings.end(),
+              [](const Crossing& a, const Crossing& b) { return a.probeX < b.probeX; });
+    if (crossings.size() % 2 != 0) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    PolygonRegionOperationResult result{.status = PolygonRegionOperationStatus::Success};
+    for (std::size_t index = 0; index < crossings.size(); index += 2) {
+        const auto& left = crossings[index];
+        const auto& right = crossings[index + 1];
+        // A closed global clip can join components at a hole tip on an event level. The two
+        // bounding edges of each probe interval define its actual open-slab component.
+        Clipper2Lib::Path64 clip{{left.bottomX, static_cast<int64_t>(bottom)},
+                                 {right.bottomX, static_cast<int64_t>(bottom)},
+                                 {right.topX, static_cast<int64_t>(top)},
+                                 {left.topX, static_cast<int64_t>(top)}};
+        clip.erase(std::unique(clip.begin(), clip.end()), clip.end());
+        if (!clip.empty() && (clip.front() == clip.back())) {
+            clip.pop_back();
+        }
+        if (!isValidClipperPath(clip)) {
+            return {.status = PolygonRegionOperationStatus::GeometryFailure};
+        }
+        auto piece = executeBoolean(Clipper2Lib::ClipType::Intersection, subjects, {clip});
+        if ((piece.status != PolygonRegionOperationStatus::Success) || (piece.regions.size() != 1) ||
+            !piece.regions.front().holes.empty()) {
+            return {.status = PolygonRegionOperationStatus::GeometryFailure};
+        }
+        result.regions.push_back(std::move(piece.regions.front()));
+    }
+    return result;
+}
+
+PolygonRegionOperationResult unionPolygonRegions(const PolygonRegionSet2D& regions)
+{
+    if (!allRegionsValid(regions)) {
+        return {.status = PolygonRegionOperationStatus::InvalidInput};
+    }
+    Clipper2Lib::Paths64 subjects;
+    if (!regionSetToPaths(regions, subjects)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    return executeBoolean(Clipper2Lib::ClipType::Union, subjects, {});
+}
+
+bool shareSlabBoundary(const Polygon2D& below, const Polygon2D& above, double eventYM)
+{
+    if (!below.isFinite() || !above.isFinite() || !std::isfinite(eventYM)) {
+        return false;
+    }
+    // Compare on the backend lattice, so neighboring slabs use exactly the same cut.
+    const double cutY = std::round(eventYM * CoordinateScalePerM);
+    const auto onCut = [cutY](const Point2D& vertex) { return std::round(vertex.yM * CoordinateScalePerM) == cutY; };
+    for (std::size_t first = 0; first < below.vertices.size(); ++first) {
+        const Point2D& a = below.vertices[first];
+        const Point2D& b = below.vertices[(first + 1) % below.vertices.size()];
+        if (!onCut(a) || !onCut(b)) {
+            continue;
+        }
+        for (std::size_t second = 0; second < above.vertices.size(); ++second) {
+            const Point2D& c = above.vertices[second];
+            const Point2D& d = above.vertices[(second + 1) % above.vertices.size()];
+            const double aX = std::round(a.xM * CoordinateScalePerM);
+            const double bX = std::round(b.xM * CoordinateScalePerM);
+            const double cX = std::round(c.xM * CoordinateScalePerM);
+            const double dX = std::round(d.xM * CoordinateScalePerM);
+            if (onCut(c) && onCut(d) &&
+                (std::min(std::max(aX, bX), std::max(cX, dX)) > std::max(std::min(aX, bX), std::min(cX, dX)))) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool isValidPolygonRegion(const PolygonRegion2D& region)
+{
+    Clipper2Lib::Path64 outer;
+    if (!toClipperPath(region.outerBoundary, true, outer) || !simpleLatticePath(outer)) {
+        return false;
+    }
+    Clipper2Lib::Paths64 holes;
+    for (const Polygon2D& hole : region.holes) {
+        Clipper2Lib::Path64 path;
+        if (!toClipperPath(hole, false, path) || !simpleLatticePath(path) || latticeBoundariesIntersect(outer, path) ||
+            (Clipper2Lib::PointInPolygon(path.front(), outer) != Clipper2Lib::PointInPolygonResult::IsInside)) {
+            return false;
+        }
+        for (const auto& previous : holes) {
+            if (latticeBoundariesIntersect(previous, path) ||
+                (Clipper2Lib::PointInPolygon(path.front(), previous) != Clipper2Lib::PointInPolygonResult::IsOutside) ||
+                (Clipper2Lib::PointInPolygon(previous.front(), path) != Clipper2Lib::PointInPolygonResult::IsOutside)) {
+                return false;
+            }
+        }
+        holes.push_back(std::move(path));
+    }
+    return true;
+}
+
+bool isMonotoneCellPolygon(const Polygon2D& polygon, double mathAngleDeg)
+{
+    if (!std::isfinite(mathAngleDeg)) {
+        return false;
+    }
+    Clipper2Lib::Path64 path;
+    if (!toClipperPath(toSweepFrame(polygon, mathAngleDeg), true, path) || !simpleLatticePath(path)) {
+        return false;
+    }
+    const auto lessY = [](const auto& a, const auto& b) { return (a.y < b.y) || ((a.y == b.y) && (a.x < b.x)); };
+    const auto minimum = static_cast<std::size_t>(std::min_element(path.begin(), path.end(), lessY) - path.begin());
+    const auto maximum = static_cast<std::size_t>(std::max_element(path.begin(), path.end(), lessY) - path.begin());
+    for (const std::size_t step : {std::size_t{1}, path.size() - 1}) {
+        std::size_t current = minimum;
+        while (current != maximum) {
+            const std::size_t next = (current + step) % path.size();
+            if (path[next].y < path[current].y) {
+                return false;
+            }
+            current = next;
+        }
+    }
+    return true;
 }
 
 }  // namespace Marine::Geometry

@@ -30,6 +30,8 @@ enum class CoveragePlanningError
     NoGoOverlapOrTouch,
     NoNavigableArea,
     DisconnectedFeasibleRegion,
+    DecompositionFailed,
+    InvalidCoverageCell,
 };
 
 struct CoveragePlanningProblem

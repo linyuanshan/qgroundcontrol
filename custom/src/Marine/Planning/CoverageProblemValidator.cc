@@ -65,6 +65,8 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::UnsafeConnector:
         case CoveragePlanningError::InvalidGeneratedPath:
         case CoveragePlanningError::GeometryFailure:
+        case CoveragePlanningError::DecompositionFailed:
+        case CoveragePlanningError::InvalidCoverageCell:
             return PlanningStatus::Failed;
     }
     return PlanningStatus::Failed;
@@ -113,6 +115,10 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
             return "Coverage planner generated an invalid path";
         case CoveragePlanningError::GeometryFailure:
             return "Coverage geometry operation failed";
+        case CoveragePlanningError::DecompositionFailed:
+            return "Coverage region decomposition failed";
+        case CoveragePlanningError::InvalidCoverageCell:
+            return "Decomposition produced an invalid coverage cell";
     }
     return "Coverage planning failed";
 }
