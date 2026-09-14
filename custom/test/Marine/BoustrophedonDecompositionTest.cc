@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <queue>
 #include <utility>
 
 #include "Geometry/MarineGeometry.h"
@@ -77,6 +78,51 @@ void compareResults(const CoverageDecompositionResult& first, const CoverageDeco
             QCOMPARE(first.cells[i].polygon.vertices[j].yM, second.cells[i].polygon.vertices[j].yM);
         }
     }
+}
+
+std::vector<CellAdjacency> sharedSweepBoundaries(const CoverageDecompositionResult& result, double angle)
+{
+    std::vector<CellAdjacency> edges;
+    const double mathAngle = Geometry::navigationAngleToMathAngle(angle);
+    for (std::size_t first = 0; first < result.cells.size(); ++first) {
+        Polygon2D below = Geometry::toSweepFrame(result.cells[first].polygon, mathAngle);
+        for (std::size_t second = first + 1; second < result.cells.size(); ++second) {
+            const Polygon2D above = Geometry::toSweepFrame(result.cells[second].polygon, mathAngle);
+            bool shared = false;
+            for (std::size_t a = 0; !shared && (a < below.vertices.size()); ++a) {
+                const Point2D& firstStart = below.vertices[a];
+                const Point2D& firstEnd = below.vertices[(a + 1) % below.vertices.size()];
+                const auto firstY = std::llround(firstStart.yM * Geometry::CoordinateScalePerM);
+                if (firstY != std::llround(firstEnd.yM * Geometry::CoordinateScalePerM)) {
+                    continue;
+                }
+                for (std::size_t b = 0; b < above.vertices.size(); ++b) {
+                    const Point2D& secondStart = above.vertices[b];
+                    const Point2D& secondEnd = above.vertices[(b + 1) % above.vertices.size()];
+                    if ((firstY != std::llround(secondStart.yM * Geometry::CoordinateScalePerM)) ||
+                        (firstY != std::llround(secondEnd.yM * Geometry::CoordinateScalePerM))) {
+                        continue;
+                    }
+                    const auto firstMinimum = std::min(std::llround(firstStart.xM * Geometry::CoordinateScalePerM),
+                                                       std::llround(firstEnd.xM * Geometry::CoordinateScalePerM));
+                    const auto firstMaximum = std::max(std::llround(firstStart.xM * Geometry::CoordinateScalePerM),
+                                                       std::llround(firstEnd.xM * Geometry::CoordinateScalePerM));
+                    const auto secondMinimum = std::min(std::llround(secondStart.xM * Geometry::CoordinateScalePerM),
+                                                        std::llround(secondEnd.xM * Geometry::CoordinateScalePerM));
+                    const auto secondMaximum = std::max(std::llround(secondStart.xM * Geometry::CoordinateScalePerM),
+                                                        std::llround(secondEnd.xM * Geometry::CoordinateScalePerM));
+                    if (std::min(firstMaximum, secondMaximum) > std::max(firstMinimum, secondMinimum)) {
+                        shared = true;
+                        break;
+                    }
+                }
+            }
+            if (shared) {
+                edges.push_back({.first = result.cells[first].id, .second = result.cells[second].id});
+            }
+        }
+    }
+    return edges;
 }
 
 void verifyCellInvariants(const CoverageDecompositionResult& result, const PolygonRegion2D& input, double angle)
@@ -161,6 +207,34 @@ void verifyCellInvariants(const CoverageDecompositionResult& result, const Polyg
     const auto sweepUnion = Geometry::unionPolygonRegions(sweepCells);
     QCOMPARE(sweepUnion.status, Geometry::PolygonRegionOperationStatus::Success);
     QVERIFY(std::abs(sumSweepArea - area(sweepUnion.regions)) < 1e-7);
+
+    QVERIFY(std::is_sorted(result.adjacency.begin(), result.adjacency.end(), [](const auto& first, const auto& second) {
+        return (first.first < second.first) || ((first.first == second.first) && (first.second < second.second));
+    }));
+    QCOMPARE(std::adjacent_find(result.adjacency.begin(), result.adjacency.end()), result.adjacency.end());
+    for (const CellAdjacency& edge : result.adjacency) {
+        QVERIFY(edge.first < result.cells.size());
+        QVERIFY(edge.second < result.cells.size());
+        QVERIFY(edge.first < edge.second);
+    }
+    QCOMPARE(result.adjacency, sharedSweepBoundaries(result, angle));
+
+    std::vector<bool> visited(result.cells.size());
+    std::queue<CoverageCellId> pending;
+    pending.push(result.cells.front().id);
+    visited[result.cells.front().id] = true;
+    while (!pending.empty()) {
+        const CoverageCellId current = pending.front();
+        pending.pop();
+        for (const CellAdjacency& edge : result.adjacency) {
+            const CoverageCellId neighbor = (edge.first == current) ? edge.second : edge.first;
+            if (((edge.first == current) || (edge.second == current)) && !visited[neighbor]) {
+                visited[neighbor] = true;
+                pending.push(neighbor);
+            }
+        }
+    }
+    QVERIFY(std::all_of(visited.begin(), visited.end(), [](bool value) { return value; }));
 }
 
 }  // namespace
@@ -317,6 +391,56 @@ void BoustrophedonDecompositionTest::_testRoundedHoleEndToEnd()
     QVERIFY(!freeSpace.freeSpace.trackFeasibleRegion.empty());
     const auto result = decompose(freeSpace.freeSpace.trackFeasibleRegion.front(), 90.0);
     verifyCellInvariants(result, freeSpace.freeSpace.trackFeasibleRegion.front(), 90.0);
+}
+
+void BoustrophedonDecompositionTest::_testP204CriticalEventAndNarrowRegionInvariants()
+{
+    const Polygon2D horizontalEdges =
+        polygon({{0, 0}, {4, 0}, {8, 0}, {12, 0}, {12, 10}, {9, 10}, {9, 6}, {3, 6}, {3, 10}, {0, 10}});
+    const Polygon2D outer = rectangle(0, 0, 20, 20);
+    const Polygon2D firstHole = rectangle(4, 5, 7, 9);
+    const Polygon2D secondHole = rectangle(13, 5, 16, 9);
+    const PolygonRegion2D sameCriticalY = region(outer, {firstHole, secondHole});
+    const PolygonRegion2D closeEvents =
+        region(outer, {rectangle(3, 4, 6, 8), rectangle(14, 4.00049, 17, 8.00049)});
+    const PolygonRegion2D distinctEvents =
+        region(outer, {rectangle(3, 4, 6, 8), rectangle(14, 4.00151, 17, 8.00151)});
+    const Polygon2D narrowCorridor =
+        polygon({{0, 0}, {10, 0}, {10, 10}, {6, 10}, {6, 5.01}, {4, 5.01}, {4, 10}, {0, 10}});
+    const Polygon2D slantedNarrow = polygon({{0, 0}, {0.01, 8}, {4.01, 8}, {4, 0}});
+    const Polygon2D sameOuterYHole = rectangle(5, 0.001, 8, 4);
+
+    struct Case
+    {
+        const char* name;
+        PolygonRegion2D input;
+        double angle;
+    };
+    for (const Case& testCase : std::vector<Case>{{"horizontalEdges", region(horizontalEdges), 90.0},
+                                                   {"sameCriticalY", sameCriticalY, 90.0},
+                                                   {"closeEvents", closeEvents, 90.0},
+                                                   {"distinctEvents", distinctEvents, 90.0},
+                                                   {"narrowCorridor", region(narrowCorridor), 90.0},
+                                                   {"slantedNarrow", region(slantedNarrow), 90.0},
+                                                   {"nonCardinalHole", region(outer, {sameOuterYHole}), 37.0}}) {
+        const auto result = decompose(testCase.input, testCase.angle);
+        QVERIFY2(result.status == PlanningStatus::Success, testCase.name);
+        verifyCellInvariants(result, testCase.input, testCase.angle);
+        compareResults(result, decompose(testCase.input, testCase.angle));
+    }
+
+    const Polygon2D splitThenMerge = rectangle(8, 4, 12, 4.01);
+    const Polygon2D mergeThenSplit = rectangle(2, 4.02, 6, 8);
+    const PolygonRegion2D alternating = region(outer, {splitThenMerge, mergeThenSplit});
+    const auto alternatingResult = decompose(alternating);
+    verifyCellInvariants(alternatingResult, alternating, 90.0);
+
+    auto reversedOuter = outer;
+    auto reversedHole = firstHole;
+    std::reverse(reversedOuter.vertices.begin(), reversedOuter.vertices.end());
+    std::reverse(reversedHole.vertices.begin(), reversedHole.vertices.end());
+    std::rotate(reversedOuter.vertices.begin(), reversedOuter.vertices.begin() + 2, reversedOuter.vertices.end());
+    compareResults(decompose(sameCriticalY), decompose(region(reversedOuter, {secondHole, reversedHole})));
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(BoustrophedonDecompositionTest, TestLabel::Unit)

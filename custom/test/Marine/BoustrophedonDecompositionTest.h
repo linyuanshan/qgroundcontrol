@@ -17,4 +17,5 @@ private slots:
     void _testInvalidInputs();
     void _testOutputInvariants();
     void _testRoundedHoleEndToEnd();
+    void _testP204CriticalEventAndNarrowRegionInvariants();
 };
