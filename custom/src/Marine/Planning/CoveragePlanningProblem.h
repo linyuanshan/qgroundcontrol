@@ -32,6 +32,7 @@ enum class CoveragePlanningError
     DisconnectedFeasibleRegion,
     DecompositionFailed,
     InvalidCoverageCell,
+    CellCoverageFailed,
 };
 
 struct CoveragePlanningProblem

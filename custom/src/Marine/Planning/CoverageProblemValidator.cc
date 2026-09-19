@@ -67,6 +67,7 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::GeometryFailure:
         case CoveragePlanningError::DecompositionFailed:
         case CoveragePlanningError::InvalidCoverageCell:
+        case CoveragePlanningError::CellCoverageFailed:
             return PlanningStatus::Failed;
     }
     return PlanningStatus::Failed;
@@ -119,6 +120,8 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
             return "Coverage region decomposition failed";
         case CoveragePlanningError::InvalidCoverageCell:
             return "Decomposition produced an invalid coverage cell";
+        case CoveragePlanningError::CellCoverageFailed:
+            return "Coverage generation failed for a decomposition cell";
     }
     return "Coverage planning failed";
 }

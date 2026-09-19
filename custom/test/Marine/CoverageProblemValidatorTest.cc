@@ -158,6 +158,8 @@ void CoverageProblemValidatorTest::_testErrorMapping()
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::NoNavigableArea), PlanningStatus::Failed);
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::DisconnectedFeasibleRegion),
              PlanningStatus::Failed);
+    QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::CellCoverageFailed),
+             PlanningStatus::Failed);
 
     QVERIFY(!CoverageProblemValidator::messageForError(CoveragePlanningError::InvalidOuterBoundary).empty());
     QVERIFY(CoverageProblemValidator::messageForError(CoveragePlanningError::UnsupportedNoGoRegion)
@@ -165,6 +167,7 @@ void CoverageProblemValidatorTest::_testErrorMapping()
     QVERIFY(CoverageProblemValidator::messageForError(CoveragePlanningError::CoverageImpossibleWithSafetyMargin)
                 .find("nominal") != std::string::npos);
     QVERIFY(!CoverageProblemValidator::messageForError(CoveragePlanningError::NoGoOverlapOrTouch).empty());
+    QVERIFY(!CoverageProblemValidator::messageForError(CoveragePlanningError::CellCoverageFailed).empty());
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(CoverageProblemValidatorTest, TestLabel::Unit)

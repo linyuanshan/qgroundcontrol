@@ -70,6 +70,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/LawnmowerCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MonotoneCoverage.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MonotoneCoverage.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CellCoverage.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CellCoverage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageDecomposition.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.h
@@ -116,6 +118,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/LawnmowerCoveragePlannerTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MonotoneCoverageTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MonotoneCoverageTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CellCoverageTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CellCoverageTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonDecompositionTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonDecompositionTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineGeometryTest.cc
@@ -213,6 +217,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         MonotoneCoverageTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CellCoverageTest
         LABELS
         Unit
     )
