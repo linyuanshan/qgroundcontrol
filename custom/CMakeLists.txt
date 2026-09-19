@@ -74,6 +74,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CellCoverage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/StaticSafeRouter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/StaticSafeRouter.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GreedyCellOrdering.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GreedyCellOrdering.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageDecomposition.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.h
@@ -124,6 +126,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CellCoverageTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GreedyCellOrderingTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GreedyCellOrderingTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonDecompositionTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonDecompositionTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineGeometryTest.cc
@@ -243,6 +247,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         StaticSafeRouterTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        GreedyCellOrderingTest
         LABELS
         Unit
     )
