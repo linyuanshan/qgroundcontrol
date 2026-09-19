@@ -262,4 +262,21 @@ void MarineGeometryTest::_testSegmentContainment()
     QVERIFY(!Geometry::containsSegment(concave, {1.0, 1.0}, {11.0, 1.0}));
 }
 
+void MarineGeometryTest::_testPolygonRegionSegmentContainment()
+{
+    const PolygonRegionSet2D regions = {
+        {.outerBoundary = rectangle(), .holes = {{{{8.0, 3.0}, {12.0, 3.0}, {12.0, 7.0}, {8.0, 7.0}}}}},
+    };
+
+    QVERIFY(Geometry::pointInsidePolygonRegion(regions, {0.0, 5.0}));
+    QVERIFY(Geometry::pointInsidePolygonRegion(regions, {8.0, 5.0}));
+    QVERIFY(!Geometry::pointInsidePolygonRegion(regions, {10.0, 5.0}));
+    QVERIFY(!Geometry::pointInsidePolygonRegion(regions, {-1.0, 5.0}));
+    QVERIFY(Geometry::segmentInsidePolygonRegion(regions, {0.0, 0.0}, {20.0, 0.0}));
+    QVERIFY(Geometry::segmentInsidePolygonRegion(regions, {2.0, 3.0}, {18.0, 3.0}));
+    QVERIFY(Geometry::segmentInsidePolygonRegion(regions, {2.0, 9.0}, {10.0, 1.0}));
+    QVERIFY(!Geometry::segmentInsidePolygonRegion(regions, {2.0, 5.0}, {18.0, 5.0}));
+    QVERIFY(!Geometry::segmentInsidePolygonRegion(regions, {-1.0, 0.0}, {20.0, 0.0}));
+}
+
 UT_REGISTER_TEST_LIGHTWEIGHT(MarineGeometryTest, TestLabel::Unit)

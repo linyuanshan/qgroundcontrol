@@ -33,6 +33,7 @@ enum class CoveragePlanningError
     DecompositionFailed,
     InvalidCoverageCell,
     CellCoverageFailed,
+    SafeTransitNotFound,
 };
 
 struct CoveragePlanningProblem

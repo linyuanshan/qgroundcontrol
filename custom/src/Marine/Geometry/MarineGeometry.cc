@@ -8,6 +8,8 @@
 #include <numbers>
 #include <utility>
 
+#include "PolygonRegion.h"
+
 namespace {
 
 double distanceSquared(const Marine::Point2D& first, const Marine::Point2D& second)
@@ -43,13 +45,20 @@ bool pointOnSegment(const Marine::Point2D& point, const Marine::Point2D& first, 
            (point.yM <= std::max(first.yM, second.yM) + Marine::Geometry::LengthEpsilonM);
 }
 
-bool containsPointUnchecked(const Marine::Polygon2D& polygon, const Marine::Point2D& point)
+enum class PointLocation : std::uint8_t
+{
+    Outside,
+    Boundary,
+    Inside,
+};
+
+PointLocation pointLocationUnchecked(const Marine::Polygon2D& polygon, const Marine::Point2D& point)
 {
     bool inside = false;
     Marine::Point2D first = polygon.vertices.back();
     for (const Marine::Point2D& second : polygon.vertices) {
         if (pointOnSegment(point, first, second)) {
-            return true;
+            return PointLocation::Boundary;
         }
 
         const bool crosses = (first.yM > point.yM) != (second.yM > point.yM);
@@ -62,7 +71,32 @@ bool containsPointUnchecked(const Marine::Polygon2D& polygon, const Marine::Poin
         }
         first = second;
     }
-    return inside;
+    return inside ? PointLocation::Inside : PointLocation::Outside;
+}
+
+bool containsPointUnchecked(const Marine::Polygon2D& polygon, const Marine::Point2D& point)
+{
+    return pointLocationUnchecked(polygon, point) != PointLocation::Outside;
+}
+
+bool pointInsidePolygonRegionUnchecked(const Marine::PolygonRegionSet2D& regions, const Marine::Point2D& point)
+{
+    for (const Marine::PolygonRegion2D& region : regions) {
+        if (pointLocationUnchecked(region.outerBoundary, point) == PointLocation::Outside) {
+            continue;
+        }
+        bool insideHole = false;
+        for (const Marine::Polygon2D& hole : region.holes) {
+            if (pointLocationUnchecked(hole, point) == PointLocation::Inside) {
+                insideHole = true;
+                break;
+            }
+        }
+        if (!insideHole) {
+            return true;
+        }
+    }
+    return false;
 }
 
 double vectorCross(double firstX, double firstY, double secondX, double secondY)
@@ -108,6 +142,17 @@ void appendSegmentBoundaryParameter(std::vector<double>& parameters, const Marin
     if ((segmentParameter >= -parameterTolerance) && (segmentParameter <= 1.0 + parameterTolerance) &&
         (edgeParameter >= -edgeParameterTolerance) && (edgeParameter <= 1.0 + edgeParameterTolerance)) {
         parameters.push_back(std::clamp(segmentParameter, 0.0, 1.0));
+    }
+}
+
+void appendPolygonBoundaryParameters(std::vector<double>& parameters, const Marine::Point2D& segmentStart,
+                                     const Marine::Point2D& segmentEnd, const Marine::Polygon2D& polygon,
+                                     double parameterTolerance)
+{
+    Marine::Point2D edgeStart = polygon.vertices.back();
+    for (const Marine::Point2D& edgeEnd : polygon.vertices) {
+        appendSegmentBoundaryParameter(parameters, segmentStart, segmentEnd, edgeStart, edgeEnd, parameterTolerance);
+        edgeStart = edgeEnd;
     }
 }
 
@@ -503,6 +548,64 @@ bool containsSegment(const Polygon2D& polygon, const Point2D& first, const Point
             .yM = first.yM + (midpointParameter * (second.yM - first.yM)),
         };
         if (!containsPointUnchecked(polygon, midpoint)) {
+            return false;
+        }
+        previousParameter = *iterator;
+    }
+    return true;
+}
+
+bool pointInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& point)
+{
+    if (!point.isFinite() || regions.empty() ||
+        !std::ranges::all_of(regions, [](const PolygonRegion2D& region) { return isValidPolygonRegion(region); })) {
+        return false;
+    }
+    return pointInsidePolygonRegionUnchecked(regions, point);
+}
+
+bool segmentInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& first, const Point2D& second)
+{
+    if (!first.isFinite() || !second.isFinite() || regions.empty() ||
+        !std::ranges::all_of(regions, [](const PolygonRegion2D& region) { return isValidPolygonRegion(region); }) ||
+        !pointInsidePolygonRegionUnchecked(regions, first) || !pointInsidePolygonRegionUnchecked(regions, second)) {
+        return false;
+    }
+
+    const double segmentLength = std::hypot(second.xM - first.xM, second.yM - first.yM);
+    if (segmentLength <= LengthEpsilonM) {
+        return true;
+    }
+
+    const double parameterTolerance = LengthEpsilonM / segmentLength;
+    std::vector<double> parameters{0.0, 1.0};
+    for (const PolygonRegion2D& region : regions) {
+        parameters.reserve(parameters.size() + region.outerBoundary.vertices.size());
+        appendPolygonBoundaryParameters(parameters, first, second, region.outerBoundary, parameterTolerance);
+        for (const Polygon2D& hole : region.holes) {
+            parameters.reserve(parameters.size() + hole.vertices.size());
+            appendPolygonBoundaryParameters(parameters, first, second, hole, parameterTolerance);
+        }
+    }
+
+    std::ranges::sort(parameters);
+    const auto duplicates = std::ranges::unique(parameters, [parameterTolerance](double left, double right) {
+        return std::abs(left - right) <= parameterTolerance;
+    });
+    parameters.erase(duplicates.begin(), duplicates.end());
+
+    double previousParameter = parameters.front();
+    for (auto iterator = std::next(parameters.cbegin()); iterator != parameters.cend(); ++iterator) {
+        if ((*iterator - previousParameter) <= parameterTolerance) {
+            previousParameter = *iterator;
+            continue;
+        }
+        const double midpointParameter = (previousParameter + *iterator) * 0.5;
+        const Point2D midpoint{
+            .xM = first.xM + (midpointParameter * (second.xM - first.xM)),
+            .yM = first.yM + (midpointParameter * (second.yM - first.yM)),
+        };
+        if (!pointInsidePolygonRegionUnchecked(regions, midpoint)) {
             return false;
         }
         previousParameter = *iterator;

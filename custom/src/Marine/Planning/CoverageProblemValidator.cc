@@ -68,6 +68,7 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::DecompositionFailed:
         case CoveragePlanningError::InvalidCoverageCell:
         case CoveragePlanningError::CellCoverageFailed:
+        case CoveragePlanningError::SafeTransitNotFound:
             return PlanningStatus::Failed;
     }
     return PlanningStatus::Failed;
@@ -122,6 +123,8 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
             return "Decomposition produced an invalid coverage cell";
         case CoveragePlanningError::CellCoverageFailed:
             return "Coverage generation failed for a decomposition cell";
+        case CoveragePlanningError::SafeTransitNotFound:
+            return "No safe static transit route exists between the requested points";
     }
     return "Coverage planning failed";
 }

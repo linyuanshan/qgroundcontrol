@@ -20,4 +20,5 @@ private slots:
     void _testScanlineVertexAndBoundaryCases();
     void _testPointContainment();
     void _testSegmentContainment();
+    void _testPolygonRegionSegmentContainment();
 };

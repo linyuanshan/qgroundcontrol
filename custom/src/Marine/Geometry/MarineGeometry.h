@@ -53,5 +53,9 @@ struct ScanlineResult
 [[nodiscard]] ScanlineResult intersectScanline(const Polygon2D& sweepAlignedPolygon, double yM);
 [[nodiscard]] bool containsPoint(const Polygon2D& polygon, const Point2D& point);
 [[nodiscard]] bool containsSegment(const Polygon2D& polygon, const Point2D& first, const Point2D& second);
+/// Closed-set predicates for polygon regions: outer and hole boundaries are navigable, hole interiors are not.
+[[nodiscard]] bool pointInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& point);
+[[nodiscard]] bool segmentInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& first,
+                                              const Point2D& second);
 
 }  // namespace Marine::Geometry
