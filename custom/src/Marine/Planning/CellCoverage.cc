@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/PolygonRegion.h"
 #include "MonotoneCoverage.h"
 
 namespace {
@@ -114,7 +115,9 @@ CellCoverageGenerationResult generateCellCoverage(std::span<const CoverageCell> 
     orderedCells.reserve(cells.size());
     double globalMinimumY = std::numeric_limits<double>::max();
     for (const CoverageCell& cell : cells) {
-        if (!Geometry::isSimpleNonDegeneratePolygon(cell.polygon)) {
+        const PolygonRegion2D cellRegion{.outerBoundary = cell.polygon};
+        if (!Geometry::isValidPolygonRegion(cellRegion) ||
+            !Geometry::isMonotoneCellPolygon(cell.polygon, mathAngleDeg)) {
             return failure(PlanningStatus::Failed, CoveragePlanningError::CellCoverageFailed,
                            "A decomposition cell is invalid");
         }
@@ -145,8 +148,8 @@ CellCoverageGenerationResult generateCellCoverage(std::span<const CoverageCell> 
                            "Coverage lane schedule cannot be represented for cell " + std::to_string(cell->id));
         }
 
-        MonotoneCoverageResult primitive =
-            generateMonotoneCoverage(cell->polygon, cell->polygon, swathWidthM, navigationAngleDeg, lanes);
+        MonotoneCoverageResult primitive = generateMonotoneCoverageForValidatedGeometry(
+            cell->polygon, cell->polygon, swathWidthM, navigationAngleDeg, lanes);
         if (primitive.status != PlanningStatus::Success) {
             return failure(
                 PlanningStatus::Failed, CoveragePlanningError::CellCoverageFailed,

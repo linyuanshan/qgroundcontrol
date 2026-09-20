@@ -16,4 +16,5 @@ private slots:
     void _testUnsafeConnector();
     void _testInvalidLaneSchedule();
     void _testInvalidTarget();
+    void _testStrictNearDuplicateInputRejected();
 };

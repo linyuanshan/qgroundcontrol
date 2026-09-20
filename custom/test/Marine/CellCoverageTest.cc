@@ -5,8 +5,10 @@
 #include <vector>
 
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/PolygonRegion.h"
 #include "Planning/BoustrophedonDecomposition.h"
 #include "Planning/CellCoverage.h"
+#include "Planning/CoverageFreeSpace.h"
 
 using namespace Marine;
 
@@ -168,6 +170,60 @@ void CellCoverageTest::_testNoGoDecompositionCoversEveryCell()
         totalLaneCount += result.cells[index].laneCount;
     }
     QCOMPARE(totalLaneCount, 6);
+}
+
+void CellCoverageTest::_testBackendDerivedRoundedCells()
+{
+    CoveragePlanningProblem problem;
+    problem.region.outerBoundary = rectangle(0.0, 0.0, 20.0, 20.0);
+    problem.region.noGoRegions = {rectangle(8.0, 8.0, 12.0, 12.0)};
+    problem.swathWidthM = 4.0;
+    problem.safetyMarginM = 1.0;
+    problem.sweepAngleMode = SweepAngleMode::Manual;
+    problem.requestedSweepAngleDeg = 90.0;
+
+    const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);
+    QVERIFY2(freeSpace.status == PlanningStatus::Success, freeSpace.message.c_str());
+    const CoverageDecompositionResult decomposition =
+        decomposeBoustrophedon(freeSpace.freeSpace.trackFeasibleRegion, problem.requestedSweepAngleDeg);
+    QVERIFY2(decomposition.status == PlanningStatus::Success, decomposition.message.c_str());
+
+    const double mathAngleDeg = Geometry::navigationAngleToMathAngle(problem.requestedSweepAngleDeg);
+    bool containsDenseBackendCell = false;
+    for (const CoverageCell& cell : decomposition.cells) {
+        const PolygonRegion2D cellRegion{.outerBoundary = cell.polygon};
+        QVERIFY(Geometry::isValidPolygonRegion(cellRegion));
+        QVERIFY(Geometry::isMonotoneCellPolygon(cell.polygon, mathAngleDeg));
+        containsDenseBackendCell |=
+            (cell.polygon.vertices.size() > 4) && !Geometry::isSimpleNonDegeneratePolygon(cell.polygon);
+    }
+    QVERIFY(containsDenseBackendCell);
+
+    const CellCoverageGenerationResult first =
+        generateCellCoverage(decomposition.cells, problem.swathWidthM, problem.requestedSweepAngleDeg);
+    QVERIFY2(first.status == PlanningStatus::Success, first.message.c_str());
+    QCOMPARE(first.cells.size(), decomposition.cells.size());
+    QCOMPARE(first.traversalStates.size(), decomposition.cells.size() * 2);
+
+    for (const CellCoverage& coverage : first.cells) {
+        const auto cellIterator = std::ranges::find_if(
+            decomposition.cells, [&coverage](const CoverageCell& cell) { return cell.id == coverage.cellId; });
+        QVERIFY(cellIterator != decomposition.cells.end());
+        const PolygonRegionSet2D cellRegions{{.outerBoundary = cellIterator->polygon}};
+        for (const Point2D& pathPoint : coverage.path) {
+            QVERIFY(Geometry::pointInsidePolygonRegion(cellRegions, pathPoint));
+        }
+        QCOMPARE(coverage.legRoles.size(), coverage.path.size() - 1);
+        for (std::size_t index = 1; index < coverage.path.size(); ++index) {
+            QVERIFY(Geometry::segmentInsidePolygonRegion(cellRegions, coverage.path[index - 1], coverage.path[index]));
+        }
+    }
+
+    std::vector<CoverageCell> reversedCells = decomposition.cells;
+    std::ranges::reverse(reversedCells);
+    const CellCoverageGenerationResult reversed =
+        generateCellCoverage(reversedCells, problem.swathWidthM, problem.requestedSweepAngleDeg);
+    compareResults(first, reversed);
 }
 
 void CellCoverageTest::_testNonCardinalAndNarrowCells()

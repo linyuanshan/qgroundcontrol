@@ -199,4 +199,25 @@ void MonotoneCoverageTest::_testInvalidTarget()
     QVERIFY(result.legRoles.empty());
 }
 
+void MonotoneCoverageTest::_testStrictNearDuplicateInputRejected()
+{
+    const Polygon2D nearDuplicate = {
+        .vertices = {{0.0, 0.0}, {0.0005, 0.0}, {20.0, 0.0}, {20.0, 10.0}, {0.0, 10.0}},
+    };
+    const Polygon2D navigable = rectangle(20.0, 10.0);
+    const std::vector<double> lanePositionsYM = {2.0, 6.0, 8.0};
+
+    const MonotoneCoverageResult fixed = generateMonotoneCoverage(nearDuplicate, navigable, 4.0, 90.0, lanePositionsYM);
+    QCOMPARE(fixed.status, PlanningStatus::InvalidInput);
+    QCOMPARE(fixed.error, MonotoneCoverageError::InvalidTargetPolygon);
+    QVERIFY(fixed.path.empty());
+    QVERIFY(fixed.legRoles.empty());
+
+    const MonotoneCoverageResult automatic = generateMonotoneCoverage(nearDuplicate, navigable, 4.0, 90.0);
+    QCOMPARE(automatic.status, PlanningStatus::InvalidInput);
+    QCOMPARE(automatic.error, MonotoneCoverageError::InvalidTargetPolygon);
+    QVERIFY(automatic.path.empty());
+    QVERIFY(automatic.legRoles.empty());
+}
+
 UT_REGISTER_TEST_LIGHTWEIGHT(MonotoneCoverageTest, TestLabel::Unit)

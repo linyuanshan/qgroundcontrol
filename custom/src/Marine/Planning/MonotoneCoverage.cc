@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/PolygonRegion.h"
 
 namespace {
 
@@ -15,6 +16,12 @@ using Marine::MonotoneCoverageError;
 using Marine::MonotoneCoverageResult;
 using Marine::Point2D;
 using Marine::Polygon2D;
+
+enum class GeometryValidationMode
+{
+    StrictInput,
+    BackendDerived,
+};
 
 MonotoneCoverageResult failure(Marine::PlanningStatus status, MonotoneCoverageError error, std::string message)
 {
@@ -91,13 +98,20 @@ LaneScheduleResult deriveLaneSchedule(const Polygon2D& targetPolygon, const Poly
 
 MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon,
                                     double swathWidthM, double navigationAngleDeg,
-                                    std::span<const double> lanePositionsYM)
+                                    std::span<const double> lanePositionsYM, GeometryValidationMode validationMode)
 {
-    if (!Marine::Geometry::isSimpleNonDegeneratePolygon(targetPolygon)) {
+    const bool backendDerived = validationMode == GeometryValidationMode::BackendDerived;
+    const Marine::PolygonRegionSet2D targetRegions{{.outerBoundary = targetPolygon}};
+    const Marine::PolygonRegionSet2D navigableRegions{{.outerBoundary = navigablePolygon}};
+    const bool targetValid = backendDerived ? Marine::Geometry::isValidPolygonRegion(targetRegions.front())
+                                            : Marine::Geometry::isSimpleNonDegeneratePolygon(targetPolygon);
+    if (!targetValid) {
         return failure(Marine::PlanningStatus::InvalidInput, MonotoneCoverageError::InvalidTargetPolygon,
                        "Target polygon is invalid");
     }
-    if (!Marine::Geometry::isSimpleNonDegeneratePolygon(navigablePolygon)) {
+    const bool navigableValid = backendDerived ? Marine::Geometry::isValidPolygonRegion(navigableRegions.front())
+                                               : Marine::Geometry::isSimpleNonDegeneratePolygon(navigablePolygon);
+    if (!navigableValid) {
         return failure(Marine::PlanningStatus::InvalidInput, MonotoneCoverageError::InvalidNavigablePolygon,
                        "Navigable polygon is invalid");
     }
@@ -115,7 +129,11 @@ MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygo
     }
 
     const double mathAngleDeg = Marine::Geometry::navigationAngleToMathAngle(navigationAngleDeg);
-    if (!Marine::Geometry::isSweepMonotone(navigablePolygon, mathAngleDeg)) {
+    const bool targetMonotone = !backendDerived || Marine::Geometry::isMonotoneCellPolygon(targetPolygon, mathAngleDeg);
+    const bool navigableMonotone = backendDerived
+                                       ? Marine::Geometry::isMonotoneCellPolygon(navigablePolygon, mathAngleDeg)
+                                       : Marine::Geometry::isSweepMonotone(navigablePolygon, mathAngleDeg);
+    if (!targetMonotone || !navigableMonotone) {
         return failure(Marine::PlanningStatus::Failed, MonotoneCoverageError::NonMonotoneSweep,
                        "Navigable polygon is not monotone for the selected sweep angle");
     }
@@ -162,7 +180,8 @@ MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygo
     std::size_t laneIndex = 0;
     for (const double laneY : lanePositionsYM) {
         const Marine::Geometry::ScanlineResult intersection =
-            Marine::Geometry::intersectScanline(navigableSweepPolygon, laneY);
+            backendDerived ? Marine::Geometry::intersectScanlineForValidatedGeometry(navigableSweepPolygon, laneY)
+                           : Marine::Geometry::intersectScanline(navigableSweepPolygon, laneY);
         if (intersection.status == Marine::Geometry::ScanlineStatus::NoIntersection) {
             return failure(Marine::PlanningStatus::Failed, MonotoneCoverageError::NoIntersection,
                            "Coverage lane does not intersect the navigable polygon");
@@ -194,7 +213,9 @@ MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygo
                        "Coverage planner generated an empty path");
     }
     for (const Point2D& point : result.path) {
-        if (!point.isFinite() || !Marine::Geometry::containsPoint(navigablePolygon, point)) {
+        const bool contained = backendDerived ? Marine::Geometry::pointInsidePolygonRegion(navigableRegions, point)
+                                              : Marine::Geometry::containsPoint(navigablePolygon, point);
+        if (!point.isFinite() || !contained) {
             return failure(Marine::PlanningStatus::Failed, MonotoneCoverageError::InvalidGeneratedPath,
                            "Coverage path contains a point outside the navigable polygon");
         }
@@ -205,7 +226,10 @@ MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygo
     for (auto pathIterator = std::next(result.path.cbegin()); pathIterator != result.path.cend();
          ++pathIterator, ++segmentIndex) {
         const Point2D& nextPoint = *pathIterator;
-        if (!Marine::Geometry::containsSegment(navigablePolygon, previousPoint, nextPoint)) {
+        const bool contained =
+            backendDerived ? Marine::Geometry::segmentInsidePolygonRegion(navigableRegions, previousPoint, nextPoint)
+                           : Marine::Geometry::containsSegment(navigablePolygon, previousPoint, nextPoint);
+        if (!contained) {
             const bool connector = (segmentIndex % 2) == 1;
             return failure(
                 Marine::PlanningStatus::Failed,
@@ -250,7 +274,17 @@ MonotoneCoverageResult generateMonotoneCoverage(const Polygon2D& targetPolygon, 
                                                 double swathWidthM, double navigationAngleDeg,
                                                 std::span<const double> lanePositionsYM)
 {
-    return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, lanePositionsYM);
+    return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, lanePositionsYM,
+                        GeometryValidationMode::StrictInput);
+}
+
+MonotoneCoverageResult generateMonotoneCoverageForValidatedGeometry(const Polygon2D& targetPolygon,
+                                                                    const Polygon2D& navigablePolygon,
+                                                                    double swathWidthM, double navigationAngleDeg,
+                                                                    std::span<const double> lanePositionsYM)
+{
+    return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, lanePositionsYM,
+                        GeometryValidationMode::BackendDerived);
 }
 
 MonotoneCoverageResult generateMonotoneCoverage(const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon,
@@ -259,14 +293,16 @@ MonotoneCoverageResult generateMonotoneCoverage(const Polygon2D& targetPolygon, 
     if (!Geometry::isSimpleNonDegeneratePolygon(targetPolygon) ||
         !Geometry::isSimpleNonDegeneratePolygon(navigablePolygon) || !std::isfinite(swathWidthM) ||
         (swathWidthM <= 0.0) || !std::isfinite(navigationAngleDeg)) {
-        return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, {});
+        return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, {},
+                            GeometryValidationMode::StrictInput);
     }
     const double mathAngleDeg = Geometry::navigationAngleToMathAngle(navigationAngleDeg);
     const LaneScheduleResult schedule = deriveLaneSchedule(targetPolygon, navigablePolygon, swathWidthM, mathAngleDeg);
     if (schedule.error != MonotoneCoverageError::None) {
         return failure(PlanningStatus::Failed, schedule.error, schedule.message);
     }
-    return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, schedule.positionsYM);
+    return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, schedule.positionsYM,
+                        GeometryValidationMode::StrictInput);
 }
 
 }  // namespace Marine

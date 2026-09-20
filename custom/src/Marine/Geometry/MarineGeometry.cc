@@ -322,6 +322,54 @@ std::vector<Marine::Geometry::ScanlineInterval> mergeIntervals(
     return merged;
 }
 
+Marine::Geometry::ScanlineResult intersectScanlineCore(const Marine::Polygon2D& sweepAlignedPolygon, double yM)
+{
+    double scanY = yM;
+    double closestDistance = Marine::Geometry::LengthEpsilonM;
+    for (const Marine::Point2D& vertex : sweepAlignedPolygon.vertices) {
+        const double distance = std::abs(vertex.yM - yM);
+        if (distance <= closestDistance) {
+            scanY = vertex.yM;
+            closestDistance = distance;
+        }
+    }
+
+    std::vector<double> crossings;
+    std::vector<Marine::Geometry::ScanlineInterval> intervals;
+    for (std::size_t index = 0; index < sweepAlignedPolygon.vertices.size(); ++index) {
+        const Marine::Point2D& first = sweepAlignedPolygon.vertices[index];
+        const Marine::Point2D& second = sweepAlignedPolygon.vertices[(index + 1) % sweepAlignedPolygon.vertices.size()];
+        const double deltaY = second.yM - first.yM;
+        if (std::abs(deltaY) <= Marine::Geometry::LengthEpsilonM) {
+            if (std::abs(scanY - first.yM) <= Marine::Geometry::LengthEpsilonM) {
+                appendInterval(intervals, first.xM, second.xM);
+            }
+            continue;
+        }
+
+        const bool crosses =
+            ((first.yM <= scanY) && (scanY < second.yM)) || ((second.yM <= scanY) && (scanY < first.yM));
+        if (crosses) {
+            const double ratio = (scanY - first.yM) / deltaY;
+            crossings.push_back(first.xM + (ratio * (second.xM - first.xM)));
+        }
+    }
+
+    std::sort(crossings.begin(), crossings.end());
+    if ((crossings.size() % 2) != 0) {
+        return {Marine::Geometry::ScanlineStatus::GeometryFailure, {}};
+    }
+    for (std::size_t index = 0; index < crossings.size(); index += 2) {
+        appendInterval(intervals, crossings[index], crossings[index + 1]);
+    }
+
+    intervals = mergeIntervals(std::move(intervals));
+    if (intervals.empty()) {
+        return {Marine::Geometry::ScanlineStatus::NoIntersection, {}};
+    }
+    return {Marine::Geometry::ScanlineStatus::Success, std::move(intervals)};
+}
+
 }  // namespace
 
 namespace Marine::Geometry {
@@ -456,51 +504,15 @@ ScanlineResult intersectScanline(const Polygon2D& sweepAlignedPolygon, double yM
     if (!isSimpleNonDegeneratePolygon(sweepAlignedPolygon) || !std::isfinite(yM)) {
         return {ScanlineStatus::InvalidInput, {}};
     }
+    return intersectScanlineCore(sweepAlignedPolygon, yM);
+}
 
-    double scanY = yM;
-    double closestDistance = LengthEpsilonM;
-    for (const Point2D& vertex : sweepAlignedPolygon.vertices) {
-        const double distance = std::abs(vertex.yM - yM);
-        if (distance <= closestDistance) {
-            scanY = vertex.yM;
-            closestDistance = distance;
-        }
+ScanlineResult intersectScanlineForValidatedGeometry(const Polygon2D& sweepAlignedPolygon, double yM)
+{
+    if ((sweepAlignedPolygon.vertices.size() < 3) || !sweepAlignedPolygon.isFinite() || !std::isfinite(yM)) {
+        return {ScanlineStatus::InvalidInput, {}};
     }
-
-    std::vector<double> crossings;
-    std::vector<ScanlineInterval> intervals;
-    for (std::size_t index = 0; index < sweepAlignedPolygon.vertices.size(); ++index) {
-        const Point2D& first = sweepAlignedPolygon.vertices[index];
-        const Point2D& second = sweepAlignedPolygon.vertices[(index + 1) % sweepAlignedPolygon.vertices.size()];
-        const double deltaY = second.yM - first.yM;
-        if (std::abs(deltaY) <= LengthEpsilonM) {
-            if (std::abs(scanY - first.yM) <= LengthEpsilonM) {
-                appendInterval(intervals, first.xM, second.xM);
-            }
-            continue;
-        }
-
-        const bool crosses =
-            ((first.yM <= scanY) && (scanY < second.yM)) || ((second.yM <= scanY) && (scanY < first.yM));
-        if (crosses) {
-            const double ratio = (scanY - first.yM) / deltaY;
-            crossings.push_back(first.xM + (ratio * (second.xM - first.xM)));
-        }
-    }
-
-    std::sort(crossings.begin(), crossings.end());
-    if ((crossings.size() % 2) != 0) {
-        return {ScanlineStatus::GeometryFailure, {}};
-    }
-    for (std::size_t index = 0; index < crossings.size(); index += 2) {
-        appendInterval(intervals, crossings[index], crossings[index + 1]);
-    }
-
-    intervals = mergeIntervals(std::move(intervals));
-    if (intervals.empty()) {
-        return {ScanlineStatus::NoIntersection, {}};
-    }
-    return {ScanlineStatus::Success, std::move(intervals)};
+    return intersectScanlineCore(sweepAlignedPolygon, yM);
 }
 
 bool containsPoint(const Polygon2D& polygon, const Point2D& point)
