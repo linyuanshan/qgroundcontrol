@@ -73,7 +73,7 @@ std::optional<PathMetrics> calculateMetrics(std::span<const Point2D> path, std::
             return std::nullopt;
         }
         const double legLengthM = distance(previousPoint, point);
-        if (!std::isfinite(legLengthM) || (legLengthM <= Marine::Geometry::LengthEpsilonM)) {
+        if (!std::isfinite(legLengthM) || (legLengthM <= 0.0)) {
             return std::nullopt;
         }
         metrics.pathLengthM += legLengthM;
@@ -109,7 +109,7 @@ std::optional<double> routeLength(const StaticRoute& route)
         if (!std::isfinite(legLengthM)) {
             return std::nullopt;
         }
-        if (legLengthM <= Marine::Geometry::LengthEpsilonM) {
+        if (legLengthM <= 0.0) {
             const bool zeroMovementRoute = (route.path.size() == 2) &&
                                            pointsEqual(route.path.front(), route.path.back()) &&
                                            (route.lengthM <= Marine::Geometry::LengthEpsilonM);
@@ -144,7 +144,7 @@ bool appendPolyline(std::vector<Point2D>& assembledPath, std::vector<PathLegRole
     for (auto pointIterator = std::next(path.begin()); pointIterator != path.end(); ++pointIterator) {
         const Point2D& point = *pointIterator;
         const double legLengthM = distance(previousPoint, point);
-        if (legLengthM <= Marine::Geometry::LengthEpsilonM) {
+        if (legLengthM <= 0.0) {
             const bool zeroMovementRoute =
                 overrideRole.has_value() && (path.size() == 2) && pointsEqual(path.front(), path.back());
             if (!zeroMovementRoute) {
@@ -176,7 +176,7 @@ std::optional<int> countTurns(std::span<const Point2D> path)
         const double deltaX = point.xM - previousPoint.xM;
         const double deltaY = point.yM - previousPoint.yM;
         const double legLengthM = std::hypot(deltaX, deltaY);
-        if (legLengthM <= Marine::Geometry::LengthEpsilonM) {
+        if (legLengthM <= 0.0) {
             previousPoint = point;
             continue;
         }

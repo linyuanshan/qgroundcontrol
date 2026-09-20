@@ -15,4 +15,5 @@ private slots:
     void _testInvalidInputsAreAtomic();
     void _testNoGoVerticalSlice();
     void _testBoundarySupportAssembly();
+    void _testShortestBackendBoundaryEdge();
 };

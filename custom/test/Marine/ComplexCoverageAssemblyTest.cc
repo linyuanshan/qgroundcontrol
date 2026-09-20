@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/PolygonRegion.h"
 #include "Planning/BoundaryCoverageSupport.h"
 #include "Planning/BoustrophedonDecomposition.h"
 #include "Planning/CellCoverage.h"
@@ -93,7 +94,7 @@ void verifySuccessfulAssembly(const PolygonRegionSet2D& regions, const ComplexCo
         QVERIFY(second.isFinite());
         QVERIFY(!pointsEqual(first, second));
         const double lengthM = distance(first, second);
-        QVERIFY(lengthM > Geometry::LengthEpsilonM);
+        QVERIFY(lengthM > 0.0);
         QVERIFY(Geometry::segmentInsidePolygonRegion(regions, first, second));
         if (result.legRoles.at(index - 1) == PathLegRole::Coverage) {
             coverageLengthM += lengthM;
@@ -382,6 +383,35 @@ void ComplexCoverageAssemblyTest::_testBoundarySupportAssembly()
     malformed.legRoles.front() = PathLegRole::Transit;
     const std::vector<BoundaryCoverageComponent> malformedSupport{malformed};
     verifyAtomicFailure(assembleComplexCoverage(regions, malformedSupport, cells, visits));
+}
+
+void ComplexCoverageAssemblyTest::_testShortestBackendBoundaryEdge()
+{
+    const PolygonRegionSet2D subject = regionSet(rectangle(0.0, 0.0, 10.0, 10.0));
+    const PolygonRegionSet2D clip = regionSet(rectangle(5.0, 9.999, 6.0, 11.0));
+    const Geometry::PolygonRegionOperationResult derived = Geometry::differencePolygonRegions(subject, clip);
+    QCOMPARE(derived.status, Geometry::PolygonRegionOperationStatus::Success);
+    QCOMPARE(derived.regions.size(), std::size_t{1});
+
+    double shortestEdgeM = std::numeric_limits<double>::infinity();
+    const std::vector<Point2D>& vertices = derived.regions.front().outerBoundary.vertices;
+    Point2D previous = vertices.back();
+    for (const Point2D& current : vertices) {
+        shortestEdgeM = std::min(shortestEdgeM, distance(previous, current));
+        previous = current;
+    }
+    QVERIFY(shortestEdgeM > 0.0);
+    QVERIFY(shortestEdgeM <= Geometry::LengthEpsilonM);
+
+    const BoundaryCoverageSupportResult support = generateBoundaryCoverageSupport(derived.regions);
+    QVERIFY2(support.status == PlanningStatus::Success, support.message.c_str());
+    const CellCoverage cell = coverage(0, {point(1.0, 1.0), point(2.0, 1.0)}, {PathLegRole::Coverage});
+    const std::vector<CellCoverage> cells{cell};
+    const std::vector<OrderedCellTraversal> visits{visit(cell, CellTraversalOrientation::Forward)};
+
+    const ComplexCoverageAssemblyResult assembled =
+        assembleComplexCoverage(derived.regions, support.components, cells, visits);
+    verifySuccessfulAssembly(derived.regions, assembled);
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(ComplexCoverageAssemblyTest, TestLabel::Unit)
