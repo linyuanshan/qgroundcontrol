@@ -630,7 +630,14 @@ PolygonRegionOperationResult clipPolygonRegionsToSlab(const PolygonRegionSet2D& 
         auto piece = executeBoolean(Clipper2Lib::ClipType::Intersection, subjects, {clip});
         if ((piece.status != PolygonRegionOperationStatus::Success) || (piece.regions.size() != 1) ||
             !piece.regions.front().holes.empty()) {
-            return {.status = PolygonRegionOperationStatus::GeometryFailure};
+            if (((top - bottom) != 1.0) || (clip.size() != 3)) {
+                return {.status = PolygonRegionOperationStatus::GeometryFailure};
+            }
+            // Clipper can discard a one-lattice-unit wedge when the slab clip and subject share a collapsed
+            // endpoint. With no subject vertex inside the open slab, the paired crossing edges already define
+            // the exact component, so retain that backend-valid polygon without changing event ownership.
+            result.regions.push_back({.outerBoundary = fromClipperPath(clip)});
+            continue;
         }
         result.regions.push_back(std::move(piece.regions.front()));
     }

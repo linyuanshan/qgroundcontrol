@@ -1,10 +1,13 @@
 #include "BoustrophedonDecompositionTest.h"
 
+#include <queue>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <queue>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "Geometry/MarineGeometry.h"
 #include "Geometry/PolygonRegion.h"
@@ -401,10 +404,8 @@ void BoustrophedonDecompositionTest::_testP204CriticalEventAndNarrowRegionInvari
     const Polygon2D firstHole = rectangle(4, 5, 7, 9);
     const Polygon2D secondHole = rectangle(13, 5, 16, 9);
     const PolygonRegion2D sameCriticalY = region(outer, {firstHole, secondHole});
-    const PolygonRegion2D closeEvents =
-        region(outer, {rectangle(3, 4, 6, 8), rectangle(14, 4.00049, 17, 8.00049)});
-    const PolygonRegion2D distinctEvents =
-        region(outer, {rectangle(3, 4, 6, 8), rectangle(14, 4.00151, 17, 8.00151)});
+    const PolygonRegion2D closeEvents = region(outer, {rectangle(3, 4, 6, 8), rectangle(14, 4.00049, 17, 8.00049)});
+    const PolygonRegion2D distinctEvents = region(outer, {rectangle(3, 4, 6, 8), rectangle(14, 4.00151, 17, 8.00151)});
     const Polygon2D narrowCorridor =
         polygon({{0, 0}, {10, 0}, {10, 10}, {6, 10}, {6, 5.01}, {4, 5.01}, {4, 10}, {0, 10}});
     const Polygon2D slantedNarrow = polygon({{0, 0}, {0.01, 8}, {4.01, 8}, {4, 0}});
@@ -416,13 +417,14 @@ void BoustrophedonDecompositionTest::_testP204CriticalEventAndNarrowRegionInvari
         PolygonRegion2D input;
         double angle;
     };
+
     for (const Case& testCase : std::vector<Case>{{"horizontalEdges", region(horizontalEdges), 90.0},
-                                                   {"sameCriticalY", sameCriticalY, 90.0},
-                                                   {"closeEvents", closeEvents, 90.0},
-                                                   {"distinctEvents", distinctEvents, 90.0},
-                                                   {"narrowCorridor", region(narrowCorridor), 90.0},
-                                                   {"slantedNarrow", region(slantedNarrow), 90.0},
-                                                   {"nonCardinalHole", region(outer, {sameOuterYHole}), 37.0}}) {
+                                                  {"sameCriticalY", sameCriticalY, 90.0},
+                                                  {"closeEvents", closeEvents, 90.0},
+                                                  {"distinctEvents", distinctEvents, 90.0},
+                                                  {"narrowCorridor", region(narrowCorridor), 90.0},
+                                                  {"slantedNarrow", region(slantedNarrow), 90.0},
+                                                  {"nonCardinalHole", region(outer, {sameOuterYHole}), 37.0}}) {
         const auto result = decompose(testCase.input, testCase.angle);
         QVERIFY2(result.status == PlanningStatus::Success, testCase.name);
         verifyCellInvariants(result, testCase.input, testCase.angle);
@@ -441,6 +443,36 @@ void BoustrophedonDecompositionTest::_testP204CriticalEventAndNarrowRegionInvari
     std::reverse(reversedHole.vertices.begin(), reversedHole.vertices.end());
     std::rotate(reversedOuter.vertices.begin(), reversedOuter.vertices.begin() + 2, reversedOuter.vertices.end());
     compareResults(decompose(sameCriticalY), decompose(region(reversedOuter, {secondHole, reversedHole})));
+}
+
+void BoustrophedonDecompositionTest::_testBackendLatticeSliverFromGeographicProjection()
+{
+    const Polygon2D projectedRectangle =
+        polygon({{-43.856828, -55.499064}, {43.856828, -55.499064}, {43.856230, 55.499305}, {-43.856230, 55.499305}});
+    constexpr double SelectedNavigationAngleDeg = 0.0003085;
+
+    const PolygonRegion2D input = region(projectedRectangle);
+    const double mathAngleDeg = Geometry::navigationAngleToMathAngle(SelectedNavigationAngleDeg);
+    const PolygonRegion2D sweepInput{.outerBoundary = Geometry::toSweepFrame(projectedRectangle, mathAngleDeg)};
+    std::vector<double> levels;
+    for (const Point2D& vertex : sweepInput.outerBoundary.vertices) {
+        levels.push_back(std::round(vertex.yM * Geometry::CoordinateScalePerM) / Geometry::CoordinateScalePerM);
+    }
+    std::ranges::sort(levels);
+    levels.erase(std::ranges::unique(levels).begin(), levels.end());
+    for (std::size_t index = 0; index + 1 < levels.size(); ++index) {
+        const Geometry::PolygonRegionOperationResult slab =
+            Geometry::clipPolygonRegionsToSlab({sweepInput}, levels[index], levels[index + 1]);
+        const std::string evidence = "slab " + std::to_string(index) + " status " +
+                                     std::to_string(static_cast<int>(slab.status)) + " regions " +
+                                     std::to_string(slab.regions.size());
+        QVERIFY2(slab.status == Geometry::PolygonRegionOperationStatus::Success, evidence.c_str());
+        QVERIFY2(!slab.regions.empty(), evidence.c_str());
+    }
+    const CoverageDecompositionResult result = decompose(input, SelectedNavigationAngleDeg);
+    QVERIFY2(result.status == PlanningStatus::Success, result.message.c_str());
+    verifyCellInvariants(result, input, SelectedNavigationAngleDeg);
+    compareResults(result, decompose(input, SelectedNavigationAngleDeg));
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(BoustrophedonDecompositionTest, TestLabel::Unit)

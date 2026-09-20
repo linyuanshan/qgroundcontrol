@@ -18,4 +18,5 @@ private slots:
     void _testOutputInvariants();
     void _testRoundedHoleEndToEnd();
     void _testP204CriticalEventAndNarrowRegionInvariants();
+    void _testBackendLatticeSliverFromGeographicProjection();
 };
