@@ -21,4 +21,5 @@ private slots:
     void _testPointContainment();
     void _testSegmentContainment();
     void _testPolygonRegionSegmentContainment();
+    void _testLineBufferDifferenceAndArea();
 };

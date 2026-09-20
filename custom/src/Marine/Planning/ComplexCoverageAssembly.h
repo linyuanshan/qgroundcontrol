@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "BoundaryCoverageSupport.h"
 #include "GreedyCellOrdering.h"
 
 namespace Marine {
@@ -25,5 +26,9 @@ struct ComplexCoverageAssemblyResult
 [[nodiscard]] ComplexCoverageAssemblyResult assembleComplexCoverage(const PolygonRegionSet2D& trackFeasibleRegion,
                                                                     std::span<const CellCoverage> cells,
                                                                     std::span<const OrderedCellTraversal> visits);
+
+[[nodiscard]] ComplexCoverageAssemblyResult assembleComplexCoverage(
+    const PolygonRegionSet2D& trackFeasibleRegion, std::span<const BoundaryCoverageComponent> boundaryComponents,
+    std::span<const CellCoverage> cells, std::span<const OrderedCellTraversal> visits);
 
 }  // namespace Marine

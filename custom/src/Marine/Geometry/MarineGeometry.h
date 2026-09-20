@@ -59,5 +59,10 @@ struct ScanlineResult
 [[nodiscard]] bool pointInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& point);
 [[nodiscard]] bool segmentInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& first,
                                               const Point2D& second);
+/// Equivalent closed-set predicates for callers that already validated every polygon region.
+[[nodiscard]] bool pointInsidePolygonRegionForValidatedGeometry(const PolygonRegionSet2D& regions,
+                                                                const Point2D& point);
+[[nodiscard]] bool segmentInsidePolygonRegionForValidatedGeometry(const PolygonRegionSet2D& regions,
+                                                                  const Point2D& first, const Point2D& second);
 
 }  // namespace Marine::Geometry

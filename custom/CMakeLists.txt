@@ -72,12 +72,16 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MonotoneCoverage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CellCoverage.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CellCoverage.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoundaryCoverageSupport.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoundaryCoverageSupport.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/StaticSafeRouter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/StaticSafeRouter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GreedyCellOrdering.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GreedyCellOrdering.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/ComplexCoverageAssembly.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/ComplexCoverageAssembly.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/NominalCoverageValidator.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/NominalCoverageValidator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageDecomposition.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.h
@@ -126,12 +130,16 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MonotoneCoverageTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CellCoverageTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CellCoverageTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoundaryCoverageSupportTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoundaryCoverageSupportTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GreedyCellOrderingTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GreedyCellOrderingTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ComplexCoverageAssemblyTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ComplexCoverageAssemblyTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/NominalCoverageValidatorTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/NominalCoverageValidatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonDecompositionTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonDecompositionTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineGeometryTest.cc
@@ -250,6 +258,17 @@ if(QGC_BUILD_TESTING)
         "${CMAKE_SOURCE_DIR}"
         CALL
         add_qgc_test
+        BoundaryCoverageSupportTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
         StaticSafeRouterTest
         LABELS
         Unit
@@ -273,6 +292,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         ComplexCoverageAssemblyTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        NominalCoverageValidatorTest
         LABELS
         Unit
     )

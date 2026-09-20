@@ -12,6 +12,7 @@
 
 namespace {
 
+using Marine::BoundaryCoverageComponent;
 using Marine::CellCoverage;
 using Marine::ComplexCoverageAssemblyResult;
 using Marine::OrderedCellTraversal;
@@ -26,9 +27,11 @@ struct PathMetrics
     double pathLengthM = 0.0;
 };
 
-ComplexCoverageAssemblyResult failure(std::string message)
+ComplexCoverageAssemblyResult failure(
+    std::string message, Marine::CoveragePlanningError error = Marine::CoveragePlanningError::InvalidGeneratedPath)
 {
     ComplexCoverageAssemblyResult result;
+    result.error = error;
     result.message = std::move(message);
     return result;
 }
@@ -205,11 +208,42 @@ ComplexCoverageAssemblyResult assembleComplexCoverage(const PolygonRegionSet2D& 
                                                       std::span<const CellCoverage> cells,
                                                       std::span<const OrderedCellTraversal> visits)
 {
+    return assembleComplexCoverage(trackFeasibleRegion, {}, cells, visits);
+}
+
+ComplexCoverageAssemblyResult assembleComplexCoverage(const PolygonRegionSet2D& trackFeasibleRegion,
+                                                      std::span<const BoundaryCoverageComponent> boundaryComponents,
+                                                      std::span<const CellCoverage> cells,
+                                                      std::span<const OrderedCellTraversal> visits)
+{
     if (cells.empty() || (cells.size() != visits.size()) ||
         (visits.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) || trackFeasibleRegion.empty() ||
         !std::ranges::all_of(trackFeasibleRegion,
                              [](const PolygonRegion2D& region) { return Geometry::isValidPolygonRegion(region); })) {
         return failure("Complex coverage assembly inputs are invalid");
+    }
+
+    std::vector<const BoundaryCoverageComponent*> orderedBoundaries;
+    orderedBoundaries.reserve(boundaryComponents.size());
+    for (const BoundaryCoverageComponent& component : boundaryComponents) {
+        const std::optional<PathMetrics> metrics = calculateMetrics(component.path, component.legRoles);
+        if (!metrics.has_value() || !pointsEqual(component.path.front(), component.path.back()) ||
+            !std::ranges::all_of(component.legRoles, [](PathLegRole role) { return role == PathLegRole::Coverage; }) ||
+            !lengthsEqual(metrics->coverageLengthM, component.pathLengthM) ||
+            !lengthsEqual(metrics->transitLengthM, 0.0)) {
+            return failure("A boundary coverage component is invalid");
+        }
+        orderedBoundaries.push_back(&component);
+    }
+    std::ranges::sort(orderedBoundaries,
+                      [](const BoundaryCoverageComponent* first, const BoundaryCoverageComponent* second) {
+                          return first->id < second->id;
+                      });
+    if (std::ranges::adjacent_find(orderedBoundaries,
+                                   [](const BoundaryCoverageComponent* first, const BoundaryCoverageComponent* second) {
+                                       return first->id == second->id;
+                                   }) != orderedBoundaries.end()) {
+        return failure("Boundary coverage component IDs must be unique");
     }
 
     std::vector<const CellCoverage*> orderedCoverages;
@@ -246,6 +280,24 @@ ComplexCoverageAssemblyResult assembleComplexCoverage(const PolygonRegionSet2D& 
     }
 
     ComplexCoverageAssemblyResult assembled;
+    for (const BoundaryCoverageComponent* component : orderedBoundaries) {
+        if (!assembled.path.empty()) {
+            const StaticRoute transit =
+                routeStatic(trackFeasibleRegion, assembled.path.back(), component->path.front());
+            if (!routeLength(transit).has_value() || !pointsEqual(transit.path.front(), assembled.path.back()) ||
+                !pointsEqual(transit.path.back(), component->path.front()) ||
+                !appendPolyline(assembled.path, assembled.legRoles, transit.path, {}, PathLegRole::Transit)) {
+                const CoveragePlanningError error = transit.error == CoveragePlanningError::None
+                                                        ? CoveragePlanningError::InvalidGeneratedPath
+                                                        : transit.error;
+                return failure("A boundary-component transit route is invalid", error);
+            }
+        }
+        if (!appendPolyline(assembled.path, assembled.legRoles, component->path, component->legRoles)) {
+            return failure("A boundary coverage component cannot be joined to the canonical path");
+        }
+    }
+
     const Point2D* previousExit = nullptr;
     std::size_t visitIndex = 0;
     for (const OrderedCellTraversal& visit : visits) {
@@ -268,6 +320,17 @@ ComplexCoverageAssemblyResult assembleComplexCoverage(const PolygonRegionSet2D& 
         if (visitIndex == 0) {
             if (visit.transitFromPrevious.has_value()) {
                 return failure("The first ordered cell must not have a preceding transit route");
+            }
+            if (!assembled.path.empty()) {
+                const StaticRoute transit = routeStatic(trackFeasibleRegion, assembled.path.back(), visit.state.entry);
+                if (!routeLength(transit).has_value() || !pointsEqual(transit.path.front(), assembled.path.back()) ||
+                    !pointsEqual(transit.path.back(), visit.state.entry) ||
+                    !appendPolyline(assembled.path, assembled.legRoles, transit.path, {}, PathLegRole::Transit)) {
+                    const CoveragePlanningError error = transit.error == CoveragePlanningError::None
+                                                            ? CoveragePlanningError::InvalidGeneratedPath
+                                                            : transit.error;
+                    return failure("The boundary-to-cell transit route is invalid", error);
+                }
             }
         } else {
             if (!visit.transitFromPrevious.has_value() || (previousExit == nullptr)) {
@@ -299,8 +362,8 @@ ComplexCoverageAssemblyResult assembleComplexCoverage(const PolygonRegionSet2D& 
         return failure("The assembled canonical path or leg roles are invalid");
     }
     for (std::size_t index = 1; index < assembled.path.size(); ++index) {
-        if (!Geometry::segmentInsidePolygonRegion(trackFeasibleRegion, assembled.path.at(index - 1),
-                                                  assembled.path.at(index))) {
+        if (!Geometry::segmentInsidePolygonRegionForValidatedGeometry(trackFeasibleRegion, assembled.path.at(index - 1),
+                                                                      assembled.path.at(index))) {
             return failure("The assembled canonical path contains an unsafe centerline leg");
         }
     }

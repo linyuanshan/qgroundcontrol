@@ -34,6 +34,7 @@ enum class CoveragePlanningError
     InvalidCoverageCell,
     CellCoverageFailed,
     SafeTransitNotFound,
+    CoverageIncomplete,
 };
 
 struct CoveragePlanningProblem

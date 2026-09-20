@@ -573,13 +573,27 @@ bool pointInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& 
         !std::ranges::all_of(regions, [](const PolygonRegion2D& region) { return isValidPolygonRegion(region); })) {
         return false;
     }
-    return pointInsidePolygonRegionUnchecked(regions, point);
+    return pointInsidePolygonRegionForValidatedGeometry(regions, point);
 }
 
 bool segmentInsidePolygonRegion(const PolygonRegionSet2D& regions, const Point2D& first, const Point2D& second)
 {
     if (!first.isFinite() || !second.isFinite() || regions.empty() ||
-        !std::ranges::all_of(regions, [](const PolygonRegion2D& region) { return isValidPolygonRegion(region); }) ||
+        !std::ranges::all_of(regions, [](const PolygonRegion2D& region) { return isValidPolygonRegion(region); })) {
+        return false;
+    }
+    return segmentInsidePolygonRegionForValidatedGeometry(regions, first, second);
+}
+
+bool pointInsidePolygonRegionForValidatedGeometry(const PolygonRegionSet2D& regions, const Point2D& point)
+{
+    return point.isFinite() && !regions.empty() && pointInsidePolygonRegionUnchecked(regions, point);
+}
+
+bool segmentInsidePolygonRegionForValidatedGeometry(const PolygonRegionSet2D& regions, const Point2D& first,
+                                                    const Point2D& second)
+{
+    if (!first.isFinite() || !second.isFinite() || regions.empty() ||
         !pointInsidePolygonRegionUnchecked(regions, first) || !pointInsidePolygonRegionUnchecked(regions, second)) {
         return false;
     }

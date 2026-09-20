@@ -14,4 +14,5 @@ private slots:
     void _testDeterminismAndCoverageInputOrder();
     void _testInvalidInputsAreAtomic();
     void _testNoGoVerticalSlice();
+    void _testBoundarySupportAssembly();
 };

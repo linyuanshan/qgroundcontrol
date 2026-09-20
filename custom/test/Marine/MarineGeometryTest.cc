@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numbers>
 
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/PolygonRegion.h"
 
 using namespace Marine;
 
@@ -269,14 +271,47 @@ void MarineGeometryTest::_testPolygonRegionSegmentContainment()
     };
 
     QVERIFY(Geometry::pointInsidePolygonRegion(regions, {0.0, 5.0}));
+    QVERIFY(Geometry::pointInsidePolygonRegionForValidatedGeometry(regions, {0.0, 5.0}));
     QVERIFY(Geometry::pointInsidePolygonRegion(regions, {8.0, 5.0}));
     QVERIFY(!Geometry::pointInsidePolygonRegion(regions, {10.0, 5.0}));
+    QVERIFY(!Geometry::pointInsidePolygonRegionForValidatedGeometry(regions, {10.0, 5.0}));
     QVERIFY(!Geometry::pointInsidePolygonRegion(regions, {-1.0, 5.0}));
     QVERIFY(Geometry::segmentInsidePolygonRegion(regions, {0.0, 0.0}, {20.0, 0.0}));
     QVERIFY(Geometry::segmentInsidePolygonRegion(regions, {2.0, 3.0}, {18.0, 3.0}));
     QVERIFY(Geometry::segmentInsidePolygonRegion(regions, {2.0, 9.0}, {10.0, 1.0}));
+    QVERIFY(Geometry::segmentInsidePolygonRegionForValidatedGeometry(regions, {2.0, 9.0}, {10.0, 1.0}));
     QVERIFY(!Geometry::segmentInsidePolygonRegion(regions, {2.0, 5.0}, {18.0, 5.0}));
+    QVERIFY(!Geometry::segmentInsidePolygonRegionForValidatedGeometry(regions, {2.0, 5.0}, {18.0, 5.0}));
     QVERIFY(!Geometry::segmentInsidePolygonRegion(regions, {-1.0, 0.0}, {20.0, 0.0}));
+}
+
+void MarineGeometryTest::_testLineBufferDifferenceAndArea()
+{
+    const std::vector<Geometry::LineSegment2D> segments = {
+        {.start = {2.0, 5.0}, .end = {8.0, 5.0}},
+    };
+    const Geometry::PolygonRegionOperationResult footprint = Geometry::bufferLineSegments(segments, 1.0);
+    QCOMPARE(footprint.status, Geometry::PolygonRegionOperationStatus::Success);
+    QCOMPARE(footprint.regions.size(), std::size_t{1});
+
+    const Geometry::PolygonRegionAreaResult footprintArea = Geometry::polygonRegionArea(footprint.regions);
+    QCOMPARE(footprintArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(std::abs(footprintArea.areaM2 - (12.0 + std::numbers::pi)) <= 0.01);
+
+    const PolygonRegionSet2D target = {
+        {.outerBoundary = rectangle(), .holes = {{{{8.0, 3.0}, {12.0, 3.0}, {12.0, 7.0}, {8.0, 7.0}}}}},
+    };
+    const Geometry::PolygonRegionAreaResult targetArea = Geometry::polygonRegionArea(target);
+    QCOMPARE(targetArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QCOMPARE(targetArea.areaM2, 184.0);
+
+    const Geometry::PolygonRegionOperationResult difference =
+        Geometry::differencePolygonRegions(target, footprint.regions);
+    QCOMPARE(difference.status, Geometry::PolygonRegionOperationStatus::Success);
+    const Geometry::PolygonRegionAreaResult differenceArea = Geometry::polygonRegionArea(difference.regions);
+    QCOMPARE(differenceArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(differenceArea.areaM2 < targetArea.areaM2);
+    QVERIFY(differenceArea.areaM2 > 0.0);
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(MarineGeometryTest, TestLabel::Unit)

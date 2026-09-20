@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "Geometry/MarineGeometry.h"
+#include "Planning/BoundaryCoverageSupport.h"
 #include "Planning/BoustrophedonDecomposition.h"
 #include "Planning/CellCoverage.h"
 #include "Planning/ComplexCoverageAssembly.h"
@@ -351,6 +352,36 @@ void ComplexCoverageAssemblyTest::_testNoGoVerticalSlice()
         QVERIFY(visited.insert(orderedVisit.state.cellId).second);
     }
     QCOMPARE(visited.size(), decomposition.cells.size());
+}
+
+void ComplexCoverageAssemblyTest::_testBoundarySupportAssembly()
+{
+    const PolygonRegionSet2D regions = regionSet(rectangle(0.0, 0.0, 10.0, 10.0));
+    const BoundaryCoverageSupportResult support = generateBoundaryCoverageSupport(regions);
+    QVERIFY2(support.status == PlanningStatus::Success, support.message.c_str());
+    QCOMPARE(support.components.size(), std::size_t{1});
+
+    const CellCoverage cell = coverage(0, {point(5.0, 5.0), point(7.0, 5.0)}, {PathLegRole::Coverage});
+    const std::vector<CellCoverage> cells{cell};
+    const std::vector<OrderedCellTraversal> visits{visit(cell, CellTraversalOrientation::Forward)};
+
+    const ComplexCoverageAssemblyResult assembled = assembleComplexCoverage(regions, support.components, cells, visits);
+
+    verifySuccessfulAssembly(regions, assembled);
+    QCOMPARE(assembled.path.front().xM, 0.0);
+    QCOMPARE(assembled.path.front().yM, 0.0);
+    for (std::size_t roleIndex = 0; roleIndex < support.components.front().legRoles.size(); ++roleIndex) {
+        QCOMPARE(assembled.legRoles.at(roleIndex), PathLegRole::Coverage);
+    }
+    QCOMPARE(assembled.legRoles.at(support.components.front().legRoles.size()), PathLegRole::Transit);
+    QCOMPARE(assembled.legRoles.back(), PathLegRole::Coverage);
+    QCOMPARE(assembled.coverageLengthM, 42.0);
+    QCOMPARE(assembled.cellCount, 1);
+
+    BoundaryCoverageComponent malformed = support.components.front();
+    malformed.legRoles.front() = PathLegRole::Transit;
+    const std::vector<BoundaryCoverageComponent> malformedSupport{malformed};
+    verifyAtomicFailure(assembleComplexCoverage(regions, malformedSupport, cells, visits));
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(ComplexCoverageAssemblyTest, TestLabel::Unit)

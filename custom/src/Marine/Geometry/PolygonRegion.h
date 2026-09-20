@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include "GeometryTypes.h"
 
 namespace Marine::Geometry {
@@ -33,6 +35,19 @@ struct PolygonRegionContainmentResult
     bool contained = false;
 };
 
+struct PolygonRegionAreaResult
+{
+    PolygonRegionOperationStatus status = PolygonRegionOperationStatus::GeometryFailure;
+    double areaM2 = 0.0;
+};
+
+/// Temporary geometry input for line buffering. Canonical planning geometry remains the path plus leg roles.
+struct LineSegment2D
+{
+    Point2D start;
+    Point2D end;
+};
+
 [[nodiscard]] NoGoValidationStatus validateNoGoRegions(const Polygon2D& outerBoundary,
                                                        const std::vector<Polygon2D>& noGoRegions);
 [[nodiscard]] PolygonRegionOperationResult buildCoverageTarget(const Polygon2D& outerBoundary,
@@ -41,6 +56,10 @@ struct PolygonRegionContainmentResult
                                                                     const std::vector<Polygon2D>& noGoRegions,
                                                                     double safetyMarginM);
 [[nodiscard]] PolygonRegionOperationResult bufferPolygonRegions(const PolygonRegionSet2D& regions, double distanceM);
+[[nodiscard]] PolygonRegionOperationResult bufferLineSegments(std::span<const LineSegment2D> segments, double radiusM);
+[[nodiscard]] PolygonRegionOperationResult differencePolygonRegions(const PolygonRegionSet2D& subjects,
+                                                                    const PolygonRegionSet2D& clips);
+[[nodiscard]] PolygonRegionAreaResult polygonRegionArea(const PolygonRegionSet2D& regions);
 [[nodiscard]] PolygonRegionContainmentResult isRegionSetContained(const PolygonRegionSet2D& target,
                                                                   const PolygonRegionSet2D& container);
 

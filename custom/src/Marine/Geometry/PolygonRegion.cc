@@ -10,6 +10,7 @@
 namespace {
 
 constexpr double ArcToleranceClipperUnits = 0.25;
+constexpr double MaximumScaledCoordinate = 1e15;
 
 using Marine::Point2D;
 using Marine::Polygon2D;
@@ -102,7 +103,6 @@ void canonicalize(Polygon2D& polygon)
 
 bool toClipperPath(const Polygon2D& polygon, bool positive, Clipper2Lib::Path64& path)
 {
-    constexpr double MaximumScaledCoordinate = 1e15;
     path.clear();
     path.reserve(polygon.vertices.size());
     for (const Point2D& vertex : polygon.vertices) {
@@ -118,6 +118,23 @@ bool toClipperPath(const Polygon2D& polygon, bool positive, Clipper2Lib::Path64&
         std::reverse(path.begin(), path.end());
     }
     return true;
+}
+
+bool toClipperOpenPath(const Marine::Geometry::LineSegment2D& segment, Clipper2Lib::Path64& path)
+{
+    const double startX = segment.start.xM * Marine::Geometry::CoordinateScalePerM;
+    const double startY = segment.start.yM * Marine::Geometry::CoordinateScalePerM;
+    const double endX = segment.end.xM * Marine::Geometry::CoordinateScalePerM;
+    const double endY = segment.end.yM * Marine::Geometry::CoordinateScalePerM;
+    if (!std::isfinite(startX) || !std::isfinite(startY) || !std::isfinite(endX) || !std::isfinite(endY) ||
+        (std::abs(startX) > MaximumScaledCoordinate) || (std::abs(startY) > MaximumScaledCoordinate) ||
+        (std::abs(endX) > MaximumScaledCoordinate) || (std::abs(endY) > MaximumScaledCoordinate)) {
+        return false;
+    }
+
+    path = {{static_cast<int64_t>(std::llround(startX)), static_cast<int64_t>(std::llround(startY))},
+            {static_cast<int64_t>(std::llround(endX)), static_cast<int64_t>(std::llround(endY))}};
+    return path.front() != path.back();
 }
 
 Polygon2D fromClipperPath(const Clipper2Lib::Path64& path)
@@ -435,6 +452,86 @@ PolygonRegionOperationResult bufferPolygonRegions(const PolygonRegionSet2D& regi
         return {PolygonRegionOperationStatus::GeometryFailure, {}};
     }
     return fromPolyTree(tree);
+}
+
+PolygonRegionOperationResult bufferLineSegments(std::span<const LineSegment2D> segments, double radiusM)
+{
+    if (!std::isfinite(radiusM) || (radiusM <= 0.0)) {
+        return {.status = PolygonRegionOperationStatus::InvalidInput};
+    }
+    if (segments.empty()) {
+        return {.status = PolygonRegionOperationStatus::Success};
+    }
+
+    const double scaledRadius = radiusM * CoordinateScalePerM;
+    if (!std::isfinite(scaledRadius) || (scaledRadius > MaximumScaledCoordinate)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+
+    Clipper2Lib::Paths64 paths;
+    paths.reserve(segments.size());
+    for (const LineSegment2D& segment : segments) {
+        Clipper2Lib::Path64 path;
+        if (!toClipperOpenPath(segment, path)) {
+            return {.status = PolygonRegionOperationStatus::InvalidInput};
+        }
+        paths.push_back(std::move(path));
+    }
+
+    Clipper2Lib::ClipperOffset offset(2.0, ArcToleranceClipperUnits);
+    offset.AddPaths(paths, Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Round);
+    Clipper2Lib::PolyTree64 tree;
+    offset.Execute(scaledRadius, tree);
+    if (offset.ErrorCode() != 0) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    return fromPolyTree(tree);
+}
+
+PolygonRegionOperationResult differencePolygonRegions(const PolygonRegionSet2D& subjects,
+                                                      const PolygonRegionSet2D& clips)
+{
+    if (!allRegionsValid(subjects) || !allRegionsValid(clips)) {
+        return {.status = PolygonRegionOperationStatus::InvalidInput};
+    }
+    if (subjects.empty()) {
+        return {.status = PolygonRegionOperationStatus::Success};
+    }
+
+    Clipper2Lib::Paths64 subjectPaths;
+    Clipper2Lib::Paths64 clipPaths;
+    if (!regionSetToPaths(subjects, subjectPaths) || !regionSetToPaths(clips, clipPaths)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    return executeBoolean(Clipper2Lib::ClipType::Difference, subjectPaths, clipPaths);
+}
+
+PolygonRegionAreaResult polygonRegionArea(const PolygonRegionSet2D& regions)
+{
+    if (!allRegionsValid(regions)) {
+        return {.status = PolygonRegionOperationStatus::InvalidInput};
+    }
+    if (regions.empty()) {
+        return {.status = PolygonRegionOperationStatus::Success};
+    }
+
+    Clipper2Lib::Paths64 paths;
+    if (!regionSetToPaths(regions, paths)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    const PolygonRegionOperationResult normalized = executeBoolean(Clipper2Lib::ClipType::Union, paths, {});
+    if (normalized.status != PolygonRegionOperationStatus::Success) {
+        return {.status = normalized.status};
+    }
+    if (!regionSetToPaths(normalized.regions, paths)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    const double scaleSquared = CoordinateScalePerM * CoordinateScalePerM;
+    const double areaM2 = std::abs(Clipper2Lib::Area(paths)) / scaleSquared;
+    if (!std::isfinite(areaM2)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    return {.status = PolygonRegionOperationStatus::Success, .areaM2 = areaM2};
 }
 
 PolygonRegionContainmentResult isRegionSetContained(const PolygonRegionSet2D& target,

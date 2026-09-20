@@ -72,7 +72,8 @@ VisibilityGraph buildVisibilityGraph(const Marine::PolygonRegionSet2D& regions, 
     VisibilityGraph graph(nodes.size());
     for (std::size_t first = 0; first < nodes.size(); ++first) {
         for (std::size_t second = first + 1; second < nodes.size(); ++second) {
-            if (!Marine::Geometry::segmentInsidePolygonRegion(regions, nodes.at(first), nodes.at(second))) {
+            if (!Marine::Geometry::segmentInsidePolygonRegionForValidatedGeometry(regions, nodes.at(first),
+                                                                                  nodes.at(second))) {
                 continue;
             }
             const double lengthM = distance(nodes.at(first), nodes.at(second));
@@ -94,13 +95,13 @@ StaticRoute routeStatic(const PolygonRegionSet2D& trackFeasibleRegion, const Poi
         })) {
         return failure(CoveragePlanningError::GeometryFailure, "Track feasible region is invalid");
     }
-    if (!Geometry::pointInsidePolygonRegion(trackFeasibleRegion, start) ||
-        !Geometry::pointInsidePolygonRegion(trackFeasibleRegion, goal)) {
+    if (!Geometry::pointInsidePolygonRegionForValidatedGeometry(trackFeasibleRegion, start) ||
+        !Geometry::pointInsidePolygonRegionForValidatedGeometry(trackFeasibleRegion, goal)) {
         return failure(CoveragePlanningError::SafeTransitNotFound,
                        "Static route start and goal must lie in the track feasible region");
     }
 
-    if (Geometry::segmentInsidePolygonRegion(trackFeasibleRegion, start, goal)) {
+    if (Geometry::segmentInsidePolygonRegionForValidatedGeometry(trackFeasibleRegion, start, goal)) {
         StaticRoute route;
         route.status = PlanningStatus::Success;
         route.path = {start, goal};
@@ -166,8 +167,8 @@ StaticRoute routeStatic(const PolygonRegionSet2D& trackFeasibleRegion, const Poi
         route.path.push_back(nodes.at(node));
     }
     for (std::size_t index = 1; index < route.path.size(); ++index) {
-        if (!Geometry::segmentInsidePolygonRegion(trackFeasibleRegion, route.path.at(index - 1),
-                                                  route.path.at(index))) {
+        if (!Geometry::segmentInsidePolygonRegionForValidatedGeometry(trackFeasibleRegion, route.path.at(index - 1),
+                                                                      route.path.at(index))) {
             return failure(CoveragePlanningError::InvalidGeneratedPath,
                            "Static route contains a leg outside the track feasible region");
         }
