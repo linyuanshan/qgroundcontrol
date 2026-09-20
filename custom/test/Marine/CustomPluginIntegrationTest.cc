@@ -70,6 +70,7 @@ void CustomPluginIntegrationTest::_testPlanContextAndCreatorRegistration()
     QCOMPARE(contexts.size(), 1);
     QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.mock") != nullptr);
     QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.lawnmower") != nullptr);
+    QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.bcd") != nullptr);
 
     QmlObjectListModel* creators = planController()->planCreators();
     QVERIFY(creators != nullptr);
@@ -184,6 +185,7 @@ void CustomPluginIntegrationTest::_testMarinePlanPreload()
     QCOMPARE(restoredTask->name, loadedTask.name);
     QVERIFY(context->plannerRegistry().planner("marine.coverage.mock") != nullptr);
     QVERIFY(context->plannerRegistry().planner("marine.coverage.lawnmower") != nullptr);
+    QVERIFY(context->plannerRegistry().planner("marine.coverage.bcd") != nullptr);
 }
 
 void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()

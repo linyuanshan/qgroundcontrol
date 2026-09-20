@@ -72,6 +72,9 @@ void LawnmowerCoveragePlannerTest::_testRectangleManualZeroDegrees()
     comparePoint(solution.path[8], 2.0, 0.0);
     comparePoint(solution.path[9], 2.0, 10.0);
     compareWithinTolerance(solution.pathLengthM, 66.0);
+    compareWithinTolerance(solution.coverageLengthM, 50.0);
+    compareWithinTolerance(solution.transitLengthM, 16.0);
+    QCOMPARE(solution.cellCount, 1);
     compareRoles(solution, {PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage, PathLegRole::Transit,
                             PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage, PathLegRole::Transit,
                             PathLegRole::Coverage});
@@ -91,6 +94,9 @@ void LawnmowerCoveragePlannerTest::_testRectangleManualNinetyDegrees()
     comparePoint(solution.path[2], 20.0, 7.5);
     comparePoint(solution.path[3], 0.0, 7.5);
     compareWithinTolerance(solution.pathLengthM, 45.0);
+    compareWithinTolerance(solution.coverageLengthM, 40.0);
+    compareWithinTolerance(solution.transitLengthM, 5.0);
+    QCOMPARE(solution.cellCount, 1);
     compareRoles(solution, {PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage});
     QCOMPARE(solution.selectedSweepAngleDeg, 90.0);
     QCOMPARE(solution.turnCount, 1);

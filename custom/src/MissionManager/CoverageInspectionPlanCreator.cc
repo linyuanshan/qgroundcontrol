@@ -25,7 +25,7 @@ void CoverageInspectionPlanCreator::createPlan(const QGeoCoordinate& mapCenterCo
 
     Marine::MarineTask task;
     task.name = CoverageInspectionComplexItem::canonicalName;
-    task.planner.plannerId = "marine.coverage.lawnmower";
+    task.planner.plannerId = "marine.coverage.bcd";
     const double latitude = mapCenterCoord.latitude();
     const double longitude = mapCenterCoord.longitude();
     constexpr double delta = 0.0005;

@@ -136,8 +136,11 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
     solution.status = Marine::PlanningStatus::Success;
     solution.path = primitiveResult.path;
     solution.legRoles = primitiveResult.legRoles;
+    solution.coverageLengthM = primitiveResult.coverageLengthM;
+    solution.transitLengthM = primitiveResult.transitLengthM;
     solution.pathLengthM = primitiveResult.pathLengthM;
     solution.selectedSweepAngleDeg = navigationAngleDeg;
+    solution.cellCount = 1;
     solution.turnCount = primitiveResult.turnCount;
     return solution;
 }

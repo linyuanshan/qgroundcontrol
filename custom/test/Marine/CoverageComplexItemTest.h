@@ -20,6 +20,7 @@ private slots:
     void _testDefaults();
     void _testPlanning();
     void _testLawnmowerPlanning();
+    void _testBoustrophedonNoGoPlanning();
     void _testPlanningFailures();
     void _testInvalidation();
     void _testQmlRegistration();

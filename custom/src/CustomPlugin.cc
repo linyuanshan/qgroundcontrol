@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
 #include "JsonParsing.h"
@@ -44,6 +45,9 @@ Marine::MarinePlanContext* marinePlanContextFor(PlanMasterController* controller
     }
     if (context->plannerRegistry().planner("marine.coverage.lawnmower") == nullptr) {
         (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::LawnmowerCoveragePlanner>());
+    }
+    if (context->plannerRegistry().planner("marine.coverage.bcd") == nullptr) {
+        (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::BoustrophedonCoveragePlanner>());
     }
     return context;
 }

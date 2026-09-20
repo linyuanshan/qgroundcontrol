@@ -74,6 +74,10 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CellCoverage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoundaryCoverageSupport.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoundaryCoverageSupport.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GlobalSweepSelector.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GlobalSweepSelector.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonCoveragePlanner.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/StaticSafeRouter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/StaticSafeRouter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GreedyCellOrdering.cc
@@ -126,6 +130,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeometryTypesTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/LawnmowerCoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/LawnmowerCoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonCoveragePlannerTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoustrophedonCoveragePlannerTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MonotoneCoverageTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MonotoneCoverageTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CellCoverageTest.cc
@@ -226,6 +232,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         CoverageFreeSpaceTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        BoustrophedonCoveragePlannerTest
         LABELS
         Unit
     )

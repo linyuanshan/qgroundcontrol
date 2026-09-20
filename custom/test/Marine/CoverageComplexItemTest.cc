@@ -8,8 +8,10 @@
 #include <QtQml/QQmlEngine>
 #include <QtTest/QSignalSpy>
 
+#include <cmath>
 #include <memory>
 
+#include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
 #include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
@@ -43,6 +45,7 @@ void CoverageComplexItemTest::init()
     _marineContext = new MarinePlanContext(planController());
     QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
     QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<LawnmowerCoveragePlanner>()));
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<BoustrophedonCoveragePlanner>()));
     _item = new CoverageInspectionComplexItem(planController(), false, _marineContext);
 }
 
@@ -134,6 +137,42 @@ void CoverageComplexItemTest::_testLawnmowerPlanning()
     QCOMPARE(_item->generatedPath().size(), static_cast<qsizetype>(result.path.size()));
     QCOMPARE(_item->complexDistance(), result.pathLengthM);
     QVERIFY(result.message.find("Manual") != std::string::npos);
+}
+
+void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
+{
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.bcd";
+    task.coverage.swathWidthM = 20.0;
+    task.coverage.safetyMarginM = 0.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 90.0;
+    task.region.noGoRegions = {GeoPolygon{.vertices = {
+                                              {47.39805, 8.54585, 0.0},
+                                              {47.39805, 8.54615, 0.0},
+                                              {47.39835, 8.54615, 0.0},
+                                              {47.39835, 8.54585, 0.0},
+                                          }}};
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+
+    const PlanningResult& result = _item->planningResult();
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QVERIFY(!result.path.empty());
+    QCOMPARE(result.legRoles.size(), result.path.size() - 1);
+    QVERIFY(std::isfinite(result.pathLengthM));
+    QCOMPARE(result.pathLengthM, result.coverageLengthM + result.transitLengthM);
+    QVERIFY(result.cellCount >= 1);
+
+    QList<MissionItem*> missionItems;
+    _item->appendMissionItems(missionItems, this);
+    QCOMPARE(missionItems.size(), static_cast<qsizetype>(result.path.size()));
+    for (const MissionItem* missionItem : missionItems) {
+        QCOMPARE(missionItem->command(), MAV_CMD_NAV_WAYPOINT);
+    }
 }
 
 void CoverageComplexItemTest::_testPlanningFailures()
@@ -366,6 +405,9 @@ void CoverageComplexItemTest::_testSaveLoad()
     QVERIFY(object.contains(QStringLiteral("turnCount")));
     QVERIFY(!object.contains(QStringLiteral("task")));
     QVERIFY(!object.contains(QStringLiteral("marine")));
+    QVERIFY(!object.contains(QStringLiteral("coverageLengthM")));
+    QVERIFY(!object.contains(QStringLiteral("transitLengthM")));
+    QVERIFY(!object.contains(QStringLiteral("cellCount")));
 
     auto loadedItem = new CoverageInspectionComplexItem(planController(), false, _marineContext);
     QString errorString;

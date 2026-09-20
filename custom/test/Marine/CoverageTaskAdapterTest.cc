@@ -159,8 +159,11 @@ void CoverageTaskAdapterTest::_testSolutionMapping()
     solution.status = PlanningStatus::Success;
     solution.path = {{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}};
     solution.legRoles = {PathLegRole::Coverage, PathLegRole::Transit};
+    solution.coverageLengthM = 100.0;
+    solution.transitLengthM = 100.0;
     solution.pathLengthM = 200.0;
     solution.selectedSweepAngleDeg = 90.0;
+    solution.cellCount = 3;
     solution.turnCount = 1;
     solution.message = "Local plan";
 
@@ -172,7 +175,10 @@ void CoverageTaskAdapterTest::_testSolutionMapping()
     QCOMPARE(result.legRoles[1], PathLegRole::Transit);
     compareGeoPoint(result.path.front(), reference->origin());
     QCOMPARE(result.pathLengthM, 200.0);
+    QCOMPARE(result.coverageLengthM, 100.0);
+    QCOMPARE(result.transitLengthM, 100.0);
     QCOMPARE(result.selectedSweepAngleDeg, 90.0);
+    QCOMPARE(result.cellCount, 3);
     QCOMPARE(result.turnCount, 1);
     QVERIFY(result.message == solution.message);
 
@@ -181,6 +187,9 @@ void CoverageTaskAdapterTest::_testSolutionMapping()
     QVERIFY(invalidResult.status == PlanningStatus::Failed);
     QVERIFY(invalidResult.path.empty());
     QCOMPARE(invalidResult.pathLengthM, 0.0);
+    QCOMPARE(invalidResult.coverageLengthM, 0.0);
+    QCOMPARE(invalidResult.transitLengthM, 0.0);
+    QCOMPARE(invalidResult.cellCount, 0);
     QVERIFY(!invalidResult.message.empty());
 
     solution = {};
@@ -213,6 +222,10 @@ void CoverageTaskAdapterTest::_testTaskPlannerRoundTrip()
     QCOMPARE(result.legRoles[0], PathLegRole::Coverage);
     QCOMPARE(result.legRoles[1], PathLegRole::Transit);
     QVERIFY(result.pathLengthM > 0.0);
+    QVERIFY(result.coverageLengthM > 0.0);
+    QVERIFY(result.transitLengthM > 0.0);
+    QCOMPARE(result.pathLengthM, result.coverageLengthM + result.transitLengthM);
+    QCOMPARE(result.cellCount, 1);
     QCOMPARE(result.selectedSweepAngleDeg, 35.0);
     QCOMPARE(result.turnCount, 1);
 }

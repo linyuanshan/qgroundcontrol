@@ -101,9 +101,12 @@ PlanningResult CoverageTaskAdapter::toPlanningResult(const CoveragePlanningSolut
         result.path.push_back(*geoPoint);
     }
 
-    result.pathLengthM = solution.pathLengthM;
     result.legRoles = solution.legRoles;
+    result.coverageLengthM = solution.coverageLengthM;
+    result.transitLengthM = solution.transitLengthM;
+    result.pathLengthM = solution.pathLengthM;
     result.selectedSweepAngleDeg = solution.selectedSweepAngleDeg;
+    result.cellCount = solution.cellCount;
     result.turnCount = solution.turnCount;
     return result;
 }

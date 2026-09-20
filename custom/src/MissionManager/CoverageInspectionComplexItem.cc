@@ -349,7 +349,11 @@ bool CoverageInspectionComplexItem::plan()
     if (result.status != PlanningStatus::Success) {
         result.path.clear();
         result.legRoles.clear();
+        result.coverageLengthM = 0.0;
+        result.transitLengthM = 0.0;
         result.pathLengthM = 0.0;
+        result.cellCount = 0;
+        result.turnCount = 0;
     }
     const bool success = result.status == PlanningStatus::Success;
     _applyPlanningResult(std::move(result));

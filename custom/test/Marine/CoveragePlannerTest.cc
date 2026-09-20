@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "BoustrophedonCoveragePlanner.h"
 #include "LawnmowerCoveragePlanner.h"
 #include "MockCoveragePlanner.h"
 #include "PlannerRegistry.h"
@@ -39,11 +40,14 @@ void CoveragePlannerTest::_testRegisterAndLookup()
     PlannerRegistry registry;
     const auto mockPlanner = std::make_shared<MockCoveragePlanner>();
     const auto lawnmowerPlanner = std::make_shared<LawnmowerCoveragePlanner>();
+    const auto bcdPlanner = std::make_shared<BoustrophedonCoveragePlanner>();
 
     QVERIFY(registry.registerPlanner(mockPlanner));
     QVERIFY(registry.registerPlanner(lawnmowerPlanner));
+    QVERIFY(registry.registerPlanner(bcdPlanner));
     QCOMPARE(registry.planner(mockPlanner->id()), mockPlanner);
     QCOMPARE(registry.planner(lawnmowerPlanner->id()), lawnmowerPlanner);
+    QCOMPARE(registry.planner(bcdPlanner->id()), bcdPlanner);
     QVERIFY(!registry.registerPlanner(nullptr));
 }
 
@@ -82,6 +86,10 @@ void CoveragePlannerTest::_testValidProblem()
     comparePoints(solution.path[1], {10.0, 5.0});
     comparePoints(solution.path[2], {20.0, 10.0});
     QVERIFY(solution.pathLengthM > 0.0);
+    QVERIFY(solution.coverageLengthM > 0.0);
+    QVERIFY(solution.transitLengthM > 0.0);
+    QCOMPARE(solution.pathLengthM, solution.coverageLengthM + solution.transitLengthM);
+    QCOMPARE(solution.cellCount, 1);
     QCOMPARE(solution.selectedSweepAngleDeg, 90.0);
     QCOMPARE(solution.turnCount, 1);
     QVERIFY(solution.message.find("Not for field operation") != std::string::npos);

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <memory>
 
+#include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
 #include "LawnmowerCoveragePlanner.h"
@@ -31,6 +32,9 @@ void CoverageInspectionPlanCreatorTest::init()
     }
     if (!_marineContext->plannerRegistry().planner("marine.coverage.lawnmower")) {
         QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<LawnmowerCoveragePlanner>()));
+    }
+    if (!_marineContext->plannerRegistry().planner("marine.coverage.bcd")) {
+        QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<BoustrophedonCoveragePlanner>()));
     }
     _creator = new CoverageInspectionPlanCreator(planController(), _marineContext);
 }
@@ -68,7 +72,7 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlan()
     QVERIFY(task != nullptr);
     QCOMPARE(task->type, MarineTaskType::CoverageInspection);
     QCOMPARE(task->name, std::string("Coverage Inspection"));
-    QCOMPARE(task->planner.plannerId, std::string("marine.coverage.lawnmower"));
+    QCOMPARE(task->planner.plannerId, std::string("marine.coverage.bcd"));
     QCOMPARE(task->region.outerBoundary.vertices.size(), std::size_t(4));
     QVERIFY(task->region.outerBoundary.vertices.front().latitudeDeg != mapCenter.latitude());
     QVERIFY(task->region.outerBoundary.vertices.front().longitudeDeg != mapCenter.longitude());
@@ -110,8 +114,14 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
     QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
     QCOMPARE(coverageItem->planningResult().status, PlanningStatus::Success);
     QVERIFY(coverageItem->planningResult().path.size() > 3);
+    QCOMPARE(coverageItem->planningResult().legRoles.size(), coverageItem->planningResult().path.size() - 1);
+    QVERIFY(coverageItem->planningResult().coverageLengthM > 0.0);
+    QVERIFY(coverageItem->planningResult().transitLengthM >= 0.0);
+    QCOMPARE(coverageItem->planningResult().pathLengthM,
+             coverageItem->planningResult().coverageLengthM + coverageItem->planningResult().transitLengthM);
+    QVERIFY(coverageItem->planningResult().cellCount >= 1);
     QVERIFY(coverageItem->planningResult().turnCount > 0);
-    QVERIFY(coverageItem->planningResult().message.find("Automatic") != std::string::npos);
+    QVERIFY(coverageItem->planningResult().message.find("Boustrophedon") != std::string::npos);
 
     QList<MissionItem*> missionItems;
     coverageItem->appendMissionItems(missionItems, this);
