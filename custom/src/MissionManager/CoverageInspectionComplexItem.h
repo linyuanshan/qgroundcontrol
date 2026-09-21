@@ -40,6 +40,10 @@ public:
     Q_PROPERTY(QVariantList outerBoundary READ outerBoundary NOTIFY taskDataChanged)
     Q_PROPERTY(QGCMapPolygon* workRegionPolygon READ workRegionPolygon CONSTANT)
     Q_PROPERTY(QVariantList noGoRegions READ noGoRegions NOTIFY taskDataChanged)
+    Q_PROPERTY(QmlObjectListModel* noGoPolygons READ noGoPolygons CONSTANT)
+    Q_PROPERTY(bool noGoRegionsReady READ noGoRegionsReady NOTIFY noGoRegionsChanged)
+    Q_PROPERTY(bool noGoRegionEditing READ noGoRegionEditing NOTIFY noGoRegionEditingChanged)
+    Q_PROPERTY(int maximumNoGoRegionCount READ maximumNoGoRegionCount CONSTANT)
     Q_PROPERTY(PlanningState planningState READ planningState NOTIFY planningStateChanged)
     Q_PROPERTY(QVariantList generatedPath READ generatedPath NOTIFY generatedPathChanged)
     Q_PROPERTY(QString planningMessage READ planningMessage NOTIFY planningResultChanged)
@@ -77,6 +81,13 @@ public:
 
     QVariantList noGoRegions() const;
 
+    QmlObjectListModel* noGoPolygons() { return &_noGoPolygons; }
+
+    bool noGoRegionsReady() const;
+    bool noGoRegionEditing() const;
+
+    int maximumNoGoRegionCount() const { return MaximumNoGoRegionCount; }
+
     PlanningState planningState() const { return _planningState; }
 
     QVariantList generatedPath() const;
@@ -91,6 +102,10 @@ public:
 
     Q_INVOKABLE bool plan();
     Q_INVOKABLE void invalidatePlan();
+    Q_INVOKABLE bool addNoGoRegion();
+    Q_INVOKABLE bool deleteNoGoRegion(int index);
+    Q_INVOKABLE void setNoGoRegionInteractive(int index, bool interactive);
+    Q_INVOKABLE void clearNoGoRegionInteractive();
 
     QString patternName() const final { return tr(canonicalName); }
 
@@ -164,11 +179,18 @@ signals:
     void planningStateChanged();
     void generatedPathChanged();
     void planningResultChanged();
+    void noGoRegionsChanged();
+    void noGoRegionEditingChanged();
 
 private:
+    void _connectNoGoPolygon(QGCMapPolygon* polygon);
+    void _noGoPolygonPathChanged();
     void _workRegionPolygonChanged();
     void _applyPlanningResult(Marine::PlanningResult result);
+    void _syncNoGoPolygonsFromTask();
     void _syncWorkRegionPolygonFromTask();
+    void _updateTaskFromNoGoPolygons();
+    bool _noGoPolygonsMatchTask(const Marine::MarineTask* task) const;
     const Marine::MarineTask* _task() const;
     void _replaceTask(const Marine::MarineTask& task);
     static QVariantList _toQGeoCoordinates(const Marine::GeoPolygon& polygon);
@@ -177,10 +199,16 @@ private:
     std::string _taskId;
     Marine::PlanningResult _planningResult;
     QGCMapPolygon _workRegionPolygon;
+    QmlObjectListModel _noGoPolygons;
     QPointer<Marine::MarinePlanContext> _marineContext;
     PlanningState _planningState = Unplanned;
     int _sequenceNumber = 0;
     bool _syncingWorkRegionPolygon = false;
+    bool _syncingNoGoPolygons = false;
+    bool _syncingNoGoInteraction = false;
+    bool _updatingTaskFromItem = false;
+
+    static constexpr int MaximumNoGoRegionCount = 2;
 
     static constexpr const char* _jsonTaskIdKey = "taskId";
     static constexpr const char* _jsonPlanningStatusKey = "planningStatus";

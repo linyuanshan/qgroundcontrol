@@ -9,7 +9,6 @@ Rectangle {
 
     readonly property real _fieldWidth: ScreenTools.defaultFontPixelWidth * 11
     readonly property real _margin: ScreenTools.defaultFontPixelWidth / 2
-    readonly property bool _hasNoGoRegions: root.missionItem.noGoRegions.length > 0
     required property real availableWidth
     required property var missionItem
 
@@ -139,10 +138,12 @@ Rectangle {
 
             QGCComboBox {
                 Layout.preferredWidth: root._fieldWidth
-                model: [qsTr("Auto"), qsTr("Manual")]
                 currentIndex: root.missionItem.automaticSweepAngle ? 0 : 1
+                model: [qsTr("Auto"), qsTr("Manual")]
 
-                onActivated: (index) => { root.missionItem.automaticSweepAngle = index === 0 }
+                onActivated: index => {
+                    root.missionItem.automaticSweepAngle = index === 0;
+                }
             }
 
             QGCLabel {
@@ -219,12 +220,67 @@ Rectangle {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+
+            QGCLabel {
+                Layout.fillWidth: true
+                font.bold: true
+                text: qsTr("No-Go Regions")
+            }
+
+            QGCLabel {
+                text: qsTr("%1 / %2").arg(root.missionItem.noGoPolygons.count).arg(root.missionItem.maximumNoGoRegionCount)
+            }
+        }
+
+        Repeater {
+            model: root.missionItem.noGoPolygons
+
+            delegate: RowLayout {
+                required property int index
+                required property var object
+
+                Layout.fillWidth: true
+
+                QGCLabel {
+                    Layout.fillWidth: true
+                    text: qsTr("No-Go %1").arg(index + 1)
+                }
+
+                QGCRadioButton {
+                    property bool _interactive: object.interactive
+
+                    autoExclusive: false
+                    checked: _interactive
+                    text: qsTr("Edit")
+
+                    onClicked: root.missionItem.setNoGoRegionInteractive(index, checked)
+                    on_InteractiveChanged: checked = _interactive
+                }
+
+                QGCButton {
+                    text: qsTr("Delete")
+
+                    onClicked: root.missionItem.deleteNoGoRegion(index)
+                }
+            }
+        }
+
+        QGCButton {
+            Layout.fillWidth: true
+            enabled: root.missionItem.noGoPolygons.count < root.missionItem.maximumNoGoRegionCount
+            text: qsTr("Add No-Go Region")
+
+            onClicked: root.missionItem.addNoGoRegion()
+        }
+
         QGCLabel {
             Layout.fillWidth: true
             color: qgcPal.warningText
             horizontalAlignment: Text.AlignHCenter
-            text: qsTr("No-Go regions are read-only in P1. The LawnMower planner does not route around them and will reject generation.")
-            visible: root._hasNoGoRegions
+            text: qsTr("Use Polygon Tools on the map to trace at least three vertices.")
+            visible: !root.missionItem.noGoRegionsReady
             wrapMode: Text.WordWrap
         }
 
@@ -235,12 +291,29 @@ Rectangle {
             rowSpacing: root._margin
             visible: root.missionItem.planningState === 1
 
-            QGCLabel { text: qsTr("Selected Angle (0° N, 90° E)") }
-            QGCLabel { text: qsTr("%1°").arg(root.missionItem.selectedSweepAngleDeg.toFixed(1)) }
-            QGCLabel { text: qsTr("Path Length") }
-            QGCLabel { text: qsTr("%1 m").arg(root.missionItem.complexDistance.toFixed(1)) }
-            QGCLabel { text: qsTr("Turns") }
-            QGCLabel { text: root.missionItem.turnCount.toString() }
+            QGCLabel {
+                text: qsTr("Selected Angle (0° N, 90° E)")
+            }
+
+            QGCLabel {
+                text: qsTr("%1°").arg(root.missionItem.selectedSweepAngleDeg.toFixed(1))
+            }
+
+            QGCLabel {
+                text: qsTr("Path Length")
+            }
+
+            QGCLabel {
+                text: qsTr("%1 m").arg(root.missionItem.complexDistance.toFixed(1))
+            }
+
+            QGCLabel {
+                text: qsTr("Turns")
+            }
+
+            QGCLabel {
+                text: root.missionItem.turnCount.toString()
+            }
         }
 
         QGCLabel {
@@ -254,7 +327,7 @@ Rectangle {
 
         QGCButton {
             Layout.fillWidth: true
-            enabled: root.missionItem.workRegionPolygon.isValid
+            enabled: root.missionItem.workRegionPolygon.isValid && root.missionItem.noGoRegionsReady
             text: root.missionItem.planningState === 1 ? qsTr("Replan") : qsTr("Generate Plan")
 
             onClicked: root.missionItem.plan()

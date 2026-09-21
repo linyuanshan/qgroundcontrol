@@ -18,5 +18,6 @@ private slots:
     void _testMarinePlanSaveFiltersOrphans();
     void _testOrdinaryPlanOmitsMarineSection();
     void _testMarinePlanPreload();
+    void _testNoGoEditSaveReload();
     void _testMarinePlanPreloadValidation();
 };

@@ -13,6 +13,7 @@
 
 #include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
+#include "CoverageProblemValidator.h"
 #include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
 #include "MissionItem.h"
@@ -35,6 +36,16 @@ MarineTask validTask()
         {47.3987, 8.5455, 0.0},
     };
     return task;
+}
+
+GeoPolygon noGoRectangle()
+{
+    return GeoPolygon{.vertices = {
+                          {47.39805, 8.54585, 0.0},
+                          {47.39805, 8.54615, 0.0},
+                          {47.39835, 8.54615, 0.0},
+                          {47.39835, 8.54585, 0.0},
+                      }};
 }
 
 }  // namespace
@@ -139,6 +150,29 @@ void CoverageComplexItemTest::_testLawnmowerPlanning()
     QVERIFY(result.message.find("Manual") != std::string::npos);
 }
 
+void CoverageComplexItemTest::_testLawnmowerUiNoGoRejection()
+{
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.lawnmower";
+    task.coverage.swathWidthM = 20.0;
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QVERIFY(_item->addNoGoRegion());
+    QGCMapPolygon* noGoPolygon = _item->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(noGoPolygon != nullptr);
+    for (const GeoPoint& point : noGoRectangle().vertices) {
+        noGoPolygon->appendVertex(QGeoCoordinate(point.latitudeDeg, point.longitudeDeg));
+    }
+    QTRY_VERIFY(_item->noGoRegionsReady());
+    QTRY_COMPARE(_marineContext->task(task.id)->region.noGoRegions.size(), std::size_t{1});
+
+    QVERIFY(!_item->plan());
+    QCOMPARE(_item->plannerId(), QStringLiteral("marine.coverage.lawnmower"));
+    QCOMPARE(_item->planningResult().message,
+             CoverageProblemValidator::messageForError(CoveragePlanningError::UnsupportedNoGoRegion));
+}
+
 void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
 {
     MarineTask task = validTask();
@@ -147,14 +181,17 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
     task.coverage.safetyMarginM = 0.0;
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
     task.coverage.sweepAngleDeg = 90.0;
-    task.region.noGoRegions = {GeoPolygon{.vertices = {
-                                              {47.39805, 8.54585, 0.0},
-                                              {47.39805, 8.54615, 0.0},
-                                              {47.39835, 8.54615, 0.0},
-                                              {47.39835, 8.54585, 0.0},
-                                          }}};
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
+
+    QVERIFY(_item->addNoGoRegion());
+    QGCMapPolygon* noGoPolygon = _item->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(noGoPolygon != nullptr);
+    for (const GeoPoint& point : noGoRectangle().vertices) {
+        noGoPolygon->appendVertex(QGeoCoordinate(point.latitudeDeg, point.longitudeDeg));
+    }
+    QTRY_VERIFY(_item->noGoRegionsReady());
+    QTRY_COMPARE(_marineContext->task(task.id)->region.noGoRegions.size(), std::size_t{1});
 
     QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
 
@@ -261,13 +298,15 @@ void CoverageComplexItemTest::_testQmlRegistration()
     const QByteArray editorSource = editorFile.readAll();
     QVERIFY(editorSource.contains("automaticSweepAngle"));
     QVERIFY(editorSource.contains("selectedSweepAngleDeg"));
-    QVERIFY(editorSource.contains("No-Go regions are read-only"));
-
     QFile mapVisualFile(QStringLiteral(":/qml/Marine/Plan/CoverageInspectionMapVisual.qml"));
     QVERIFY(mapVisualFile.open(QIODevice::ReadOnly));
     const QByteArray mapVisualSource = mapVisualFile.readAll();
     QVERIFY(mapVisualSource.contains("QGCMapPolygonVisuals"));
     QVERIFY(mapVisualSource.contains("workRegionPolygon"));
+    QVERIFY(mapVisualSource.contains("noGoPolygons"));
+    QVERIFY(!editorSource.contains("No-Go regions are read-only"));
+    QVERIFY(editorSource.contains("Add No-Go Region"));
+    QVERIFY(editorSource.contains("noGoRegionsReady"));
 }
 
 void CoverageComplexItemTest::_testQmlTaskProperties()
@@ -359,6 +398,95 @@ void CoverageComplexItemTest::_testWorkRegionEditing()
     QCOMPARE(_item->outerBoundary().size(), 3);
 }
 
+void CoverageComplexItemTest::_testNoGoRegionEditing()
+{
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.bcd";
+    task.coverage.swathWidthM = 20.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 90.0;
+    task.region.noGoRegions = {noGoRectangle()};
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    QCOMPARE(_item->maximumNoGoRegionCount(), 2);
+    QCOMPARE(_item->noGoPolygons()->count(), 1);
+    QVERIFY(_item->noGoRegionsReady());
+    QGCMapPolygon* firstPolygon = _item->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(firstPolygon != nullptr);
+    QCOMPARE(firstPolygon->count(), 4);
+    QCOMPARE(firstPolygon->vertexCoordinate(0).latitude(), noGoRectangle().vertices[0].latitudeDeg);
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+
+    QVERIFY(_item->addNoGoRegion());
+    QCOMPARE(_item->noGoPolygons()->count(), 2);
+    QGCMapPolygon* pendingPolygon = _item->noGoPolygons()->value<QGCMapPolygon*>(1);
+    QVERIFY(pendingPolygon != nullptr);
+    QCOMPARE(pendingPolygon->count(), 0);
+    QVERIFY(pendingPolygon->interactive());
+    QVERIFY(!firstPolygon->interactive());
+    QVERIFY(!_item->noGoRegionsReady());
+    QCOMPARE(_marineContext->task(task.id)->region.noGoRegions.size(), std::size_t{1});
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+    QVERIFY(!_item->plan());
+    QCOMPARE(_item->planningResult().status, PlanningStatus::InvalidInput);
+    QVERIFY(!_item->addNoGoRegion());
+    QCOMPARE(_item->noGoPolygons()->count(), 2);
+
+    _item->setNoGoRegionInteractive(0, true);
+    QVERIFY(firstPolygon->interactive());
+    QVERIFY(!pendingPolygon->interactive());
+    _item->setNoGoRegionInteractive(1, true);
+    QVERIFY(!firstPolygon->interactive());
+    QVERIFY(pendingPolygon->interactive());
+    _item->setNoGoRegionInteractive(1, false);
+    QVERIFY(!_item->noGoRegionEditing());
+    _item->setNoGoRegionInteractive(1, true);
+
+    const QList<QGeoCoordinate> secondCoordinates = {
+        {47.39845, 8.54620},
+        {47.39845, 8.54635},
+        {47.39860, 8.54635},
+        {47.39860, 8.54620},
+    };
+    for (const QGeoCoordinate& coordinate : secondCoordinates) {
+        pendingPolygon->appendVertex(coordinate);
+    }
+    QTRY_VERIFY(_item->noGoRegionsReady());
+    QTRY_COMPARE(_marineContext->task(task.id)->region.noGoRegions.size(), std::size_t{2});
+    QCOMPARE(_marineContext->task(task.id)->region.noGoRegions[1].vertices[0].latitudeDeg,
+             secondCoordinates[0].latitude());
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+
+    const QGeoCoordinate adjustedCoordinate(47.39847, 8.54622);
+    pendingPolygon->adjustVertex(0, adjustedCoordinate);
+    QTRY_COMPARE(_marineContext->task(task.id)->region.noGoRegions[1].vertices[0].latitudeDeg,
+                 adjustedCoordinate.latitude());
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+
+    QVERIFY(_item->deleteNoGoRegion(1));
+    QCOMPARE(_item->noGoPolygons()->count(), 1);
+    QCOMPARE(_marineContext->task(task.id)->region.noGoRegions.size(), std::size_t{1});
+
+    MarineTask externalTask = *_marineContext->task(task.id);
+    externalTask.region.noGoRegions = {GeoPolygon{.vertices = {
+                                                      {47.39840, 8.54570, 0.0},
+                                                      {47.39845, 8.54590, 0.0},
+                                                      {47.39860, 8.54575, 0.0},
+                                                  }}};
+    QVERIFY(_marineContext->updateTask(externalTask));
+    QCOMPARE(_item->noGoPolygons()->count(), 1);
+    QGCMapPolygon* rebuiltPolygon = _item->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(rebuiltPolygon != nullptr);
+    QCOMPARE(rebuiltPolygon->count(), 3);
+    QCOMPARE(rebuiltPolygon->vertexCoordinate(0).latitude(), 47.39840);
+
+    QVERIFY(_item->addNoGoRegion());
+    QCOMPARE(_marineContext->task(task.id)->region.noGoRegions.size(), std::size_t{1});
+    QVERIFY(_item->deleteNoGoRegion(1));
+    QVERIFY(_item->noGoRegionsReady());
+}
+
 void CoverageComplexItemTest::_testSweepAngleProperties()
 {
     MarineTask task = validTask();
@@ -388,7 +516,12 @@ void CoverageComplexItemTest::_testSweepAngleProperties()
 
 void CoverageComplexItemTest::_testSaveLoad()
 {
-    const MarineTask task = validTask();
+    MarineTask task = validTask();
+    task.planner.plannerId = "marine.coverage.bcd";
+    task.coverage.swathWidthM = 20.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 90.0;
+    task.region.noGoRegions = {noGoRectangle()};
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
     QVERIFY(_item->plan());
@@ -421,6 +554,10 @@ void CoverageComplexItemTest::_testSaveLoad()
     QCOMPARE(loadedItem->generatedPath(), _item->generatedPath());
     QCOMPARE(loadedItem->complexDistance(), _item->complexDistance());
     QCOMPARE(loadedItem->sequenceNumber(), 12);
+    QCOMPARE(loadedItem->noGoPolygons()->count(), 1);
+    QGCMapPolygon* loadedNoGo = loadedItem->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(loadedNoGo != nullptr);
+    QCOMPARE(loadedNoGo->coordinateList(), _item->noGoPolygons()->value<QGCMapPolygon*>(0)->coordinateList());
     QVERIFY(!loadedItem->dirty());
 }
 

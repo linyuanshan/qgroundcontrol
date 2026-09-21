@@ -79,6 +79,9 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
         connect(_marineContext, &MarinePlanContext::taskChanged, this, [this](const QString& changedTaskId) {
             if (changedTaskId == taskId()) {
                 _syncWorkRegionPolygonFromTask();
+                if (!_updatingTaskFromItem) {
+                    _syncNoGoPolygonsFromTask();
+                }
                 emit taskDataChanged();
                 invalidatePlan();
             }
@@ -86,6 +89,7 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
         connect(_marineContext, &MarinePlanContext::tasksCleared, this, [this]() {
             if (!_taskId.empty()) {
                 _syncWorkRegionPolygonFromTask();
+                _syncNoGoPolygonsFromTask();
                 emit taskDataChanged();
                 invalidatePlan();
             }
@@ -109,6 +113,7 @@ void CoverageInspectionComplexItem::setTaskId(const QString& taskId)
 
     _taskId = newTaskId;
     _syncWorkRegionPolygonFromTask();
+    _syncNoGoPolygonsFromTask();
     emit taskIdChanged();
     emit taskDataChanged();
     invalidatePlan();
@@ -294,6 +299,28 @@ QVariantList CoverageInspectionComplexItem::noGoRegions() const
     return regions;
 }
 
+bool CoverageInspectionComplexItem::noGoRegionsReady() const
+{
+    for (int index = 0; index < _noGoPolygons.count(); ++index) {
+        const QGCMapPolygon* polygon = _noGoPolygons.value<QGCMapPolygon*>(index);
+        if ((polygon == nullptr) || (polygon->count() < 3)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool CoverageInspectionComplexItem::noGoRegionEditing() const
+{
+    for (int index = 0; index < _noGoPolygons.count(); ++index) {
+        const QGCMapPolygon* polygon = _noGoPolygons.value<QGCMapPolygon*>(index);
+        if ((polygon != nullptr) && polygon->interactive()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 QVariantList CoverageInspectionComplexItem::generatedPath() const
 {
     QVariantList path;
@@ -307,6 +334,12 @@ QVariantList CoverageInspectionComplexItem::generatedPath() const
 bool CoverageInspectionComplexItem::plan()
 {
     PlanningResult result;
+    if (!noGoRegionsReady()) {
+        result.status = PlanningStatus::InvalidInput;
+        result.message = "Complete every No-Go region with at least three vertices before planning";
+        _applyPlanningResult(std::move(result));
+        return false;
+    }
     if (!_marineContext) {
         result.message = "Marine plan context is unavailable";
         _applyPlanningResult(std::move(result));
@@ -363,6 +396,72 @@ bool CoverageInspectionComplexItem::plan()
 void CoverageInspectionComplexItem::invalidatePlan()
 {
     _applyPlanningResult({});
+}
+
+bool CoverageInspectionComplexItem::addNoGoRegion()
+{
+    if (_noGoPolygons.count() >= MaximumNoGoRegionCount) {
+        return false;
+    }
+
+    auto* polygon = new QGCMapPolygon(this);
+    _connectNoGoPolygon(polygon);
+    _noGoPolygons.append(polygon);
+    setNoGoRegionInteractive(_noGoPolygons.count() - 1, true);
+    emit noGoRegionsChanged();
+    invalidatePlan();
+    return true;
+}
+
+bool CoverageInspectionComplexItem::deleteNoGoRegion(int index)
+{
+    if ((index < 0) || (index >= _noGoPolygons.count())) {
+        return false;
+    }
+
+    QObject* removed = _noGoPolygons.removeAt(index);
+    removed->deleteLater();
+    _updateTaskFromNoGoPolygons();
+    emit noGoRegionsChanged();
+    emit noGoRegionEditingChanged();
+    invalidatePlan();
+    return true;
+}
+
+void CoverageInspectionComplexItem::setNoGoRegionInteractive(int index, bool interactive)
+{
+    if ((index < 0) || (index >= _noGoPolygons.count())) {
+        return;
+    }
+
+    const bool wasEditing = noGoRegionEditing();
+    _syncingNoGoInteraction = true;
+    for (int polygonIndex = 0; polygonIndex < _noGoPolygons.count(); ++polygonIndex) {
+        QGCMapPolygon* polygon = _noGoPolygons.value<QGCMapPolygon*>(polygonIndex);
+        if (polygon != nullptr) {
+            polygon->setInteractive(interactive && (polygonIndex == index));
+        }
+    }
+    _syncingNoGoInteraction = false;
+    if (wasEditing != noGoRegionEditing()) {
+        emit noGoRegionEditingChanged();
+    }
+}
+
+void CoverageInspectionComplexItem::clearNoGoRegionInteractive()
+{
+    const bool wasEditing = noGoRegionEditing();
+    _syncingNoGoInteraction = true;
+    for (int index = 0; index < _noGoPolygons.count(); ++index) {
+        QGCMapPolygon* polygon = _noGoPolygons.value<QGCMapPolygon*>(index);
+        if (polygon != nullptr) {
+            polygon->setInteractive(false);
+        }
+    }
+    _syncingNoGoInteraction = false;
+    if (wasEditing) {
+        emit noGoRegionEditingChanged();
+    }
 }
 
 double CoverageInspectionComplexItem::minAMSLAltitude() const
@@ -557,6 +656,7 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
     _taskId = loadedTaskId;
     _sequenceNumber = sequenceNumber;
     _syncWorkRegionPolygonFromTask();
+    _syncNoGoPolygonsFromTask();
     _applyPlanningResult(std::move(result));
     setDirty(false);
     return true;
@@ -609,8 +709,43 @@ const MarineTask* CoverageInspectionComplexItem::_task() const
 void CoverageInspectionComplexItem::_replaceTask(const MarineTask& task)
 {
     if (_marineContext) {
+        _updatingTaskFromItem = true;
         (void) _marineContext->updateTask(task);
+        _updatingTaskFromItem = false;
     }
+}
+
+void CoverageInspectionComplexItem::_connectNoGoPolygon(QGCMapPolygon* polygon)
+{
+    connect(polygon, &QGCMapPolygon::pathChanged, this, &CoverageInspectionComplexItem::_noGoPolygonPathChanged);
+    connect(polygon, &QGCMapPolygon::countChanged, this, [this](int) { _noGoPolygonPathChanged(); });
+    connect(polygon, &QGCMapPolygon::dragPathChanged, this, &CoverageInspectionComplexItem::invalidatePlan);
+    connect(polygon, &QGCMapPolygon::interactiveChanged, this, [this, polygon](bool interactive) {
+        if (_syncingNoGoPolygons || _syncingNoGoInteraction) {
+            return;
+        }
+        if (interactive) {
+            _syncingNoGoInteraction = true;
+            for (int index = 0; index < _noGoPolygons.count(); ++index) {
+                QGCMapPolygon* other = _noGoPolygons.value<QGCMapPolygon*>(index);
+                if ((other != nullptr) && (other != polygon)) {
+                    other->setInteractive(false);
+                }
+            }
+            _syncingNoGoInteraction = false;
+        }
+        emit noGoRegionEditingChanged();
+    });
+}
+
+void CoverageInspectionComplexItem::_noGoPolygonPathChanged()
+{
+    if (_syncingNoGoPolygons) {
+        return;
+    }
+    _updateTaskFromNoGoPolygons();
+    emit noGoRegionsChanged();
+    invalidatePlan();
 }
 
 void CoverageInspectionComplexItem::_workRegionPolygonChanged()
@@ -652,6 +787,83 @@ void CoverageInspectionComplexItem::_syncWorkRegionPolygonFromTask()
     _syncingWorkRegionPolygon = true;
     _workRegionPolygon.setPath(coordinates);
     _syncingWorkRegionPolygon = false;
+}
+
+bool CoverageInspectionComplexItem::_noGoPolygonsMatchTask(const MarineTask* task) const
+{
+    const std::size_t taskCount = (task != nullptr) ? task->region.noGoRegions.size() : 0;
+    if (static_cast<std::size_t>(_noGoPolygons.count()) != taskCount) {
+        return false;
+    }
+    for (int index = 0; index < _noGoPolygons.count(); ++index) {
+        const QGCMapPolygon* polygon = _noGoPolygons.value<QGCMapPolygon*>(index);
+        QList<QGeoCoordinate> taskCoordinates;
+        const GeoPolygon& taskPolygon = task->region.noGoRegions.at(static_cast<std::size_t>(index));
+        taskCoordinates.reserve(static_cast<qsizetype>(taskPolygon.vertices.size()));
+        for (const GeoPoint& point : taskPolygon.vertices) {
+            taskCoordinates.append(_toQGeoCoordinate(point));
+        }
+        if ((polygon == nullptr) || !coordinatePathsEqual(polygon->coordinateList(), taskCoordinates)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void CoverageInspectionComplexItem::_syncNoGoPolygonsFromTask()
+{
+    const MarineTask* marineTask = _task();
+    if (_noGoPolygonsMatchTask(marineTask)) {
+        return;
+    }
+
+    const bool wasEditing = noGoRegionEditing();
+    _syncingNoGoPolygons = true;
+    _noGoPolygons.clearAndDeleteContents();
+    if (marineTask != nullptr) {
+        for (const GeoPolygon& noGoRegion : marineTask->region.noGoRegions) {
+            auto* polygon = new QGCMapPolygon(this);
+            _connectNoGoPolygon(polygon);
+            QList<QGeoCoordinate> coordinates;
+            coordinates.reserve(static_cast<qsizetype>(noGoRegion.vertices.size()));
+            for (const GeoPoint& point : noGoRegion.vertices) {
+                coordinates.append(_toQGeoCoordinate(point));
+            }
+            polygon->setPath(coordinates);
+            _noGoPolygons.append(polygon);
+        }
+    }
+    _syncingNoGoPolygons = false;
+    emit noGoRegionsChanged();
+    if (wasEditing != noGoRegionEditing()) {
+        emit noGoRegionEditingChanged();
+    }
+}
+
+void CoverageInspectionComplexItem::_updateTaskFromNoGoPolygons()
+{
+    const MarineTask* marineTask = _task();
+    if (marineTask == nullptr) {
+        return;
+    }
+
+    MarineTask updatedTask = *marineTask;
+    updatedTask.region.noGoRegions.clear();
+    for (int index = 0; index < _noGoPolygons.count(); ++index) {
+        const QGCMapPolygon* polygon = _noGoPolygons.value<QGCMapPolygon*>(index);
+        if ((polygon == nullptr) || (polygon->count() < 3)) {
+            continue;
+        }
+        GeoPolygon noGoRegion;
+        const QList<QGeoCoordinate> coordinates = polygon->coordinateList();
+        noGoRegion.vertices.reserve(static_cast<std::size_t>(coordinates.size()));
+        for (const QGeoCoordinate& coordinate : coordinates) {
+            noGoRegion.vertices.push_back(
+                {.latitudeDeg = coordinate.latitude(), .longitudeDeg = coordinate.longitude(), .altitudeM = 0.0});
+        }
+        updatedTask.region.noGoRegions.push_back(std::move(noGoRegion));
+    }
+    _replaceTask(updatedTask);
 }
 
 QVariantList CoverageInspectionComplexItem::_toQGeoCoordinates(const GeoPolygon& polygon)

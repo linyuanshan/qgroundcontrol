@@ -11,9 +11,9 @@ import QtQuick
 Item {
     id: root
 
-    readonly property var _missionItem: object
     readonly property bool _currentItem: root._missionItem.isCurrentItem
     readonly property var _generatedPath: root._missionItem.generatedPath
+    readonly property var _missionItem: object
     readonly property bool _vertexDrag: root._missionItem.workRegionPolygon.vertexDrag
     property bool interactive: true
     property var map
@@ -22,7 +22,6 @@ Item {
     signal clicked(int sequenceNumber)
 
     Component.onCompleted: {
-        objectManager.createObject(noGoRegionsComponent, root.map, false);
         objectManager.createObject(generatedPathComponent, root.map, true);
     }
     Component.onDestruction: {
@@ -40,34 +39,29 @@ Item {
     }
 
     QGCMapPolygonVisuals {
-        mapControl: root.map
-        mapPolygon: root._missionItem.workRegionPolygon
-        interactive: root._currentItem && root.interactive
         borderColor: qgcPal.mapMissionTrajectory
         borderWidth: 2
+        interactive: root._currentItem && root.interactive && !root._missionItem.noGoRegionEditing
         interiorColor: qgcPal.mapMissionTrajectory
         interiorOpacity: 0.18 * root.opacity
+        mapControl: root.map
+        mapPolygon: root._missionItem.workRegionPolygon
     }
 
-    Component {
-        id: noGoRegionsComponent
+    Instantiator {
+        model: root._missionItem.noGoPolygons
 
-        MapItemView {
-            model: root._missionItem.noGoRegions
+        delegate: QGCMapPolygonVisuals {
+            required property var object
 
-            delegate: MapPolygon {
-                id: noGoPolygon
-
-                required property var modelData
-
-                border.color: qgcPal.warningText
-                border.width: 2
-                color: qgcPal.warningText
-                opacity: 0.25 * root.opacity
-                path: modelData
-                visible: noGoPolygon.path.length >= 3
-                z: QGroundControl.zOrderWaypointLines + 1
-            }
+            borderColor: qgcPal.warningText
+            borderWidth: 2
+            interactive: root._currentItem && root.interactive && object.interactive
+            interiorColor: qgcPal.warningText
+            interiorOpacity: 0.25 * root.opacity
+            mapControl: root.map
+            mapPolygon: object
+            parent: root
         }
     }
 

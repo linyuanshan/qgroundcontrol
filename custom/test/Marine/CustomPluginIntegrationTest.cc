@@ -12,6 +12,7 @@
 #include "MissionController.h"
 #include "PlanMasterController.h"
 #include "QGCCorePlugin.h"
+#include "QGCMapPolygon.h"
 #include "QmlObjectListModel.h"
 
 using namespace Marine;
@@ -186,6 +187,54 @@ void CustomPluginIntegrationTest::_testMarinePlanPreload()
     QVERIFY(context->plannerRegistry().planner("marine.coverage.mock") != nullptr);
     QVERIFY(context->plannerRegistry().planner("marine.coverage.lawnmower") != nullptr);
     QVERIFY(context->plannerRegistry().planner("marine.coverage.bcd") != nullptr);
+}
+
+void CustomPluginIntegrationTest::_testNoGoEditSaveReload()
+{
+    auto* context = planController()->findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(context != nullptr);
+    MarineTask task = validTask("no-go-save-reload");
+    task.planner.plannerId = "marine.coverage.bcd";
+    task.coverage.swathWidthM = 20.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 90.0;
+    context->addTask(task);
+
+    VisualMissionItem* visualItem = missionController()->insertComplexMissionItem(
+        CoverageInspectionComplexItem::canonicalName, QGeoCoordinate(47.398, 8.546), -1, true);
+    auto* coverageItem = qobject_cast<CoverageInspectionComplexItem*>(visualItem);
+    QVERIFY(coverageItem != nullptr);
+    coverageItem->setTaskId(QString::fromStdString(task.id));
+    QVERIFY(coverageItem->addNoGoRegion());
+    QGCMapPolygon* polygon = coverageItem->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(polygon != nullptr);
+    const QList<QGeoCoordinate> coordinates = {
+        {47.39805, 8.54585, 0.0},
+        {47.39805, 8.54615, 0.0},
+        {47.39835, 8.54615, 0.0},
+        {47.39835, 8.54585, 0.0},
+    };
+    for (const QGeoCoordinate& coordinate : coordinates) {
+        polygon->appendVertex(coordinate);
+    }
+    QTRY_COMPARE(context->task(task.id)->region.noGoRegions.size(), std::size_t{1});
+    QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
+
+    QJsonObject planJson = planController()->saveToJson().object();
+    QString errorString;
+    QVERIFY2(QGCCorePlugin::instance()->preLoadFromJson(planController(), planJson, errorString),
+             qPrintable(errorString));
+
+    const MarineTask* restoredTask = context->task(task.id);
+    QVERIFY(restoredTask != nullptr);
+    QCOMPARE(restoredTask->region.noGoRegions.size(), std::size_t{1});
+    QCOMPARE(restoredTask->region.noGoRegions[0].vertices.size(), std::size_t{4});
+    QCOMPARE(restoredTask->region.noGoRegions[0].vertices[0].latitudeDeg, coordinates[0].latitude());
+    QCOMPARE(restoredTask->region.noGoRegions[0].vertices[0].longitudeDeg, coordinates[0].longitude());
+    QCOMPARE(coverageItem->noGoPolygons()->count(), 1);
+    QGCMapPolygon* restoredPolygon = coverageItem->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(restoredPolygon != nullptr);
+    QCOMPARE(restoredPolygon->coordinateList(), coordinates);
 }
 
 void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()
