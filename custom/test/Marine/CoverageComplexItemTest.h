@@ -30,6 +30,9 @@ private slots:
     void _testNoGoRegionEditing();
     void _testSweepAngleProperties();
     void _testSaveLoad();
+    void _testLawnmowerSaveLoad();
+    void _testLegacyV1Migration();
+    void _testUnplannedSaveLoad();
     void _testLoadValidation();
 
 private:

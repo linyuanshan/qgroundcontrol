@@ -12,6 +12,7 @@
 #include "MissionController.h"
 #include "MissionItem.h"
 #include "PlanMasterController.h"
+#include "QGCMapPolygon.h"
 #include "QmlObjectListModel.h"
 
 using namespace Marine;
@@ -84,12 +85,18 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
                                           {.latitudeDeg = 47.3987, .longitudeDeg = 8.5465, .altitudeM = 0.0},
                                           {.latitudeDeg = 47.3987, .longitudeDeg = 8.5455, .altitudeM = 0.0},
                                       }};
+    const GeoPolygon expectedNoGo{.vertices = {
+                                      {.latitudeDeg = 47.39805, .longitudeDeg = 8.54585, .altitudeM = 0.0},
+                                      {.latitudeDeg = 47.39805, .longitudeDeg = 8.54615, .altitudeM = 0.0},
+                                      {.latitudeDeg = 47.39835, .longitudeDeg = 8.54615, .altitudeM = 0.0},
+                                      {.latitudeDeg = 47.39835, .longitudeDeg = 8.54585, .altitudeM = 0.0},
+                                  }};
     const std::string expectedName = "Harbor inspection";
     const std::string expectedVehicleId = "usv-01";
-    const std::string expectedPlannerId = "marine.coverage.mock";
-    constexpr double ExpectedSwathWidthM = 8.5;
-    constexpr double ExpectedSafetyMarginM = 2.25;
-    constexpr double ExpectedSweepAngleDeg = 37.5;
+    const std::string expectedPlannerId = "marine.coverage.bcd";
+    constexpr double ExpectedSwathWidthM = 20.0;
+    constexpr double ExpectedSafetyMarginM = 0.0;
+    constexpr double ExpectedSweepAngleDeg = 90.0;
 
     QString expectedTaskId;
     PlanningResult expectedPlanningResult;
@@ -129,12 +136,23 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         configuredTask.planner.plannerId = expectedPlannerId;
         context->addTask(configuredTask);
 
-        QVERIFY(item->plan());
+        QVERIFY(item->addNoGoRegion());
+        QGCMapPolygon* noGoPolygon = item->noGoPolygons()->value<QGCMapPolygon*>(0);
+        QVERIFY(noGoPolygon != nullptr);
+        for (const GeoPoint& point : expectedNoGo.vertices) {
+            noGoPolygon->appendVertex(QGeoCoordinate(point.latitudeDeg, point.longitudeDeg));
+        }
+        QTRY_VERIFY(item->noGoRegionsReady());
+        QTRY_COMPARE(context->task(expectedTaskId.toStdString())->region.noGoRegions.size(), std::size_t{1});
+
+        QVERIFY2(item->plan(), item->planningResult().message.c_str());
         expectedPlanningResult = item->planningResult();
         QCOMPARE(expectedPlanningResult.status, PlanningStatus::Success);
-        QCOMPARE(expectedPlanningResult.path.size(), 3);
+        QVERIFY(!expectedPlanningResult.path.empty());
+        QCOMPARE(expectedPlanningResult.legRoles.size(), expectedPlanningResult.path.size() - 1);
+        QVERIFY(expectedPlanningResult.cellCount >= 1);
         item->appendMissionItems(expectedMissionItems, this);
-        QCOMPARE(expectedMissionItems.size(), 3);
+        QCOMPARE(expectedMissionItems.size(), static_cast<qsizetype>(expectedPlanningResult.path.size()));
 
         QVERIFY(controller.saveToFile(planPath));
         QVERIFY(QFile::exists(planPath));
@@ -179,17 +197,36 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     for (std::size_t index = 0; index < expectedBoundary.vertices.size(); ++index) {
         comparePoint(restoredTask->region.outerBoundary.vertices.at(index), expectedBoundary.vertices.at(index));
     }
-    QVERIFY(restoredTask->region.noGoRegions.empty());
+    QCOMPARE(restoredTask->region.noGoRegions.size(), std::size_t{1});
+    QCOMPARE(restoredTask->region.noGoRegions.front().vertices.size(), expectedNoGo.vertices.size());
+    for (std::size_t index = 0; index < expectedNoGo.vertices.size(); ++index) {
+        comparePoint(restoredTask->region.noGoRegions.front().vertices.at(index), expectedNoGo.vertices.at(index));
+    }
+    QCOMPARE(restoredItem->noGoPolygons()->count(), 1);
+    QGCMapPolygon* restoredNoGoPolygon = restoredItem->noGoPolygons()->value<QGCMapPolygon*>(0);
+    QVERIFY(restoredNoGoPolygon != nullptr);
+    QCOMPARE(restoredNoGoPolygon->count(), static_cast<int>(expectedNoGo.vertices.size()));
+    for (int index = 0; index < restoredNoGoPolygon->count(); ++index) {
+        const QGeoCoordinate coordinate = restoredNoGoPolygon->vertexCoordinate(index);
+        comparePoint({coordinate.latitude(), coordinate.longitude(), 0.0},
+                     expectedNoGo.vertices.at(static_cast<std::size_t>(index)));
+    }
 
     const PlanningResult& restoredResult = restoredItem->planningResult();
     QCOMPARE(restoredResult.status, expectedPlanningResult.status);
+    QCOMPARE(restoredResult.legRoles, expectedPlanningResult.legRoles);
+    QCOMPARE(restoredResult.coverageLengthM, expectedPlanningResult.coverageLengthM);
+    QCOMPARE(restoredResult.transitLengthM, expectedPlanningResult.transitLengthM);
     QCOMPARE(restoredResult.selectedSweepAngleDeg, expectedPlanningResult.selectedSweepAngleDeg);
+    QCOMPARE(restoredResult.cellCount, expectedPlanningResult.cellCount);
     QCOMPARE(restoredResult.turnCount, expectedPlanningResult.turnCount);
+    QCOMPARE(restoredResult.message, expectedPlanningResult.message);
     QCOMPARE(restoredResult.path.size(), expectedPlanningResult.path.size());
     QVERIFY(qAbs(restoredResult.pathLengthM - expectedPlanningResult.pathLengthM) < DistanceToleranceM);
     for (std::size_t index = 0; index < expectedPlanningResult.path.size(); ++index) {
         comparePoint(restoredResult.path.at(index), expectedPlanningResult.path.at(index));
     }
+    QVERIFY(!restoredItem->dirty());
 
     QList<MissionItem*> restoredMissionItems;
     restoredItem->appendMissionItems(restoredMissionItems, this);

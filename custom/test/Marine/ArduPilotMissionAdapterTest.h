@@ -8,6 +8,7 @@ class ArduPilotMissionAdapterTest : public UnitTest
 
 private slots:
     void _testAppendWaypoints();
+    void _testLegacyPathWithoutRoles();
     void _testRejectsUnsuccessfulResult();
     void _testRejectsInvalidPath();
 };

@@ -60,6 +60,27 @@ void ArduPilotMissionAdapterTest::_testAppendWaypoints()
     }
 }
 
+void ArduPilotMissionAdapterTest::_testLegacyPathWithoutRoles()
+{
+    QObject parent;
+    QList<MissionItem*> items;
+    int sequenceNumber = 3;
+    QString errorString;
+    PlanningResult result = validResult();
+    result.legRoles.clear();
+
+    QVERIFY2(ArduPilotMissionAdapter::appendWaypoints(result, items, &parent, sequenceNumber, errorString),
+             qPrintable(errorString));
+    QCOMPARE(items.size(), static_cast<qsizetype>(result.path.size()));
+    QCOMPARE(sequenceNumber, 6);
+    for (int index = 0; index < items.size(); ++index) {
+        QCOMPARE(items.at(index)->sequenceNumber(), 3 + index);
+        QCOMPARE(items.at(index)->command(), MAV_CMD_NAV_WAYPOINT);
+        QCOMPARE(items.at(index)->param5(), result.path.at(static_cast<std::size_t>(index)).latitudeDeg);
+        QCOMPARE(items.at(index)->param6(), result.path.at(static_cast<std::size_t>(index)).longitudeDeg);
+    }
+}
+
 void ArduPilotMissionAdapterTest::_testRejectsUnsuccessfulResult()
 {
     QObject parent;

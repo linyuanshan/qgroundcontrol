@@ -1,11 +1,13 @@
 #include "CoverageInspectionComplexItem.h"
 
+#include <QtCore/QDebug>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonValue>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -13,6 +15,7 @@
 #include "CoverageProblemValidator.h"
 #include "CoverageTaskAdapter.h"
 #include "GeoJsonHelper.h"
+#include "Geometry/MarineGeometry.h"
 #include "JsonParsing.h"
 #include "MarinePlanContext.h"
 
@@ -65,6 +68,92 @@ bool planningStatusFromString(const QString& value, PlanningStatus& status)
         return true;
     }
     return false;
+}
+
+QString pathLegRoleToString(PathLegRole role)
+{
+    switch (role) {
+        case PathLegRole::Coverage:
+            return QStringLiteral("coverage");
+        case PathLegRole::Transit:
+            return QStringLiteral("transit");
+    }
+    return {};
+}
+
+bool pathLegRoleFromString(const QString& value, PathLegRole& role)
+{
+    if (value == QStringLiteral("coverage")) {
+        role = PathLegRole::Coverage;
+        return true;
+    }
+    if (value == QStringLiteral("transit")) {
+        role = PathLegRole::Transit;
+        return true;
+    }
+    return false;
+}
+
+bool jsonInteger(const QJsonValue& value, int& integer)
+{
+    const double number = value.toDouble();
+    if (!std::isfinite(number) || (std::floor(number) != number) ||
+        (number < static_cast<double>(std::numeric_limits<int>::min())) ||
+        (number > static_cast<double>(std::numeric_limits<int>::max()))) {
+        return false;
+    }
+    integer = static_cast<int>(number);
+    return true;
+}
+
+bool validGeoPoint(const GeoPoint& point)
+{
+    return std::isfinite(point.latitudeDeg) && std::isfinite(point.longitudeDeg) && std::isfinite(point.altitudeM) &&
+           (point.latitudeDeg >= -90.0) && (point.latitudeDeg <= 90.0) && (point.longitudeDeg >= -180.0) &&
+           (point.longitudeDeg <= 180.0);
+}
+
+bool validateV2PlanningResult(const PlanningResult& result, QString& errorString)
+{
+    if (!std::isfinite(result.selectedSweepAngleDeg) || (result.selectedSweepAngleDeg < 0.0) ||
+        (result.selectedSweepAngleDeg >= 180.0) || (result.turnCount < 0)) {
+        errorString = QStringLiteral("Coverage inspection planning metrics are invalid");
+        return false;
+    }
+
+    if (result.status != PlanningStatus::Success) {
+        if (!result.path.empty() || !result.legRoles.empty() || !std::isfinite(result.coverageLengthM) ||
+            !std::isfinite(result.transitLengthM) || !std::isfinite(result.pathLengthM) ||
+            (result.coverageLengthM != 0.0) || (result.transitLengthM != 0.0) || (result.pathLengthM != 0.0) ||
+            (result.cellCount != 0) || (result.turnCount != 0)) {
+            errorString = QStringLiteral("An unplanned coverage inspection contains executable planning data");
+            return false;
+        }
+        return true;
+    }
+
+    if (result.path.empty()) {
+        errorString = QStringLiteral("A successful coverage inspection must contain a generated path");
+        return false;
+    }
+    if ((result.path.size() == 1 && !result.legRoles.empty()) ||
+        (result.path.size() >= 2 && result.legRoles.size() != (result.path.size() - 1))) {
+        errorString = QStringLiteral("Coverage inspection path leg roles do not match the generated path");
+        return false;
+    }
+    if (!std::ranges::all_of(result.path, validGeoPoint)) {
+        errorString = QStringLiteral("Coverage inspection generated path contains an invalid coordinate");
+        return false;
+    }
+    const double classifiedLengthM = result.coverageLengthM + result.transitLengthM;
+    if (!std::isfinite(result.coverageLengthM) || (result.coverageLengthM < 0.0) ||
+        !std::isfinite(result.transitLengthM) || (result.transitLengthM < 0.0) || !std::isfinite(result.pathLengthM) ||
+        (result.pathLengthM < 0.0) || !std::isfinite(classifiedLengthM) ||
+        (std::abs(classifiedLengthM - result.pathLengthM) > Geometry::LengthEpsilonM) || (result.cellCount < 1)) {
+        errorString = QStringLiteral("Coverage inspection planning metrics are inconsistent");
+        return false;
+    }
+    return true;
 }
 
 }  // namespace
@@ -333,6 +422,7 @@ QVariantList CoverageInspectionComplexItem::generatedPath() const
 
 bool CoverageInspectionComplexItem::plan()
 {
+    _legacyPlanningArtifact = false;
     PlanningResult result;
     if (!noGoRegionsReady()) {
         result.status = PlanningStatus::InvalidInput;
@@ -395,6 +485,7 @@ bool CoverageInspectionComplexItem::plan()
 
 void CoverageInspectionComplexItem::invalidatePlan()
 {
+    _legacyPlanningArtifact = false;
     _applyPlanningResult({});
 }
 
@@ -561,8 +652,18 @@ void CoverageInspectionComplexItem::setSequenceNumber(int sequenceNumber)
 
 void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
 {
+    const bool saveLegacyArtifact = _legacyPlanningArtifact && (_planningResult.status == PlanningStatus::Success);
+    if (!saveLegacyArtifact) {
+        QString errorString;
+        if (!validateV2PlanningResult(_planningResult, errorString)) {
+            qWarning().noquote() << "Coverage inspection planning artifact was not saved:" << errorString;
+            return;
+        }
+    }
+
     QJsonObject object;
-    object.insert(JsonParsing::jsonVersionKey, 1);
+    object.insert(JsonParsing::jsonVersionKey,
+                  saveLegacyArtifact ? LegacyPlanningArtifactVersion : CurrentPlanningArtifactVersion);
     object.insert(VisualMissionItem::jsonTypeKey, VisualMissionItem::jsonTypeComplexItemValue);
     object.insert(ComplexMissionItem::jsonComplexItemTypeKey, jsonComplexItemTypeValue);
     object.insert(_jsonTaskIdKey, taskId());
@@ -571,6 +672,22 @@ void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
     object.insert(_jsonPlanningMessageKey, QString::fromStdString(_planningResult.message));
     object.insert(_jsonSelectedSweepAngleKey, _planningResult.selectedSweepAngleDeg);
     object.insert(_jsonTurnCountKey, _planningResult.turnCount);
+
+    if (!saveLegacyArtifact) {
+        QJsonArray legRoles;
+        for (const PathLegRole role : _planningResult.legRoles) {
+            const QString roleName = pathLegRoleToString(role);
+            if (roleName.isEmpty()) {
+                qWarning() << "Coverage inspection planning artifact contains an unsupported path leg role";
+                return;
+            }
+            legRoles.append(roleName);
+        }
+        object.insert(_jsonLegRolesKey, legRoles);
+        object.insert(_jsonCoverageLengthKey, _planningResult.coverageLengthM);
+        object.insert(_jsonTransitLengthKey, _planningResult.transitLengthM);
+        object.insert(_jsonCellCountKey, _planningResult.cellCount);
+    }
 
     QJsonValue pathValue;
     GeoJsonHelper::saveGeoCoordinateArray(generatedPath(), true, pathValue);
@@ -591,6 +708,10 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         {.key = _jsonPlanningMessageKey, .type = QJsonValue::String, .required = true},
         {.key = _jsonSelectedSweepAngleKey, .type = QJsonValue::Double, .required = false},
         {.key = _jsonTurnCountKey, .type = QJsonValue::Double, .required = false},
+        {.key = _jsonLegRolesKey, .type = QJsonValue::Array, .required = false},
+        {.key = _jsonCoverageLengthKey, .type = QJsonValue::Double, .required = false},
+        {.key = _jsonTransitLengthKey, .type = QJsonValue::Double, .required = false},
+        {.key = _jsonCellCountKey, .type = QJsonValue::Double, .required = false},
     };
     if (!JsonParsing::validateKeys(object, keyInfoList, errorString)) {
         return false;
@@ -600,9 +721,21 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         errorString = tr("Unsupported coverage inspection complex item type");
         return false;
     }
-    if (object.value(JsonParsing::jsonVersionKey).toInt() != 1) {
+    int version = 0;
+    if (!jsonInteger(object.value(JsonParsing::jsonVersionKey), version) ||
+        ((version != LegacyPlanningArtifactVersion) && (version != CurrentPlanningArtifactVersion))) {
         errorString = tr("Coverage inspection version is not supported");
         return false;
+    }
+    if (version == CurrentPlanningArtifactVersion) {
+        const QStringList requiredV2Keys = {
+            QString::fromLatin1(_jsonLegRolesKey),      QString::fromLatin1(_jsonCoverageLengthKey),
+            QString::fromLatin1(_jsonTransitLengthKey), QString::fromLatin1(_jsonSelectedSweepAngleKey),
+            QString::fromLatin1(_jsonCellCountKey),     QString::fromLatin1(_jsonTurnCountKey),
+        };
+        if (!JsonParsing::validateRequiredKeys(object, requiredV2Keys, errorString)) {
+            return false;
+        }
     }
 
     const std::string loadedTaskId = object.value(_jsonTaskIdKey).toString().toStdString();
@@ -627,7 +760,10 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
     result.pathLengthM = object.value(_jsonPathLengthKey).toDouble();
     result.message = object.value(_jsonPlanningMessageKey).toString().toStdString();
     result.selectedSweepAngleDeg = object.value(_jsonSelectedSweepAngleKey).toDouble();
-    result.turnCount = object.value(_jsonTurnCountKey).toInt();
+    if (object.contains(_jsonTurnCountKey) && !jsonInteger(object.value(_jsonTurnCountKey), result.turnCount)) {
+        errorString = tr("Coverage inspection turn count is invalid");
+        return false;
+    }
     result.path.reserve(static_cast<std::size_t>(path.size()));
     for (const QVariant& value : std::as_const(path)) {
         const auto coordinate = value.value<QGeoCoordinate>();
@@ -635,22 +771,48 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
                                .longitudeDeg = coordinate.longitude(),
                                .altitudeM = coordinate.altitude()});
     }
-    if (!std::isfinite(result.pathLengthM) || (result.pathLengthM < 0.0)) {
-        errorString = tr("Coverage inspection path length is invalid");
-        return false;
-    }
-    if (!std::isfinite(result.selectedSweepAngleDeg) || (result.selectedSweepAngleDeg < 0.0) ||
-        (result.selectedSweepAngleDeg >= 180.0) || (result.turnCount < 0)) {
-        errorString = tr("Coverage inspection planning metrics are invalid");
-        return false;
-    }
-    if ((result.status == PlanningStatus::Success) && result.path.empty()) {
-        errorString = tr("A successful coverage inspection must contain a generated path");
-        return false;
-    }
-    if ((result.status != PlanningStatus::Success) && !result.path.empty()) {
-        errorString = tr("An unplanned coverage inspection cannot contain a generated path");
-        return false;
+    if (version == LegacyPlanningArtifactVersion) {
+        if (!std::isfinite(result.pathLengthM) || (result.pathLengthM < 0.0)) {
+            errorString = tr("Coverage inspection path length is invalid");
+            return false;
+        }
+        if (!std::isfinite(result.selectedSweepAngleDeg) || (result.selectedSweepAngleDeg < 0.0) ||
+            (result.selectedSweepAngleDeg >= 180.0) || (result.turnCount < 0)) {
+            errorString = tr("Coverage inspection planning metrics are invalid");
+            return false;
+        }
+        if ((result.status == PlanningStatus::Success) && result.path.empty()) {
+            errorString = tr("A successful coverage inspection must contain a generated path");
+            return false;
+        }
+        if ((result.status != PlanningStatus::Success) && !result.path.empty()) {
+            errorString = tr("An unplanned coverage inspection cannot contain a generated path");
+            return false;
+        }
+    } else {
+        const QJsonArray roles = object.value(_jsonLegRolesKey).toArray();
+        result.legRoles.reserve(static_cast<std::size_t>(roles.size()));
+        for (const QJsonValue& value : roles) {
+            if (!value.isString()) {
+                errorString = tr("Coverage inspection path leg role is invalid");
+                return false;
+            }
+            PathLegRole role = PathLegRole::Transit;
+            if (!pathLegRoleFromString(value.toString(), role)) {
+                errorString = tr("Coverage inspection path leg role is not recognized");
+                return false;
+            }
+            result.legRoles.push_back(role);
+        }
+        result.coverageLengthM = object.value(_jsonCoverageLengthKey).toDouble();
+        result.transitLengthM = object.value(_jsonTransitLengthKey).toDouble();
+        if (!jsonInteger(object.value(_jsonCellCountKey), result.cellCount)) {
+            errorString = tr("Coverage inspection cell count is invalid");
+            return false;
+        }
+        if (!validateV2PlanningResult(result, errorString)) {
+            return false;
+        }
     }
 
     _taskId = loadedTaskId;
@@ -658,6 +820,8 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
     _syncWorkRegionPolygonFromTask();
     _syncNoGoPolygonsFromTask();
     _applyPlanningResult(std::move(result));
+    _legacyPlanningArtifact =
+        (version == LegacyPlanningArtifactVersion) && (_planningResult.status == PlanningStatus::Success);
     setDirty(false);
     return true;
 }

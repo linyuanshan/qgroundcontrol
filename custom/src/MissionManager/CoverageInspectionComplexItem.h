@@ -47,7 +47,10 @@ public:
     Q_PROPERTY(PlanningState planningState READ planningState NOTIFY planningStateChanged)
     Q_PROPERTY(QVariantList generatedPath READ generatedPath NOTIFY generatedPathChanged)
     Q_PROPERTY(QString planningMessage READ planningMessage NOTIFY planningResultChanged)
+    Q_PROPERTY(double coverageLengthM READ coverageLengthM NOTIFY planningResultChanged)
+    Q_PROPERTY(double transitLengthM READ transitLengthM NOTIFY planningResultChanged)
     Q_PROPERTY(double selectedSweepAngleDeg READ selectedSweepAngleDeg NOTIFY planningResultChanged)
+    Q_PROPERTY(int cellCount READ cellCount NOTIFY planningResultChanged)
     Q_PROPERTY(int turnCount READ turnCount NOTIFY planningResultChanged)
 
     static constexpr const char* canonicalName = "Coverage Inspection";
@@ -94,7 +97,13 @@ public:
 
     QString planningMessage() const { return QString::fromStdString(_planningResult.message); }
 
+    double coverageLengthM() const { return _planningResult.coverageLengthM; }
+
+    double transitLengthM() const { return _planningResult.transitLengthM; }
+
     double selectedSweepAngleDeg() const { return _planningResult.selectedSweepAngleDeg; }
+
+    int cellCount() const { return _planningResult.cellCount; }
 
     int turnCount() const { return _planningResult.turnCount; }
 
@@ -207,14 +216,21 @@ private:
     bool _syncingNoGoPolygons = false;
     bool _syncingNoGoInteraction = false;
     bool _updatingTaskFromItem = false;
+    bool _legacyPlanningArtifact = false;
 
     static constexpr int MaximumNoGoRegionCount = 2;
+    static constexpr int LegacyPlanningArtifactVersion = 1;
+    static constexpr int CurrentPlanningArtifactVersion = 2;
 
     static constexpr const char* _jsonTaskIdKey = "taskId";
     static constexpr const char* _jsonPlanningStatusKey = "planningStatus";
     static constexpr const char* _jsonGeneratedPathKey = "generatedPath";
+    static constexpr const char* _jsonLegRolesKey = "legRoles";
+    static constexpr const char* _jsonCoverageLengthKey = "coverageLengthM";
+    static constexpr const char* _jsonTransitLengthKey = "transitLengthM";
     static constexpr const char* _jsonPathLengthKey = "pathLengthM";
     static constexpr const char* _jsonPlanningMessageKey = "planningMessage";
     static constexpr const char* _jsonSelectedSweepAngleKey = "selectedSweepAngleDeg";
+    static constexpr const char* _jsonCellCountKey = "cellCount";
     static constexpr const char* _jsonTurnCountKey = "turnCount";
 };
