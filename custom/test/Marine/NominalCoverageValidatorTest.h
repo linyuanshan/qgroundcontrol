@@ -12,6 +12,7 @@ private slots:
     void _testRoundCapsAndAreaTolerance();
     void _testNoGoTargetSemantics();
     void _testMalformedInputAndDeterminism();
+    void _testBackendMinimumAndZeroLengthCoverageLegs();
     void _testArtificialGapRegression();
     void _testP2CVerticalSlice();
     void _testHalfSwathSafetyPrecheck();

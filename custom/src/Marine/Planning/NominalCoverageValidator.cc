@@ -81,7 +81,7 @@ CoverageCompletenessResult validateNominalCoverage(const PolygonRegionSet2D& cov
         const Point2D& start = *pointIterator;
         const Point2D& end = *std::next(pointIterator);
         const double lengthM = std::hypot(end.xM - start.xM, end.yM - start.yM);
-        if (!std::isfinite(lengthM) || (lengthM <= Geometry::LengthEpsilonM)) {
+        if (!std::isfinite(lengthM) || (lengthM <= 0.0)) {
             return failure(CoveragePlanningError::InvalidGeneratedPath,
                            "Coverage path contains a zero-length coverage leg");
         }

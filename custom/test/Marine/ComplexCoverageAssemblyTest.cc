@@ -13,6 +13,7 @@
 #include "Planning/CellCoverage.h"
 #include "Planning/ComplexCoverageAssembly.h"
 #include "Planning/GreedyCellOrdering.h"
+#include "Planning/NominalCoverageValidator.h"
 
 using namespace Marine;
 
@@ -412,6 +413,22 @@ void ComplexCoverageAssemblyTest::_testShortestBackendBoundaryEdge()
     const ComplexCoverageAssemblyResult assembled =
         assembleComplexCoverage(derived.regions, support.components, cells, visits);
     verifySuccessfulAssembly(derived.regions, assembled);
+
+    double shortestCoverageLegM = std::numeric_limits<double>::infinity();
+    for (std::size_t index = 0; index < assembled.legRoles.size(); ++index) {
+        if (assembled.legRoles.at(index) == PathLegRole::Coverage) {
+            shortestCoverageLegM =
+                std::min(shortestCoverageLegM, distance(assembled.path.at(index), assembled.path.at(index + 1)));
+        }
+    }
+    QVERIFY(shortestCoverageLegM > 0.0);
+    QVERIFY(shortestCoverageLegM <= Geometry::LengthEpsilonM);
+
+    const CoverageCompletenessResult completeness =
+        validateNominalCoverage(derived.regions, assembled.path, assembled.legRoles, 20.0);
+    QVERIFY2(completeness.status == PlanningStatus::Success, completeness.message.c_str());
+    QCOMPARE(completeness.error, CoveragePlanningError::None);
+    QVERIFY(completeness.uncoveredAreaM2 <= completeness.toleranceM2);
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(ComplexCoverageAssemblyTest, TestLabel::Unit)

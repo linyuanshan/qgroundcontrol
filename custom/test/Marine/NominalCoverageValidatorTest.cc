@@ -288,6 +288,28 @@ void NominalCoverageValidatorTest::_testMalformedInputAndDeterminism()
     verifyIncomplete(noCoverage);
 }
 
+void NominalCoverageValidatorTest::_testBackendMinimumAndZeroLengthCoverageLegs()
+{
+    const PolygonRegionSet2D target = regionSet(rectangle(-5.0, -5.0, 5.0, 5.0));
+    constexpr double BackendMinimumLengthM = 1.0 / Geometry::CoordinateScalePerM;
+    const std::vector<PathLegRole> oneCoverage{PathLegRole::Coverage};
+    const std::vector<Point2D> backendMinimum{{0.0, 0.0}, {BackendMinimumLengthM, 0.0}};
+    const double backendMinimumLengthM = std::hypot(backendMinimum.back().xM - backendMinimum.front().xM,
+                                                    backendMinimum.back().yM - backendMinimum.front().yM);
+    QVERIFY(backendMinimumLengthM > 0.0);
+    QVERIFY(backendMinimumLengthM <= Geometry::LengthEpsilonM);
+    verifySuccess(validateNominalCoverage(target, backendMinimum, oneCoverage, 20.0));
+
+    const std::vector<Point2D> zeroLength{{0.0, 0.0}, {0.0, 0.0}};
+    const CoverageCompletenessResult zeroCoverage = validateNominalCoverage(target, zeroLength, oneCoverage, 20.0);
+    QCOMPARE(zeroCoverage.status, PlanningStatus::Failed);
+    QCOMPARE(zeroCoverage.error, CoveragePlanningError::InvalidGeneratedPath);
+    QCOMPARE(zeroCoverage.message, std::string("Coverage path contains a zero-length coverage leg"));
+
+    const std::vector<PathLegRole> transitOnly{PathLegRole::Transit};
+    verifyIncomplete(validateNominalCoverage(target, zeroLength, transitOnly, 20.0));
+}
+
 void NominalCoverageValidatorTest::_testArtificialGapRegression()
 {
     const PolygonRegionSet2D target = regionSet(rectangle(0.0, 0.0, 10.0, 12.0));
