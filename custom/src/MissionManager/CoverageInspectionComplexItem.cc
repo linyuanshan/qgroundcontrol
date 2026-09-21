@@ -4,6 +4,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonValue>
+#include <QtCore/QVariantMap>
 
 #include <algorithm>
 #include <cmath>
@@ -418,6 +419,33 @@ QVariantList CoverageInspectionComplexItem::generatedPath() const
         path.append(QVariant::fromValue(_toQGeoCoordinate(point)));
     }
     return path;
+}
+
+QVariantList CoverageInspectionComplexItem::generatedPathRoleRuns() const
+{
+    if ((_planningResult.path.size() < 2) || (_planningResult.legRoles.size() != (_planningResult.path.size() - 1))) {
+        return {};
+    }
+
+    QVariantList runs;
+    PathLegRole runRole = _planningResult.legRoles.front();
+    QVariantList runPath{QVariant::fromValue(_toQGeoCoordinate(_planningResult.path.front()))};
+
+    const auto appendRun = [&runs](PathLegRole role, const QVariantList& path) {
+        runs.append(QVariantMap{{QStringLiteral("role"), pathLegRoleToString(role)}, {QStringLiteral("path"), path}});
+    };
+
+    for (std::size_t legIndex = 0; legIndex < _planningResult.legRoles.size(); ++legIndex) {
+        const PathLegRole legRole = _planningResult.legRoles[legIndex];
+        if (legRole != runRole) {
+            appendRun(runRole, runPath);
+            runRole = legRole;
+            runPath = {QVariant::fromValue(_toQGeoCoordinate(_planningResult.path[legIndex]))};
+        }
+        runPath.append(QVariant::fromValue(_toQGeoCoordinate(_planningResult.path[legIndex + 1])));
+    }
+    appendRun(runRole, runPath);
+    return runs;
 }
 
 bool CoverageInspectionComplexItem::plan()

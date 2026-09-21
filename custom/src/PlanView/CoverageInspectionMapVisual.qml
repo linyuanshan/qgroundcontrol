@@ -13,6 +13,7 @@ Item {
 
     readonly property bool _currentItem: root._missionItem.isCurrentItem
     readonly property var _generatedPath: root._missionItem.generatedPath
+    readonly property var _generatedPathRoleRuns: root._missionItem.generatedPathRoleRuns
     readonly property var _missionItem: object
     readonly property bool _vertexDrag: root._missionItem.workRegionPolygon.vertexDrag
     property bool interactive: true
@@ -21,8 +22,25 @@ Item {
 
     signal clicked(int sequenceNumber)
 
+    function _rebuildGeneratedPathVisuals() {
+        objectManager.destroyObjects();
+        if (!root.map) {
+            return;
+        }
+        if (root._generatedPathRoleRuns.length > 0) {
+            for (let index = 0; index < root._generatedPathRoleRuns.length; ++index) {
+                const run = root._generatedPathRoleRuns[index];
+                const visual = objectManager.createObject(rolePathComponent, root.map, true);
+                visual.legRole = run.role;
+                visual.path = run.path;
+            }
+        } else {
+            objectManager.createObject(neutralPathComponent, root.map, true);
+        }
+    }
+
     Component.onCompleted: {
-        objectManager.createObject(generatedPathComponent, root.map, true);
+        root._rebuildGeneratedPathVisuals();
     }
     Component.onDestruction: {
         objectManager.destroyObjects();
@@ -36,6 +54,14 @@ Item {
 
     QGCDynamicObjectManager {
         id: objectManager
+    }
+
+    Connections {
+        function onPlanningResultChanged() {
+            root._rebuildGeneratedPathVisuals();
+        }
+
+        target: root._missionItem
     }
 
     QGCMapPolygonVisuals {
@@ -66,7 +92,21 @@ Item {
     }
 
     Component {
-        id: generatedPathComponent
+        id: rolePathComponent
+
+        MapPolyline {
+            property string legRole
+
+            line.color: legRole === "coverage" ? qgcPal.mapMissionTrajectory : qgcPal.colorGrey
+            line.width: legRole === "coverage" ? 4 : 2
+            opacity: root.opacity
+            visible: root._currentItem && !root._vertexDrag
+            z: QGroundControl.zOrderWaypointLines + 2
+        }
+    }
+
+    Component {
+        id: neutralPathComponent
 
         MapPolyline {
             line.color: "white"

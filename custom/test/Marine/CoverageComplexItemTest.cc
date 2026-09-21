@@ -4,6 +4,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
 #include <QtQml/QQmlComponent>
 #include <QtQml/QQmlEngine>
 #include <QtTest/QSignalSpy>
@@ -69,6 +70,84 @@ QJsonObject legacyV1Artifact(const QString& taskId)
         {QStringLiteral("selectedSweepAngleDeg"), 0.0},
         {QStringLiteral("turnCount"), 2},
     };
+}
+
+QJsonObject roleRunArtifact(const QString& taskId, const std::vector<PathLegRole>& roles)
+{
+    QJsonArray path;
+    for (std::size_t pointIndex = 0; pointIndex <= roles.size(); ++pointIndex) {
+        path.append(QJsonArray{47.3978 + (static_cast<double>(pointIndex) * 0.00001), 8.5456, 0.0});
+    }
+
+    QJsonArray roleNames;
+    int coverageLegCount = 0;
+    for (const PathLegRole role : roles) {
+        if (role == PathLegRole::Coverage) {
+            roleNames.append(QStringLiteral("coverage"));
+            ++coverageLegCount;
+        } else {
+            roleNames.append(QStringLiteral("transit"));
+        }
+    }
+    const int transitLegCount = static_cast<int>(roles.size()) - coverageLegCount;
+
+    return {
+        {QStringLiteral("version"), 2},
+        {QStringLiteral("type"), QStringLiteral("ComplexItem")},
+        {QStringLiteral("complexItemType"), QStringLiteral("coverageInspection")},
+        {QStringLiteral("taskId"), taskId},
+        {QStringLiteral("planningStatus"), QStringLiteral("success")},
+        {QStringLiteral("planningMessage"), QStringLiteral("Role run fixture")},
+        {QStringLiteral("generatedPath"), path},
+        {QStringLiteral("legRoles"), roleNames},
+        {QStringLiteral("coverageLengthM"), static_cast<double>(coverageLegCount)},
+        {QStringLiteral("transitLengthM"), static_cast<double>(transitLegCount)},
+        {QStringLiteral("pathLengthM"), static_cast<double>(roles.size())},
+        {QStringLiteral("selectedSweepAngleDeg"), 0.0},
+        {QStringLiteral("cellCount"), 1},
+        {QStringLiteral("turnCount"), 0},
+    };
+}
+
+void verifyRoleRunsReconstructCanonicalPath(const CoverageInspectionComplexItem& item, int& coverageRunCount,
+                                            int& transitRunCount)
+{
+    const QVariantList runs = item.generatedPathRoleRuns();
+    QVERIFY(!runs.isEmpty());
+
+    QVariantList reconstructedPath;
+    std::vector<PathLegRole> reconstructedRoles;
+    coverageRunCount = 0;
+    transitRunCount = 0;
+
+    for (const QVariant& runValue : runs) {
+        const QVariantMap run = runValue.toMap();
+        const QString roleName = run.value(QStringLiteral("role")).toString();
+        const QVariantList runPath = run.value(QStringLiteral("path")).toList();
+        QVERIFY(runPath.size() >= 2);
+
+        PathLegRole role = PathLegRole::Coverage;
+        if (roleName == QStringLiteral("coverage")) {
+            ++coverageRunCount;
+        } else {
+            QCOMPARE(roleName, QStringLiteral("transit"));
+            role = PathLegRole::Transit;
+            ++transitRunCount;
+        }
+
+        if (reconstructedPath.isEmpty()) {
+            reconstructedPath = runPath;
+        } else {
+            QCOMPARE(reconstructedPath.last(), runPath.first());
+            for (qsizetype pointIndex = 1; pointIndex < runPath.size(); ++pointIndex) {
+                reconstructedPath.append(runPath[pointIndex]);
+            }
+        }
+        reconstructedRoles.insert(reconstructedRoles.end(), static_cast<std::size_t>(runPath.size() - 1), role);
+    }
+
+    QCOMPARE(reconstructedPath, item.generatedPath());
+    QCOMPARE(reconstructedRoles, item.planningResult().legRoles);
 }
 
 void verifyMissionItems(const QList<MissionItem*>& missionItems, const PlanningResult& result, int firstSequence)
@@ -244,12 +323,64 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
     QCOMPARE(result.pathLengthM, result.coverageLengthM + result.transitLengthM);
     QVERIFY(result.cellCount >= 1);
 
+    int coverageRunCount = 0;
+    int transitRunCount = 0;
+    verifyRoleRunsReconstructCanonicalPath(*_item, coverageRunCount, transitRunCount);
+    QVERIFY(coverageRunCount >= 1);
+    QVERIFY(transitRunCount >= 1);
+
     QList<MissionItem*> missionItems;
     _item->appendMissionItems(missionItems, this);
     QCOMPARE(missionItems.size(), static_cast<qsizetype>(result.path.size()));
     for (const MissionItem* missionItem : missionItems) {
         QCOMPARE(missionItem->command(), MAV_CMD_NAV_WAYPOINT);
     }
+}
+
+void CoverageComplexItemTest::_testGeneratedPathRoleRuns()
+{
+    QVERIFY(_item->generatedPathRoleRuns().isEmpty());
+
+    const MarineTask task = validTask();
+    _marineContext->addTask(task);
+    const QString taskId = QString::fromStdString(task.id);
+    QString errorString;
+
+    const std::vector<PathLegRole> alternatingRoles = {
+        PathLegRole::Coverage, PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Transit, PathLegRole::Coverage,
+    };
+    QVERIFY2(_item->load(roleRunArtifact(taskId, alternatingRoles), 0, errorString), qPrintable(errorString));
+    const QVariantList alternatingRuns = _item->generatedPathRoleRuns();
+    QCOMPARE(alternatingRuns.size(), 3);
+    QCOMPARE(alternatingRuns[0].toMap().value(QStringLiteral("role")).toString(), QStringLiteral("coverage"));
+    QCOMPARE(alternatingRuns[0].toMap().value(QStringLiteral("path")).toList().size(), 3);
+    QCOMPARE(alternatingRuns[1].toMap().value(QStringLiteral("role")).toString(), QStringLiteral("transit"));
+    QCOMPARE(alternatingRuns[1].toMap().value(QStringLiteral("path")).toList().size(), 3);
+    QCOMPARE(alternatingRuns[2].toMap().value(QStringLiteral("role")).toString(), QStringLiteral("coverage"));
+    QCOMPARE(alternatingRuns[2].toMap().value(QStringLiteral("path")).toList().size(), 2);
+    QCOMPARE(alternatingRuns[0].toMap().value(QStringLiteral("path")).toList().last(),
+             alternatingRuns[1].toMap().value(QStringLiteral("path")).toList().first());
+    QCOMPARE(alternatingRuns[1].toMap().value(QStringLiteral("path")).toList().last(),
+             alternatingRuns[2].toMap().value(QStringLiteral("path")).toList().first());
+    int coverageRunCount = 0;
+    int transitRunCount = 0;
+    verifyRoleRunsReconstructCanonicalPath(*_item, coverageRunCount, transitRunCount);
+    QCOMPARE(coverageRunCount, 2);
+    QCOMPARE(transitRunCount, 1);
+
+    errorString.clear();
+    QVERIFY2(_item->load(roleRunArtifact(taskId, std::vector<PathLegRole>(4, PathLegRole::Coverage)), 0, errorString),
+             qPrintable(errorString));
+    QCOMPARE(_item->generatedPathRoleRuns().size(), 1);
+    QCOMPARE(_item->generatedPathRoleRuns().first().toMap().value(QStringLiteral("role")).toString(),
+             QStringLiteral("coverage"));
+
+    errorString.clear();
+    QVERIFY2(_item->load(roleRunArtifact(taskId, std::vector<PathLegRole>(4, PathLegRole::Transit)), 0, errorString),
+             qPrintable(errorString));
+    QCOMPARE(_item->generatedPathRoleRuns().size(), 1);
+    QCOMPARE(_item->generatedPathRoleRuns().first().toMap().value(QStringLiteral("role")).toString(),
+             QStringLiteral("transit"));
 }
 
 void CoverageComplexItemTest::_testPlanningFailures()
@@ -344,6 +475,10 @@ void CoverageComplexItemTest::_testQmlRegistration()
     QVERIFY(mapVisualSource.contains("QGCMapPolygonVisuals"));
     QVERIFY(mapVisualSource.contains("workRegionPolygon"));
     QVERIFY(mapVisualSource.contains("noGoPolygons"));
+    QVERIFY(mapVisualSource.contains("generatedPathRoleRuns"));
+    QVERIFY(mapVisualSource.contains("qgcPal.mapMissionTrajectory"));
+    QVERIFY(mapVisualSource.contains("qgcPal.colorGrey"));
+    QVERIFY(mapVisualSource.contains("neutralPathComponent"));
     QVERIFY(!editorSource.contains("No-Go regions are read-only"));
     QVERIFY(editorSource.contains("Add No-Go Region"));
     QVERIFY(editorSource.contains("noGoRegionsReady"));
@@ -611,6 +746,7 @@ void CoverageComplexItemTest::_testSaveLoad()
     QCOMPARE(loadedItem->planningState(), CoverageInspectionComplexItem::Planned);
     QCOMPARE(loadedItem->planningResult().status, PlanningStatus::Success);
     QCOMPARE(loadedItem->planningResult().legRoles, _item->planningResult().legRoles);
+    QCOMPARE(loadedItem->generatedPathRoleRuns(), _item->generatedPathRoleRuns());
     QCOMPARE(loadedItem->coverageLengthM(), _item->coverageLengthM());
     QCOMPARE(loadedItem->transitLengthM(), _item->transitLengthM());
     QCOMPARE(loadedItem->cellCount(), _item->cellCount());
@@ -625,6 +761,12 @@ void CoverageComplexItemTest::_testSaveLoad()
     QVERIFY(loadedNoGo != nullptr);
     QCOMPARE(loadedNoGo->coordinateList(), _item->noGoPolygons()->value<QGCMapPolygon*>(0)->coordinateList());
     QVERIFY(!loadedItem->dirty());
+
+    int coverageRunCount = 0;
+    int transitRunCount = 0;
+    verifyRoleRunsReconstructCanonicalPath(*loadedItem, coverageRunCount, transitRunCount);
+    QVERIFY(coverageRunCount >= 1);
+    QVERIFY(transitRunCount >= 1);
 
     QList<MissionItem*> missionItems;
     loadedItem->appendMissionItems(missionItems, this);
@@ -680,6 +822,7 @@ void CoverageComplexItemTest::_testLegacyV1Migration()
     QCOMPARE(_item->planningMessage(), QStringLiteral("Legacy lawnmower artifact"));
     QCOMPARE(_item->generatedPath().size(), 4);
     QVERIFY(_item->planningResult().legRoles.empty());
+    QVERIFY(_item->generatedPathRoleRuns().isEmpty());
     QCOMPARE(_item->coverageLengthM(), 0.0);
     QCOMPARE(_item->transitLengthM(), 0.0);
     QCOMPARE(_item->cellCount(), 0);

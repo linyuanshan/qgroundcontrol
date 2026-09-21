@@ -46,6 +46,7 @@ public:
     Q_PROPERTY(int maximumNoGoRegionCount READ maximumNoGoRegionCount CONSTANT)
     Q_PROPERTY(PlanningState planningState READ planningState NOTIFY planningStateChanged)
     Q_PROPERTY(QVariantList generatedPath READ generatedPath NOTIFY generatedPathChanged)
+    Q_PROPERTY(QVariantList generatedPathRoleRuns READ generatedPathRoleRuns NOTIFY planningResultChanged)
     Q_PROPERTY(QString planningMessage READ planningMessage NOTIFY planningResultChanged)
     Q_PROPERTY(double coverageLengthM READ coverageLengthM NOTIFY planningResultChanged)
     Q_PROPERTY(double transitLengthM READ transitLengthM NOTIFY planningResultChanged)
@@ -94,6 +95,7 @@ public:
     PlanningState planningState() const { return _planningState; }
 
     QVariantList generatedPath() const;
+    QVariantList generatedPathRoleRuns() const;
 
     QString planningMessage() const { return QString::fromStdString(_planningResult.message); }
 

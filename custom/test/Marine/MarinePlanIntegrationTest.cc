@@ -5,6 +5,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QVariantList>
 
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
@@ -100,6 +101,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
 
     QString expectedTaskId;
     PlanningResult expectedPlanningResult;
+    QVariantList expectedPathRoleRuns;
     QList<MissionItem*> expectedMissionItems;
     QPointer<MarinePlanContext> firstContext;
 
@@ -151,6 +153,8 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         QVERIFY(!expectedPlanningResult.path.empty());
         QCOMPARE(expectedPlanningResult.legRoles.size(), expectedPlanningResult.path.size() - 1);
         QVERIFY(expectedPlanningResult.cellCount >= 1);
+        expectedPathRoleRuns = item->generatedPathRoleRuns();
+        QVERIFY(!expectedPathRoleRuns.isEmpty());
         item->appendMissionItems(expectedMissionItems, this);
         QCOMPARE(expectedMissionItems.size(), static_cast<qsizetype>(expectedPlanningResult.path.size()));
 
@@ -215,6 +219,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     const PlanningResult& restoredResult = restoredItem->planningResult();
     QCOMPARE(restoredResult.status, expectedPlanningResult.status);
     QCOMPARE(restoredResult.legRoles, expectedPlanningResult.legRoles);
+    QCOMPARE(restoredItem->generatedPathRoleRuns(), expectedPathRoleRuns);
     QCOMPARE(restoredResult.coverageLengthM, expectedPlanningResult.coverageLengthM);
     QCOMPARE(restoredResult.transitLengthM, expectedPlanningResult.transitLengthM);
     QCOMPARE(restoredResult.selectedSweepAngleDeg, expectedPlanningResult.selectedSweepAngleDeg);

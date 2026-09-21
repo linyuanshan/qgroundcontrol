@@ -22,6 +22,7 @@ private slots:
     void _testLawnmowerPlanning();
     void _testLawnmowerUiNoGoRejection();
     void _testBoustrophedonNoGoPlanning();
+    void _testGeneratedPathRoleRuns();
     void _testPlanningFailures();
     void _testInvalidation();
     void _testQmlRegistration();
