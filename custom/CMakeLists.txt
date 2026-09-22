@@ -160,6 +160,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanIntegrationTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanIntegrationTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineSITLValidationTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineSITLValidationTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
@@ -422,6 +424,22 @@ if(QGC_BUILD_TESTING)
         LABELS
         Integration
         MissionManager
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        MarineSITLValidationTest
+        LABELS
+        Integration
+        Vehicle
+        MissionManager
+        Network
+        Serial
+        Slow
     )
 
     cmake_language(
