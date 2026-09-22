@@ -10,6 +10,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QTextStream>
 #include <QtCore/QTimer>
 #include <QtCore/QtEndian>
@@ -38,6 +39,7 @@
 #include "MissionController.h"
 #include "MissionItem.h"
 #include "MissionManager.h"
+#include "MissionSettingsItem.h"
 #include "MultiVehicleManager.h"
 #include "ParameterManager.h"
 #include "PlanMasterController.h"
@@ -48,6 +50,7 @@
 #include "QmlObjectListModel.h"
 #include "TCPLink.h"
 #include "Vehicle.h"
+#include "VisualMissionItem.h"
 
 using namespace Marine;
 
@@ -57,6 +60,8 @@ constexpr int ConnectionTimeoutMs = 120000;
 constexpr int MissionTimeoutMs = 900000;
 constexpr double CoordinateToleranceDeg = 1e-10;
 constexpr double MetricToleranceM = 1e-3;
+constexpr double TargetedStopBoundaryDistanceM = 0.05;
+constexpr double TargetedStopMinimumTurnDeg = 5.0;
 
 struct ScenarioDefinition
 {
@@ -513,6 +518,255 @@ MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog
     return result;
 }
 
+enum class DiagnosticStopPolicy
+{
+    FlyThrough,
+    AllStop,
+    TargetedStop,
+};
+
+struct DiagnosticRunDefinition
+{
+    QString id;
+    double waypointRadiusM = 3.0;
+    double speedFactor = 1.0;
+    DiagnosticStopPolicy stopPolicy = DiagnosticStopPolicy::FlyThrough;
+};
+
+struct NoGoExecutionResult
+{
+    int insideSampleCount = 0;
+    double maximumPenetrationM = 0.0;
+    double minimumSignedClearanceM = std::numeric_limits<double>::infinity();
+    QSet<int> incidentSequences;
+    std::vector<Point2D> actualLocal;
+};
+
+std::optional<DiagnosticRunDefinition> diagnosticRunDefinition(const QString& requestedRun)
+{
+    const QString run = requestedRun.trimmed().toUpper();
+    if ((run == QStringLiteral("D00")) || (run == QStringLiteral("S04-DIAG-00"))) {
+        return DiagnosticRunDefinition{QStringLiteral("S04-DIAG-00"), 3.0, 1.0, DiagnosticStopPolicy::FlyThrough};
+    }
+    if ((run == QStringLiteral("D01")) || (run == QStringLiteral("S04-DIAG-01"))) {
+        return DiagnosticRunDefinition{QStringLiteral("S04-DIAG-01"), 1.0, 1.0, DiagnosticStopPolicy::FlyThrough};
+    }
+    if ((run == QStringLiteral("D02")) || (run == QStringLiteral("S04-DIAG-02"))) {
+        return DiagnosticRunDefinition{QStringLiteral("S04-DIAG-02"), 0.5, 1.0, DiagnosticStopPolicy::FlyThrough};
+    }
+    if ((run == QStringLiteral("D03")) || (run == QStringLiteral("S04-DIAG-03"))) {
+        return DiagnosticRunDefinition{QStringLiteral("S04-DIAG-03"), 3.0, 0.5, DiagnosticStopPolicy::FlyThrough};
+    }
+    if ((run == QStringLiteral("D04")) || (run == QStringLiteral("S04-DIAG-04-ALL-STOP"))) {
+        return DiagnosticRunDefinition{QStringLiteral("S04-DIAG-04-ALL-STOP"), 3.0, 1.0, DiagnosticStopPolicy::AllStop};
+    }
+    if ((run == QStringLiteral("D05")) || (run == QStringLiteral("S04-DIAG-05-TARGETED-STOP"))) {
+        return DiagnosticRunDefinition{QStringLiteral("S04-DIAG-05-TARGETED-STOP"), 3.0, 1.0,
+                                       DiagnosticStopPolicy::TargetedStop};
+    }
+    return std::nullopt;
+}
+
+QString diagnosticStopPolicyName(DiagnosticStopPolicy policy)
+{
+    switch (policy) {
+        case DiagnosticStopPolicy::FlyThrough:
+            return QStringLiteral("Fly-through");
+        case DiagnosticStopPolicy::AllStop:
+            return QStringLiteral("ALL-STOP");
+        case DiagnosticStopPolicy::TargetedStop:
+            return QStringLiteral("targeted-stop");
+    }
+    return QStringLiteral("Unknown");
+}
+
+QJsonObject parameterSnapshot(ParameterManager* manager, const QStringList& names)
+{
+    QJsonObject snapshot;
+    for (const QString& name : names) {
+        QJsonObject parameter{{QStringLiteral("present"), false}};
+        if (manager->parameterExists(ParameterManager::defaultComponentId, name)) {
+            Fact* fact = manager->getParameter(ParameterManager::defaultComponentId, name);
+            parameter.insert(QStringLiteral("present"), true);
+            parameter.insert(QStringLiteral("value"), fact->rawValue().toDouble());
+        } else {
+            parameter.insert(QStringLiteral("value"), QStringLiteral("not present"));
+        }
+        snapshot.insert(name, parameter);
+    }
+    return snapshot;
+}
+
+bool setVehicleParameter(ParameterManager* manager, const QString& name, double value)
+{
+    if (!manager->parameterExists(ParameterManager::defaultComponentId, name)) {
+        return false;
+    }
+    Fact* fact = manager->getParameter(ParameterManager::defaultComponentId, name);
+    fact->setRawValue(value);
+    QElapsedTimer wait;
+    wait.start();
+    while ((wait.elapsed() < 5000) && (std::abs(fact->rawValue().toDouble() - value) > 1e-6)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QTest::qWait(50);
+    }
+    QTest::qWait(500);
+    manager->refreshParameter(ParameterManager::defaultComponentId, name);
+    QTest::qWait(500);
+    return std::abs(fact->rawValue().toDouble() - value) <= 1e-6;
+}
+
+QList<MissionItem*> missionItemsFromController(PlanMasterController& controller, Vehicle* vehicle)
+{
+    QList<MissionItem*> missionItems;
+    QmlObjectListModel* visualItems = controller.missionController()->visualItems();
+    if ((visualItems == nullptr) || (visualItems->count() == 0)) {
+        return missionItems;
+    }
+
+    int lastSequence = 0;
+    for (int index = 0; index < visualItems->count(); ++index) {
+        VisualMissionItem* visualItem = visualItems->value<VisualMissionItem*>(index);
+        if (visualItem == nullptr) {
+            qDeleteAll(missionItems);
+            return {};
+        }
+        lastSequence = visualItem->lastSequenceNumber();
+        visualItem->appendMissionItems(missionItems, vehicle);
+    }
+    if (MissionSettingsItem* settings = visualItems->value<MissionSettingsItem*>(0)) {
+        (void) settings->addMissionEndAction(missionItems, lastSequence + 1, vehicle);
+    }
+    return missionItems;
+}
+
+bool uploadMissionItems(Vehicle* vehicle, const QList<MissionItem*>& missionItems)
+{
+    QSignalSpy sendSpy(vehicle->missionManager(), &MissionManager::sendComplete);
+    if (!sendSpy.isValid()) {
+        qDeleteAll(missionItems);
+        return false;
+    }
+    vehicle->missionManager()->writeMissionItems(missionItems);
+    if (!sendSpy.wait(ConnectionTimeoutMs) || (sendSpy.count() != 1)) {
+        return false;
+    }
+    return !sendSpy.takeFirst().at(0).toBool();
+}
+
+bool resetMissionExecutionState(Vehicle* vehicle)
+{
+    vehicle->setFlightMode(vehicle->pauseFlightMode());
+    QElapsedTimer modeWait;
+    modeWait.start();
+    while ((vehicle->flightMode() != vehicle->pauseFlightMode()) && (modeWait.elapsed() < ConnectionTimeoutMs)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QTest::qWait(50);
+    }
+    vehicle->setArmed(false, true);
+    QElapsedTimer disarmWait;
+    disarmWait.start();
+    while (vehicle->armed() && (disarmWait.elapsed() < ConnectionTimeoutMs)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QTest::qWait(50);
+    }
+    return (vehicle->flightMode() == vehicle->pauseFlightMode()) && !vehicle->armed();
+}
+
+bool prepositionAtFirstWaypoint(Vehicle* vehicle, const QList<MissionItem*>& fullMission, int missionItemListPathOffset,
+                                int missionSequenceOffset, const QString& tlogPath, MissionRunResult& run)
+{
+    if ((missionItemListPathOffset != 1) || (fullMission.size() < 2)) {
+        return false;
+    }
+    QList<MissionItem*> prepositionMission;
+    prepositionMission.append(new MissionItem(*fullMission.at(0), vehicle));
+    prepositionMission.append(new MissionItem(*fullMission.at(missionItemListPathOffset), vehicle));
+    prepositionMission.back()->setParam1(1.0);
+    if (!uploadMissionItems(vehicle, prepositionMission)) {
+        return false;
+    }
+    vehicle->setCurrentMissionSequence(missionSequenceOffset);
+    QElapsedTimer sequenceWait;
+    sequenceWait.start();
+    while ((vehicle->missionManager()->currentIndex() != missionSequenceOffset) &&
+           (sequenceWait.elapsed() < ConnectionTimeoutMs)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QTest::qWait(50);
+    }
+    if (vehicle->missionManager()->currentIndex() != missionSequenceOffset) {
+        return false;
+    }
+
+    QFile tlog(tlogPath);
+    if (!tlog.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    run = executeMission(vehicle, missionSequenceOffset, tlog);
+    tlog.close();
+    const bool reset = resetMissionExecutionState(vehicle);
+    return run.readyToFly && run.enteredAuto && !run.timedOut && run.missionComplete && reset;
+}
+
+double turnAngleDeg(const Point2D& before, const Point2D& point, const Point2D& after)
+{
+    constexpr double RadiansToDegrees = 180.0 / 3.14159265358979323846;
+    const double incoming = std::atan2(point.yM - before.yM, point.xM - before.xM);
+    const double outgoing = std::atan2(after.yM - point.yM, after.xM - point.xM);
+    return std::abs(std::remainder((outgoing - incoming) * RadiansToDegrees, 360.0));
+}
+
+QSet<int> targetedStopPathIndices(const std::vector<Point2D>& path, const PolygonRegionSet2D& trackFeasibleRegion)
+{
+    QSet<int> indices;
+    if ((path.size() < 3) || trackFeasibleRegion.empty()) {
+        return indices;
+    }
+    for (std::size_t index = 1; index + 1 < path.size(); ++index) {
+        double neighbourhoodDistance = std::numeric_limits<double>::infinity();
+        for (const PolygonRegion2D& region : trackFeasibleRegion) {
+            for (const Polygon2D& hole : region.holes) {
+                neighbourhoodDistance =
+                    std::min({neighbourhoodDistance, pointToPolygonBoundaryDistance(path[index - 1], hole),
+                              pointToPolygonBoundaryDistance(path[index], hole),
+                              pointToPolygonBoundaryDistance(path[index + 1], hole)});
+            }
+        }
+        if ((neighbourhoodDistance <= TargetedStopBoundaryDistanceM) &&
+            (turnAngleDeg(path[index - 1], path[index], path[index + 1]) >= TargetedStopMinimumTurnDeg)) {
+            indices.insert(static_cast<int>(index));
+        }
+    }
+    return indices;
+}
+
+NoGoExecutionResult analyzeNoGoExecution(const MissionRunResult& missionRun, const CoveragePlanningProblem& problem,
+                                         const GeoReference& reference)
+{
+    NoGoExecutionResult result;
+    result.actualLocal.reserve(missionRun.trajectory.size());
+    for (const TrajectorySample& sample : missionRun.trajectory) {
+        const std::optional<Point2D> local =
+            reference.toLocal({sample.coordinate.latitude(), sample.coordinate.longitude(), 0.0});
+        if (!local) {
+            continue;
+        }
+        result.actualLocal.push_back(*local);
+        for (const Polygon2D& noGo : problem.region.noGoRegions) {
+            const double boundaryDistance = pointToPolygonBoundaryDistance(*local, noGo);
+            const bool inside = pointStrictlyInside(noGo, *local);
+            const double signedClearance = inside ? -boundaryDistance : boundaryDistance;
+            result.minimumSignedClearanceM = std::min(result.minimumSignedClearanceM, signedClearance);
+            if (inside) {
+                ++result.insideSampleCount;
+                result.maximumPenetrationM = std::max(result.maximumPenetrationM, boundaryDistance);
+                result.incidentSequences.insert(sample.missionSequence);
+            }
+        }
+    }
+    return result;
+}
+
 }  // namespace
 
 void MarineSITLValidationTest::init()
@@ -809,6 +1063,284 @@ void MarineSITLValidationTest::_validateP2Scenarios()
         vehicle->setArmed(false, true);
         QTRY_VERIFY_WITH_TIMEOUT(!vehicle->armed(), ConnectionTimeoutMs);
     }
+}
+
+void MarineSITLValidationTest::_diagnoseS04Execution()
+{
+    const QString evidenceRoot = qEnvironmentVariable("QGC_P2_SITL_DIAGNOSTIC_ROOT");
+    const QString planPath = qEnvironmentVariable("QGC_P2_SITL_DIAGNOSTIC_PLAN");
+    const QString requestedRun = qEnvironmentVariable("QGC_P2_SITL_DIAGNOSTIC_RUN");
+    if (evidenceRoot.isEmpty() || planPath.isEmpty() || requestedRun.isEmpty()) {
+        QSKIP(
+            "Set QGC_P2_SITL_DIAGNOSTIC_ROOT, QGC_P2_SITL_DIAGNOSTIC_PLAN, and "
+            "QGC_P2_SITL_DIAGNOSTIC_RUN to enable an S04 diagnostic run");
+    }
+    const std::optional<DiagnosticRunDefinition> definition = diagnosticRunDefinition(requestedRun);
+    QVERIFY2(definition.has_value(), qPrintable(QStringLiteral("Unknown diagnostic run: %1").arg(requestedRun)));
+    QVERIFY(QFile::exists(planPath));
+    const QByteArray planHash = sha256(planPath);
+    QCOMPARE(planHash, QByteArrayLiteral("a9cad2b593d827266751efe055534e4eecf0ea4be416ca7adbd4f4039e7b1b60"));
+
+    const QString runDirectory = QDir(evidenceRoot).filePath(definition->id);
+    QVERIFY2(QDir().mkpath(runDirectory), qPrintable(QStringLiteral("Cannot create %1").arg(runDirectory)));
+    QCOMPARE(LinkManager::instance()->links().count(), 0);
+
+    auto* tcpConfiguration = new TCPConfiguration(QStringLiteral("P2-13D ArduRover SITL"));
+    tcpConfiguration->setHost(QStringLiteral("127.0.0.1"));
+    tcpConfiguration->setPort(5760);
+    tcpConfiguration->setDynamic(true);
+    SharedLinkConfigurationPtr sharedConfiguration(tcpConfiguration);
+    QVERIFY2(LinkManager::instance()->createConnectedLink(sharedConfiguration), "Failed to connect TCP SITL link");
+
+    QTRY_VERIFY_WITH_TIMEOUT(MultiVehicleManager::instance()->activeVehicle() != nullptr, ConnectionTimeoutMs);
+    Vehicle* vehicle = MultiVehicleManager::instance()->activeVehicle();
+    QVERIFY(vehicle != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(vehicle->isInitialConnectComplete(), ConnectionTimeoutMs);
+    ParameterManager* parameterManager = vehicle->parameterManager();
+    QVERIFY(parameterManager != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(parameterManager->parametersReady(), ConnectionTimeoutMs);
+    QCOMPARE(vehicle->firmwareType(), MAV_AUTOPILOT_ARDUPILOTMEGA);
+    QCOMPARE(vehicle->vehicleType(), MAV_TYPE_GROUND_ROVER);
+    QTRY_VERIFY_WITH_TIMEOUT(vehicle->coordinate().isValid(), ConnectionTimeoutMs);
+    QVERIFY2(resetMissionExecutionState(vehicle), "Unable to reset Rover to disarmed HOLD before diagnostic");
+
+    const QStringList diagnosticParameterNames{QStringLiteral("WP_RADIUS"),   QStringLiteral("WP_SPEED"),
+                                               QStringLiteral("TURN_RADIUS"), QStringLiteral("ATC_TURN_MAX_G"),
+                                               QStringLiteral("WP_ACCEL"),    QStringLiteral("WP_JERK")};
+    const QJsonObject baselineParameters = parameterSnapshot(parameterManager, diagnosticParameterNames);
+    QVERIFY(parameterManager->parameterExists(ParameterManager::defaultComponentId, QStringLiteral("WP_RADIUS")));
+    QVERIFY(parameterManager->parameterExists(ParameterManager::defaultComponentId, QStringLiteral("WP_SPEED")));
+    const double baselineWaypointRadiusM =
+        parameterManager->getParameter(ParameterManager::defaultComponentId, QStringLiteral("WP_RADIUS"))
+            ->rawValue()
+            .toDouble();
+    const double baselineWaypointSpeedMps =
+        parameterManager->getParameter(ParameterManager::defaultComponentId, QStringLiteral("WP_SPEED"))
+            ->rawValue()
+            .toDouble();
+    QCOMPARE(baselineWaypointRadiusM, 3.0);
+    QVERIFY(baselineWaypointSpeedMps > 0.0);
+
+    PlanMasterController controller;
+    controller.setFlyView(false);
+    controller.start();
+    controller.loadFromFile(planPath);
+    CoverageInspectionComplexItem* item = coverageItem(controller);
+    QVERIFY(item != nullptr);
+    QCOMPARE(item->planningState(), CoverageInspectionComplexItem::Planned);
+    const PlanningResult& planningResult = item->planningResult();
+    QCOMPARE(planningResult.status, PlanningStatus::Success);
+    QVERIFY(planningResult.path.size() >= 2);
+    QCOMPARE(planningResult.legRoles.size(), planningResult.path.size() - 1);
+
+    MarinePlanContext* context = controller.findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(context != nullptr);
+    const MarineTask* task = context->task(item->taskId().toStdString());
+    QVERIFY(task != nullptr);
+    CoveragePlanningProblem problem;
+    std::optional<GeoReference> reference;
+    CoveragePlanningError adapterError = CoveragePlanningError::None;
+    QVERIFY(CoverageTaskAdapter::buildProblem(*task, problem, reference, adapterError));
+    QVERIFY(reference.has_value());
+    QCOMPARE(problem.region.noGoRegions.size(), std::size_t{1});
+
+    std::vector<Point2D> canonicalPath;
+    canonicalPath.reserve(planningResult.path.size());
+    for (const GeoPoint& point : planningResult.path) {
+        const std::optional<Point2D> local = reference->toLocal(point);
+        QVERIFY(local.has_value());
+        canonicalPath.push_back(*local);
+    }
+    const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);
+    QCOMPARE(freeSpace.status, PlanningStatus::Success);
+    const QSet<int> targetedPathIndices =
+        targetedStopPathIndices(canonicalPath, freeSpace.freeSpace.trackFeasibleRegion);
+    if (definition->stopPolicy == DiagnosticStopPolicy::TargetedStop) {
+        QVERIFY(!targetedPathIndices.isEmpty());
+        QVERIFY(targetedPathIndices.size() < static_cast<qsizetype>(canonicalPath.size()));
+    }
+
+    QList<MissionItem*> missionItems = missionItemsFromController(controller, vehicle);
+    const int missionItemListPathOffset = missionItems.size() - static_cast<int>(planningResult.path.size());
+    QCOMPARE(missionItemListPathOffset, 1);
+    const int missionSequenceOffset = vehicle->firmwarePlugin()->sendHomePositionToVehicle() ? 1 : 0;
+    QCOMPARE(missionItems.size(), static_cast<qsizetype>(planningResult.path.size()) + missionItemListPathOffset);
+    int stopWaypointCount = 0;
+    QJsonArray stopPathIndicesJson;
+    for (int pathIndex = 0; pathIndex < static_cast<int>(planningResult.path.size()); ++pathIndex) {
+        MissionItem* missionItem = missionItems.at(pathIndex + missionItemListPathOffset);
+        QCOMPARE(missionItem->command(), MAV_CMD_NAV_WAYPOINT);
+        const bool stop =
+            (definition->stopPolicy == DiagnosticStopPolicy::AllStop) ||
+            ((definition->stopPolicy == DiagnosticStopPolicy::TargetedStop) && targetedPathIndices.contains(pathIndex));
+        if (stop) {
+            missionItem->setParam1(1.0);
+            ++stopWaypointCount;
+            stopPathIndicesJson.append(pathIndex);
+        }
+    }
+
+    const double requestedWaypointSpeedMps = baselineWaypointSpeedMps * definition->speedFactor;
+    const QString stagePath = QDir(runDirectory).filePath(QStringLiteral("stage.json"));
+    (void) writeJson(stagePath, {{QStringLiteral("stage"), QStringLiteral("mission-items-ready")}});
+    const bool radiusSet =
+        setVehicleParameter(parameterManager, QStringLiteral("WP_RADIUS"), definition->waypointRadiusM);
+    const bool speedSet = setVehicleParameter(parameterManager, QStringLiteral("WP_SPEED"), requestedWaypointSpeedMps);
+    const QJsonObject appliedParameters = parameterSnapshot(parameterManager, diagnosticParameterNames);
+    (void) writeJson(stagePath, {{QStringLiteral("stage"), QStringLiteral("parameters-applied")},
+                                 {QStringLiteral("parameters"), appliedParameters}});
+
+    const QString prepositionTlogPath = QDir(runDirectory).filePath(QStringLiteral("preposition.tlog"));
+    MissionRunResult prepositionRun;
+    const bool prepositioned = radiusSet && speedSet &&
+                               prepositionAtFirstWaypoint(vehicle, missionItems, missionItemListPathOffset,
+                                                          missionSequenceOffset, prepositionTlogPath, prepositionRun);
+    (void) writeJson(stagePath,
+                     {{QStringLiteral("stage"), QStringLiteral("preposition-finished")},
+                      {QStringLiteral("success"), prepositioned},
+                      {QStringLiteral("readyToFly"), prepositionRun.readyToFly},
+                      {QStringLiteral("enteredAuto"), prepositionRun.enteredAuto},
+                      {QStringLiteral("missionComplete"), prepositionRun.missionComplete},
+                      {QStringLiteral("timedOut"), prepositionRun.timedOut},
+                      {QStringLiteral("trajectorySamples"), static_cast<qint64>(prepositionRun.trajectory.size())}});
+    bool uploaded = false;
+    bool sequenceSelected = false;
+    MissionRunResult missionRun;
+    const QString tlogPath = QDir(runDirectory).filePath(definition->id + QStringLiteral(".tlog"));
+    if (prepositioned) {
+        uploaded = uploadMissionItems(vehicle, missionItems);
+        (void) writeJson(stagePath, {{QStringLiteral("stage"), QStringLiteral("diagnostic-upload-finished")},
+                                     {QStringLiteral("success"), uploaded}});
+        if (uploaded) {
+            vehicle->setCurrentMissionSequence(missionSequenceOffset);
+            QElapsedTimer sequenceWait;
+            sequenceWait.start();
+            while ((vehicle->missionManager()->currentIndex() != missionSequenceOffset) &&
+                   (sequenceWait.elapsed() < ConnectionTimeoutMs)) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+                QTest::qWait(50);
+            }
+            sequenceSelected = vehicle->missionManager()->currentIndex() == missionSequenceOffset;
+        }
+        if (sequenceSelected) {
+            QFile tlog(tlogPath);
+            if (tlog.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                const int finalSequence = static_cast<int>(planningResult.path.size()) - 1 + missionSequenceOffset;
+                missionRun = executeMission(vehicle, finalSequence, tlog);
+                tlog.close();
+                (void) writeJson(stagePath, {{QStringLiteral("stage"), QStringLiteral("diagnostic-run-finished")},
+                                             {QStringLiteral("missionComplete"), missionRun.missionComplete},
+                                             {QStringLiteral("timedOut"), missionRun.timedOut},
+                                             {QStringLiteral("trajectorySamples"),
+                                              static_cast<qint64>(missionRun.trajectory.size())}});
+            }
+        }
+    } else {
+        qDeleteAll(missionItems);
+    }
+
+    const bool executionReset = resetMissionExecutionState(vehicle);
+    const bool radiusRestored =
+        setVehicleParameter(parameterManager, QStringLiteral("WP_RADIUS"), baselineWaypointRadiusM);
+    const bool speedRestored =
+        setVehicleParameter(parameterManager, QStringLiteral("WP_SPEED"), baselineWaypointSpeedMps);
+    const QJsonObject restoredParameters = parameterSnapshot(parameterManager, diagnosticParameterNames);
+
+    const QString csvPath = QDir(runDirectory).filePath(definition->id + QStringLiteral("-trajectory.csv"));
+    const bool csvWritten = writeTrajectoryCsv(csvPath, missionRun.trajectory);
+    const NoGoExecutionResult noGoExecution = analyzeNoGoExecution(missionRun, problem, *reference);
+    CoveragePlanningSolution plotSolution;
+    plotSolution.status = PlanningStatus::Success;
+    plotSolution.path = canonicalPath;
+    plotSolution.legRoles = planningResult.legRoles;
+    const QString overlayPath = QDir(runDirectory).filePath(definition->id + QStringLiteral("-overlay.png"));
+    const bool overlayWritten =
+        renderEvidence(overlayPath, definition->id, problem, plotSolution, noGoExecution.actualLocal);
+
+    QJsonArray incidentSequencesJson;
+    QList<int> incidentSequences = noGoExecution.incidentSequences.values();
+    std::sort(incidentSequences.begin(), incidentSequences.end());
+    for (const int sequence : incidentSequences) {
+        incidentSequencesJson.append(sequence);
+    }
+    QJsonArray reachedSequencesJson;
+    for (const int sequence : missionRun.reachedSequences) {
+        reachedSequencesJson.append(sequence);
+    }
+    QJsonArray statusTextsJson;
+    for (const QString& statusText : missionRun.statusTexts) {
+        statusTextsJson.append(statusText);
+    }
+
+    const QString parameterPath = QDir(runDirectory).filePath(QStringLiteral("parameter-snapshot.json"));
+    const QJsonObject parameterEvidence{
+        {QStringLiteral("firmwareVersion"), QStringLiteral("%1.%2.%3")
+                                                .arg(vehicle->firmwareMajorVersion())
+                                                .arg(vehicle->firmwareMinorVersion())
+                                                .arg(vehicle->firmwarePatchVersion())},
+        {QStringLiteral("run"), definition->id},
+        {QStringLiteral("baseline"), baselineParameters},
+        {QStringLiteral("applied"), appliedParameters},
+        {QStringLiteral("restored"), restoredParameters},
+        {QStringLiteral("recordedAtUtc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+    };
+    const bool parametersWritten = writeJson(parameterPath, parameterEvidence);
+
+    const QJsonObject resultJson{
+        {QStringLiteral("run"), definition->id},
+        {QStringLiteral("sourcePlan"), planPath},
+        {QStringLiteral("planSha256"), QString::fromLatin1(planHash)},
+        {QStringLiteral("canonicalPathPoints"), static_cast<qint64>(canonicalPath.size())},
+        {QStringLiteral("geometry"), QStringLiteral("frozen S04")},
+        {QStringLiteral("wpRadiusM"), definition->waypointRadiusM},
+        {QStringLiteral("wpSpeedMps"), requestedWaypointSpeedMps},
+        {QStringLiteral("stopPolicy"), diagnosticStopPolicyName(definition->stopPolicy)},
+        {QStringLiteral("stopWaypointCount"), stopWaypointCount},
+        {QStringLiteral("stopPathIndices"), stopPathIndicesJson},
+        {QStringLiteral("targetedStopBoundaryDistanceM"), TargetedStopBoundaryDistanceM},
+        {QStringLiteral("targetedStopMinimumTurnDeg"), TargetedStopMinimumTurnDeg},
+        {QStringLiteral("prepositioned"), prepositioned},
+        {QStringLiteral("missionUploaded"), uploaded},
+        {QStringLiteral("missionSequenceSelected"), sequenceSelected},
+        {QStringLiteral("missionComplete"), missionRun.missionComplete},
+        {QStringLiteral("timedOut"), missionRun.timedOut},
+        {QStringLiteral("reachedSequences"), reachedSequencesJson},
+        {QStringLiteral("statusTexts"), statusTextsJson},
+        {QStringLiteral("trajectorySampleCount"), static_cast<qint64>(missionRun.trajectory.size())},
+        {QStringLiteral("insideOriginalNoGoSampleCount"), noGoExecution.insideSampleCount},
+        {QStringLiteral("enteredOriginalNoGo"), noGoExecution.insideSampleCount > 0},
+        {QStringLiteral("maximumPenetrationM"), noGoExecution.maximumPenetrationM},
+        {QStringLiteral("minimumSignedClearanceM"), std::isfinite(noGoExecution.minimumSignedClearanceM)
+                                                        ? QJsonValue(noGoExecution.minimumSignedClearanceM)
+                                                        : QJsonValue()},
+        {QStringLiteral("incidentMissionSequences"), incidentSequencesJson},
+        {QStringLiteral("tlogSha256"), QString::fromLatin1(sha256(tlogPath))},
+        {QStringLiteral("trajectoryCsvSha256"), QString::fromLatin1(sha256(csvPath))},
+        {QStringLiteral("overlaySha256"), QString::fromLatin1(sha256(overlayPath))},
+        {QStringLiteral("parameterSnapshotSha256"), QString::fromLatin1(sha256(parameterPath))},
+        {QStringLiteral("parametersRestored"), radiusRestored && speedRestored},
+        {QStringLiteral("executionStateReset"), executionReset},
+    };
+    const bool resultWritten = writeJson(QDir(runDirectory).filePath(QStringLiteral("result.json")), resultJson);
+
+    QVERIFY(radiusSet);
+    QVERIFY(speedSet);
+    QVERIFY(prepositioned);
+    QVERIFY(uploaded);
+    QVERIFY(sequenceSelected);
+    QVERIFY2(missionRun.readyToFly,
+             qPrintable(QStringLiteral("Rover did not become ready: %1").arg(missionRun.prearmError)));
+    QVERIFY(missionRun.started);
+    QVERIFY(missionRun.enteredAuto);
+    QVERIFY(!missionRun.timedOut);
+    QVERIFY(missionRun.missionComplete);
+    QVERIFY(executionReset);
+    QVERIFY(radiusRestored);
+    QVERIFY(speedRestored);
+    QVERIFY(csvWritten);
+    QVERIFY(overlayWritten);
+    QVERIFY(parametersWritten);
+    QVERIFY(resultWritten);
 }
 
 UT_REGISTER_TEST_STANDALONE(MarineSITLValidationTest, TestLabel::Integration, TestLabel::Vehicle,

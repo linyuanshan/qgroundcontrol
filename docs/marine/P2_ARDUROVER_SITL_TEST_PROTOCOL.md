@@ -127,6 +127,142 @@ P2-13 can be marked PASS only when all four scenarios pass every required gate. 
 centerlines passed static safety and nominal completeness, S04's actual entry into an original No-Go polygon is a
 hard failure. P2-13 is therefore BLOCKED and P2-14 must not start.
 
+## Post-Failure Root-Cause Diagnostic — 2026-09-23
+
+P2-13D diagnosed the frozen S04 failure without changing the scenario, canonical path, planner, safety margin,
+swath, MissionAdapter, or persistence. The authoritative S04 result above remains FAIL: `30/939` samples entered
+the original No-Go polygon and the maximum sampled penetration remains `1.5458109509 m`. Diagnostic runs use
+the `S04-DIAG-*` namespace and do not replace that result.
+
+### Incident-to-path mapping
+
+The offline mapper consumed the frozen S04 `.plan`, trajectory CSV, and incident analysis. Its complete
+sample-level table is retained as
+`build/P2-13-diagnostic/offline-original/incident-path-mapping.csv`, with the same information and summary in
+`incident-path-mapping.json`. It found the same 30 samples and mission-sequence set as the original analysis.
+Its independent local projection recomputed a `1.545812904 m` maximum penetration, approximately `0.000002 m`
+from the authoritative geometry result.
+
+Every incident's nearest canonical leg was Coverage, and every nearest segment had an endpoint within the
+`0.002 m` diagnostic backend tolerance of the inflated No-Go boundary. They are therefore classified only as
+`No-Go boundary-support candidate`; no production provenance was added. Deep incursions were as much as
+`2.543983 m` from their nearest planned segment, so a more specific cell-sweep/connector attribution would not
+be reliable.
+
+| Mission sequence | Samples | Maximum penetration | Nearest segment(s) | Nearest waypoint(s) | Nearest-turn range |
+| ---: | ---: | ---: | --- | --- | ---: |
+| `117` | 1 | `0.024126 m` | `115` | `116` | `1.305952 deg` |
+| `131` | 1 | `0.024127 m` | `115` | `116` | `1.305952 deg` |
+| `132` | 3 | `0.346954 m` | `115` | `116` | `1.305952 deg` |
+| `133` | 1 | `0.355253 m` | `7` | `7` | `81.443185 deg` |
+| `134` | 3 | `0.347717 m` | `7` | `165` | `89.999222 deg` |
+| `135` | 2 | `0.310040 m` | `7` | `165` | `89.999222 deg` |
+| `136` | 1 | `0.242222 m` | `7` | `165` | `89.999222 deg` |
+| `137` | 3 | `0.197010 m` | `7` | `165` | `89.999222 deg` |
+| `138` | 1 | `0.001093 m` | `7` | `165` | `89.999222 deg` |
+| `152` | 3 | `0.469411 m` | `115` | `116` | `1.305952 deg` |
+| `153` | 8 | `1.545813 m` | `7, 43, 115` | `43, 116, 162, 165` | `1.276978..116.494398 deg` |
+| `167` | 3 | `0.235634 m` | `7, 115` | `7, 116` | `1.305952..81.443185 deg` |
+
+The incidents are concentrated around planned No-Go boundary support, but not exclusively around large canonical
+turn angles: the nearest triplets include both approximately `1.3 deg` direction changes and `81..116 deg`
+turns. Mission sequence and nearest geometry are recorded independently; the nearest geometry is not assumed to
+be the active mission leg after the vehicle has departed significantly from the canonical path.
+
+### Rover parameters and verified execution semantics
+
+The live Rover-4.7.0 parameter snapshot was identical before and after every completed diagnostic run:
+
+| Parameter | Value |
+| --- | ---: |
+| `WP_RADIUS` | `3.0 m` baseline |
+| `WP_SPEED` | `5.0 m/s` baseline |
+| `TURN_RADIUS` | `0.9 m` |
+| `ATC_TURN_MAX_G` | `0.600000024` |
+| `WP_ACCEL` | `0` |
+| `WP_JERK` | `0` |
+
+All requested parameters were present. Rover-4.7.0 source in the pinned SITL image verifies:
+
+- `ModeAuto::start_command()` dispatches `MAV_CMD_NAV_WAYPOINT` to `do_nav_wp()`
+  (`Rover/mode_auto.cpp:513-517`).
+- A normal continuous waypoint passes the current and next locations into `AR_WPNav`; `param1 > 0` instead sets
+  `always_stop_at_destination` and suppresses that next-location look-ahead (`mode_auto.cpp:728-755`).
+- `AR_WPNav` documents that the next destination enables smooth cornering (`AR_WPNav.cpp:201-203`) and advances
+  the S-curve using `max(WP_RADIUS, TURN_RADIUS)` (`AR_WPNav.cpp:447-448`).
+- A non-fast waypoint is still accepted when the vehicle is within `WP_RADIUS` **or** has passed the finish line;
+  ALL-STOP does not require the vehicle to reach the exact coordinate (`AR_WPNav.cpp:455-465`).
+- Rover's `do_nav_wp()` reads `cmd.p1` for the delay/stop behavior but does not use MissionItem `param2` as a
+  per-waypoint AR_WPNav radius override. `param2` is therefore not a valid fix interface for this issue.
+
+### Diagnostic execution results
+
+All completed runs restored `WP_RADIUS` and `WP_SPEED`, returned the Rover to disarmed HOLD, used the frozen plan
+SHA256 `a9cad2b593d827266751efe055534e4eecf0ea4be416ca7adbd4f4039e7b1b60`, and reported Mission Complete.
+
+| Run | Geometry | WP_RADIUS | WP_SPEED | Stop policy | Original No-Go entry | Samples inside | Max penetration / min signed clearance | Mission Complete |
+| --- | --- | ---: | ---: | --- | --- | ---: | ---: | --- |
+| Original S04 | frozen | `3 m` | `5 m/s` | Fly-through | **FAIL** | `30/939` | `1.545811 / -1.545811 m` | PASS |
+| D00 | frozen | `3 m` | `5 m/s` | Fly-through | **FAIL, reproduced** | `36/951` | `1.140982 / -1.140982 m` | PASS |
+| D01 | frozen | `1 m` | `5 m/s` | Fly-through | **FAIL** | `3/875` | `0.257572 / -0.257572 m` | PASS |
+| D02 | frozen | `0.5 m` | `5 m/s` | Fly-through | **FAIL** | `3/894` | `0.197372 / -0.197372 m` | PASS |
+| D03 | frozen | `3 m` | `2.5 m/s` | Fly-through | **FAIL** | `54/927` | `1.825197 / -1.825197 m` | PASS |
+| D04 | frozen | `3 m` | `5 m/s` | ALL-STOP, 183 waypoints | **FAIL** | `74/2221` | `0.737777 / -0.737777 m` | PASS |
+| D05 | frozen | `3 m` | `5 m/s` | targeted-stop | NOT RUN: D04 did not eliminate breach | N/A | N/A | N/A |
+| D06 | S03 | N/A | N/A | optional comparison | NOT RUN: stop semantics were ineffective | N/A | N/A | N/A |
+
+D01 demonstrates substantial `WP_RADIUS` sensitivity but not closure. D02 provides only a small additional
+change because `TURN_RADIUS=0.9 m` bounds the effective S-curve radius. D03 shows that reducing speed alone is
+not a sufficient contract in this configuration. Most importantly, D04 disproves the hypothesis that continuous
+waypoint look-ahead is the only mechanism: removing look-ahead still allowed original No-Go entry. Under the
+prescribed decision table this is **Case D**. Tracking, waypoint acceptance/finish-line behavior, controller
+dynamics, and path geometry require deeper joint investigation.
+
+The evidence answers for architecture review are:
+
+1. The frozen-run samples map to Coverage legs whose nearest geometry is No-Go boundary-support candidate.
+2. All 30 original samples are concentrated around that boundary-support geometry.
+3. They are not restricted to large turns; nearest triplets range from about `1.3` to `116.5 deg`.
+4. Radius sensitivity is large (`1.140982 m` at 3 m versus `0.257572 m` at 1 m in the repeated runs), but neither
+   1 m nor the 0.9 m effective lower bound eliminated entry.
+5. Half speed did not help in D03 and produced `1.825197 m` maximum sampled penetration.
+6. ALL-STOP did not eliminate entry.
+7. Targeted-stop was not run because the prerequisite was false.
+8. No minimum stop-waypoint count can be claimed; stopping all 183 waypoints was insufficient.
+
+The next production-design review must define an execution-safety contract that accounts for the Rover's
+waypoint acceptance and controller/tracking envelope, and then decide whether execution hints, geometry
+clearance, or turn-aware planning belong at the Task/Plan/Mission boundaries. P2-13D deliberately implements
+none of those production changes.
+
+### Diagnostic evidence hashes
+
+Large telemetry and generated images remain uncommitted under `build/P2-13-diagnostic`.
+
+| Run | `.tlog` SHA256 | Trajectory CSV SHA256 | Overlay SHA256 | Parameter snapshot SHA256 |
+| --- | --- | --- | --- | --- |
+| D00 | `f87bd90adce942b877c56185a0cb6a6e564e206ea20356e4e7b79450c6573ed2` | `ac8d1a5750c71ece19d619d6a943d52a91137a312d87a5bbf5c59d6314717123` | `aa422e0c09cd7314f1a25fdbd51869b6f7bd88ab721407fdeb2d96610e9103b4` | `a30644aec598e3d3a7d7d6ab2ddbef0c348f5be53c08865faa2eca2364a8ad18` |
+| D01 | `82f0911f5ee3809bbc44ba51193e87ac0b4adfc7dbe193777df36c9090f6dfe5` | `9c57481fca739089d4180d1d5d08ce3201d7e2f25deb2b25460f26a1e78dea5a` | `ee3af95135d9fb90ac7a5abec403083cc4de452dc7c816db34e0438d78156f62` | `77f59e433d98b8609455f9eeadcd803e0657471ec09ab4350a90568b158473c5` |
+| D02 | `4253876e007d3f415ac540787b95ff629997fa06f48cc2b0869bfc5a9bac8dcd` | `741fc8acf64158741cbe4b0171ad27e874383a33f9530682e54310a8f306a5dc` | `24660982a8d25e087f3141d2e97f8f6cb38e9c3984de62223fb96c7350e4f225` | `c9eeb742f01cdb5ce60f4b729df8863866cb412b15e1d261d2ebe3d640ab4b74` |
+| D03 | `a063680d9f542da2a2962f1c031a760afd3e63bf5ce4229e65c6c83a6526aad4` | `63f264dac05ac03e1797afb875ac7bace2299bb43b02b40c8733cc09e4b883ac` | `aa139432e21339f9b3e8afc2456651a0fd6031838c407d9fc89bd5641c9a4b67` | `ee68fced03d1907c7b3e55c5fd644f362e6c3ca2764830ebf9ac5a3996d03a38` |
+| D04 | `dc7fb8f4e0e5496a69c05de0d6958fd0d9d19a5b0f881f75719dec61f1800e4c` | `b516d79639d04366b09008bbdcfe4bf5f35feb77f836b570178520e948f2659f` | `bf4907222c4b11789a924eebf6cac2d02ee8bbacba37bfce63adadf5516ed24d` | `8148ced2c6c2f6853263f4fd90b31640bb4357c2fb1b31a134e28005220f6118` |
+
+Result: **P2-13 remains BLOCKED. P2-14 must not start.**
+
+### Diagnostic verification
+
+- Debug `QGroundControl` built successfully after the final harness changes.
+- All 26 registered Marine test classes passed; the standalone SITL diagnostic skipped cleanly when its
+  opt-in environment was absent.
+- Production Release `QGroundControl` built successfully in the MSVC x64 developer environment.
+- `clang-format`, Python byte-compilation, the offline mapper rerun, and diff whitespace checks passed. Ruff
+  passed before final documentation-only edits. `clang-tidy` could not process the MSVC-generated PCH and is
+  recorded as an environment limitation rather than a source failure.
+- `MissionControllerTest` and `MissionControllerTreeTest` were blocked only by the existing denied-access
+  component/parameter cache warnings promoted by strict-log mode. `PlanMasterControllerTest` had the same
+  cache/ACL debt plus its existing locale-sensitive English log expectation; no new Marine assertion failed.
+- Clazy remains a supplemental SKIP. The full pre-commit cache/ACL limitation remains toolchain debt.
+
 ## Environment and Known Limitations
 
 - P2 guarantees the planned centerline lies in `TrackFeasibleRegion`; it does not implement turn-radius-aware or
@@ -151,10 +287,10 @@ hard failure. P2-13 is therefore BLOCKED and P2-14 must not start.
   `0.054991 m` outside the original No-Go polygon.
 - S04 passed every planning and mission-chain gate, reached waypoints `1..183` sequentially, and reported
   Mission Complete, but then failed the mandatory original No-Go trajectory assertion.
-- No planner, scenario, safety-margin, swath, or vehicle parameter was changed after the S04 failure, and no
-  diagnostic scenario rerun was performed.
-- Production source remains the `b966a986b` baseline. The only repository additions for P2-13 are the standalone
-  validation harness, its build registration, and this evidence record.
+- During the authoritative P2-13 run, no planner, scenario, safety-margin, swath, or vehicle parameter was
+  changed after the S04 failure. The later P2-13D runs are recorded separately above and do not replace it.
+- Production source remains the `b966a986b` baseline. P2-13D changed only the standalone validation harness,
+  offline diagnostic helper, and this evidence record; it did not change production planning or mission code.
 - The final Windows Debug and production Release `QGroundControl` builds passed.
 - All 26 registered Marine test classes passed. With the live-enablement environment variable absent, the
   standalone SITL class exercised its intentional skip path and did not rerun the four scenarios.
