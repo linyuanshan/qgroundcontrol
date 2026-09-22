@@ -11,4 +11,5 @@ private slots:
     void cleanup() override;
     void _validateP2Scenarios();
     void _diagnoseS04Execution();
+    void _analyzeExecutionSafety();
 };

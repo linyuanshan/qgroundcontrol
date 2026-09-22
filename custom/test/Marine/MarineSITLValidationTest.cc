@@ -20,6 +20,7 @@
 #include <QtTest/QTest>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -33,6 +34,7 @@
 #include "FirmwarePlugin.h"
 #include "Geometry/GeoReference.h"
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/PolygonRegion.h"
 #include "LinkManager.h"
 #include "MAVLinkSigning.h"
 #include "MarinePlanContext.h"
@@ -767,6 +769,193 @@ NoGoExecutionResult analyzeNoGoExecution(const MissionRunResult& missionRun, con
     return result;
 }
 
+double polygonPerimeter(const Polygon2D& polygon)
+{
+    double perimeterM = 0.0;
+    Point2D previous = polygon.vertices.back();
+    for (const Point2D& current : polygon.vertices) {
+        perimeterM += std::hypot(current.xM - previous.xM, current.yM - previous.yM);
+        previous = current;
+    }
+    return perimeterM;
+}
+
+double minimumLegLength(const CoveragePlanningSolution& solution)
+{
+    double minimumM = std::numeric_limits<double>::infinity();
+    for (std::size_t index = 1; index < solution.path.size(); ++index) {
+        minimumM = std::min(minimumM, std::hypot(solution.path[index].xM - solution.path[index - 1].xM,
+                                                 solution.path[index].yM - solution.path[index - 1].yM));
+    }
+    return minimumM;
+}
+
+bool sameSolution(const CoveragePlanningSolution& first, const CoveragePlanningSolution& second)
+{
+    if ((first.status != second.status) || (first.error != second.error) || (first.legRoles != second.legRoles) ||
+        (first.path.size() != second.path.size()) || (first.coverageLengthM != second.coverageLengthM) ||
+        (first.transitLengthM != second.transitLengthM) || (first.pathLengthM != second.pathLengthM) ||
+        (first.selectedSweepAngleDeg != second.selectedSweepAngleDeg) || (first.cellCount != second.cellCount) ||
+        (first.turnCount != second.turnCount)) {
+        return false;
+    }
+    for (std::size_t index = 0; index < first.path.size(); ++index) {
+        if ((first.path[index].xM != second.path[index].xM) || (first.path[index].yM != second.path[index].yM)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<Polygon2D> miterInflatedRectangle(const Polygon2D& polygon, double marginM)
+{
+    if (polygon.vertices.size() != 4) {
+        return std::nullopt;
+    }
+    double minimumX = std::numeric_limits<double>::infinity();
+    double minimumY = std::numeric_limits<double>::infinity();
+    double maximumX = -std::numeric_limits<double>::infinity();
+    double maximumY = -std::numeric_limits<double>::infinity();
+    for (const Point2D& point : polygon.vertices) {
+        minimumX = std::min(minimumX, point.xM);
+        minimumY = std::min(minimumY, point.yM);
+        maximumX = std::max(maximumX, point.xM);
+        maximumY = std::max(maximumY, point.yM);
+    }
+    for (const Point2D& point : polygon.vertices) {
+        const bool onX = (point.xM == minimumX) || (point.xM == maximumX);
+        const bool onY = (point.yM == minimumY) || (point.yM == maximumY);
+        if (!onX || !onY) {
+            return std::nullopt;
+        }
+    }
+    return rectangle(minimumX - marginM, minimumY - marginM, maximumX + marginM, maximumY + marginM);
+}
+
+QJsonObject analyzeExecutionCandidate(const ScenarioDefinition& definition, double executionMarginM, bool miterNoGo)
+{
+    const double totalMarginM = definition.safetyMarginM + executionMarginM;
+    CoveragePlanningProblem planningProblem = problemFor(definition);
+    PolygonRegionSet2D executionRegion;
+    Geometry::PolygonRegionOperationStatus geometryStatus = Geometry::PolygonRegionOperationStatus::GeometryFailure;
+
+    if (!miterNoGo) {
+        planningProblem.safetyMarginM = totalMarginM;
+        const Geometry::PolygonRegionOperationResult trackFeasible =
+            Geometry::buildTrackFeasibleRegion(definition.outer, definition.noGoRegions, totalMarginM);
+        geometryStatus = trackFeasible.status;
+        executionRegion = trackFeasible.regions;
+    } else {
+        const Geometry::PolygonRegionOperationResult insetOuter =
+            Geometry::buildTrackFeasibleRegion(definition.outer, {}, totalMarginM);
+        if ((insetOuter.status == Geometry::PolygonRegionOperationStatus::Success) &&
+            (insetOuter.regions.size() == 1) && insetOuter.regions.front().holes.empty()) {
+            std::vector<Polygon2D> inflatedNoGo;
+            inflatedNoGo.reserve(definition.noGoRegions.size());
+            for (const Polygon2D& noGo : definition.noGoRegions) {
+                const std::optional<Polygon2D> inflated = miterInflatedRectangle(noGo, totalMarginM);
+                if (!inflated) {
+                    inflatedNoGo.clear();
+                    break;
+                }
+                inflatedNoGo.push_back(*inflated);
+            }
+            if (inflatedNoGo.size() == definition.noGoRegions.size()) {
+                const Geometry::PolygonRegionOperationResult candidate =
+                    Geometry::buildCoverageTarget(insetOuter.regions.front().outerBoundary, inflatedNoGo);
+                geometryStatus = candidate.status;
+                executionRegion = candidate.regions;
+                if (candidate.status == Geometry::PolygonRegionOperationStatus::Success) {
+                    planningProblem.region.outerBoundary = insetOuter.regions.front().outerBoundary;
+                    planningProblem.region.noGoRegions = std::move(inflatedNoGo);
+                    planningProblem.safetyMarginM = 0.0;
+                }
+            }
+        }
+    }
+
+    const bool geometryFeasible =
+        (geometryStatus == Geometry::PolygonRegionOperationStatus::Success) && !executionRegion.empty();
+    const bool connected = geometryFeasible && (executionRegion.size() == 1);
+    QJsonObject result{{QStringLiteral("scenario"), definition.id},
+                       {QStringLiteral("candidate"), miterNoGo ? QStringLiteral("Miter") : QStringLiteral("Round")},
+                       {QStringLiteral("executionMarginM"), executionMarginM},
+                       {QStringLiteral("totalCenterlineMarginM"), totalMarginM},
+                       {QStringLiteral("geometryFeasible"), geometryFeasible},
+                       {QStringLiteral("connected"), connected},
+                       {QStringLiteral("coverageComplete"), false},
+                       {QStringLiteral("deterministic"), false},
+                       {QStringLiteral("pathPoints"), 0},
+                       {QStringLiteral("legCount"), 0},
+                       {QStringLiteral("turnCount"), 0},
+                       {QStringLiteral("executionBoundaryVertexCount"), 0},
+                       {QStringLiteral("executionBoundaryPerimeterM"), 0.0},
+                       {QStringLiteral("freeSpaceAreaM2"), 0.0}};
+
+    if (geometryFeasible) {
+        const Geometry::PolygonRegionAreaResult area = Geometry::polygonRegionArea(executionRegion);
+        if (area.status == Geometry::PolygonRegionOperationStatus::Success) {
+            result.insert(QStringLiteral("freeSpaceAreaM2"), area.areaM2);
+        }
+        int holeVertexCount = 0;
+        double holePerimeterM = 0.0;
+        for (const PolygonRegion2D& region : executionRegion) {
+            for (const Polygon2D& hole : region.holes) {
+                holeVertexCount += static_cast<int>(hole.vertices.size());
+                holePerimeterM += polygonPerimeter(hole);
+            }
+        }
+        result.insert(QStringLiteral("executionBoundaryVertexCount"), holeVertexCount);
+        result.insert(QStringLiteral("executionBoundaryPerimeterM"), holePerimeterM);
+    }
+    if (!connected) {
+        result.insert(QStringLiteral("message"), QStringLiteral("Execution region is empty or disconnected"));
+        return result;
+    }
+
+    const BoustrophedonCoveragePlanner planner;
+    const CoveragePlanningSolution solution = planner.plan(planningProblem);
+    const CoveragePlanningSolution repeated = planner.plan(planningProblem);
+    result.insert(QStringLiteral("planningStatus"), static_cast<int>(solution.status));
+    result.insert(QStringLiteral("planningError"), static_cast<int>(solution.error));
+    result.insert(QStringLiteral("message"), QString::fromStdString(solution.message));
+    result.insert(QStringLiteral("deterministic"), sameSolution(solution, repeated));
+    if (solution.status != PlanningStatus::Success) {
+        return result;
+    }
+
+    bool geometryGate = true;
+    for (std::size_t index = 1; index < solution.path.size(); ++index) {
+        if (!Geometry::segmentInsidePolygonRegionForValidatedGeometry(executionRegion, solution.path[index - 1],
+                                                                      solution.path[index])) {
+            geometryGate = false;
+            break;
+        }
+    }
+    const Geometry::PolygonRegionOperationResult coverageTarget =
+        Geometry::buildCoverageTarget(definition.outer, definition.noGoRegions);
+    CoverageCompletenessResult completeness;
+    if ((coverageTarget.status == Geometry::PolygonRegionOperationStatus::Success) &&
+        (coverageTarget.regions.size() == 1)) {
+        completeness =
+            validateNominalCoverage(coverageTarget.regions, solution.path, solution.legRoles, definition.swathWidthM);
+    }
+
+    result.insert(QStringLiteral("geometryGate"), geometryGate);
+    result.insert(QStringLiteral("coverageComplete"), completeness.status == PlanningStatus::Success);
+    result.insert(QStringLiteral("coverageError"), static_cast<int>(completeness.error));
+    result.insert(QStringLiteral("coverageTargetAreaM2"), completeness.coverageTargetAreaM2);
+    result.insert(QStringLiteral("uncoveredAreaM2"), completeness.uncoveredAreaM2);
+    result.insert(QStringLiteral("coverageToleranceM2"), completeness.toleranceM2);
+    result.insert(QStringLiteral("pathPoints"), static_cast<qint64>(solution.path.size()));
+    result.insert(QStringLiteral("legCount"), static_cast<qint64>(solution.legRoles.size()));
+    result.insert(QStringLiteral("turnCount"), solution.turnCount);
+    result.insert(QStringLiteral("minimumLegLengthM"), minimumLegLength(solution));
+    result.insert(QStringLiteral("pathLengthM"), solution.pathLengthM);
+    result.insert(QStringLiteral("selectedSweepAngleDeg"), solution.selectedSweepAngleDeg);
+    return result;
+}
+
 }  // namespace
 
 void MarineSITLValidationTest::init()
@@ -786,6 +975,36 @@ void MarineSITLValidationTest::cleanup()
         QTest::qWait(50);
     }
     UnitTest::cleanup();
+}
+
+void MarineSITLValidationTest::_analyzeExecutionSafety()
+{
+    const QString outputPath = qEnvironmentVariable("QGC_P2_EXECUTION_SAFETY_ANALYSIS");
+    if (outputPath.isEmpty()) {
+        QSKIP("Set QGC_P2_EXECUTION_SAFETY_ANALYSIS to run the offline P2-13E analysis");
+    }
+
+    constexpr std::array<double, 5> ExecutionMarginsM{0.0, 0.25, 0.5, 0.75, 1.0};
+    QJsonArray results;
+    for (const ScenarioDefinition& definition : scenarios()) {
+        if ((definition.id != QStringLiteral("S03")) && (definition.id != QStringLiteral("S04"))) {
+            continue;
+        }
+        ScenarioDefinition analysisDefinition = definition;
+        analysisDefinition.sweepAngleMode = SweepAngleMode::Manual;
+        analysisDefinition.sweepAngleDeg = definition.id == QStringLiteral("S04") ? 90.00014626 : 90.0;
+        for (const bool miterNoGo : {false, true}) {
+            for (const double executionMarginM : ExecutionMarginsM) {
+                results.append(analyzeExecutionCandidate(analysisDefinition, executionMarginM, miterNoGo));
+            }
+        }
+    }
+
+    const QJsonObject report{{QStringLiteral("safetyMarginM"), 1.0},
+                             {QStringLiteral("swathWidthM"), 4.0},
+                             {QStringLiteral("sweepAnglesFrozenFromEvidence"), true},
+                             {QStringLiteral("results"), results}};
+    QVERIFY2(writeJson(outputPath, report), qPrintable(QStringLiteral("Cannot write %1").arg(outputPath)));
 }
 
 void MarineSITLValidationTest::_validateP2Scenarios()
