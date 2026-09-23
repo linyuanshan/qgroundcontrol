@@ -1,5 +1,7 @@
 #include "CoverageFreeSpace.h"
 
+#include <cmath>
+
 #include "CoverageProblemValidator.h"
 #include "Geometry/PolygonRegion.h"
 
@@ -60,20 +62,20 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
         return failure(CoveragePlanningError::GeometryFailure);
     }
 
-    const Geometry::PolygonRegionOperationResult trackFeasible = Geometry::buildTrackFeasibleRegion(
+    const Geometry::PolygonRegionOperationResult nominalTrackFeasible = Geometry::buildTrackFeasibleRegion(
         normalizedProblem.region.outerBoundary, normalizedProblem.region.noGoRegions, normalizedProblem.safetyMarginM);
-    if (trackFeasible.status != Geometry::PolygonRegionOperationStatus::Success) {
+    if (nominalTrackFeasible.status != Geometry::PolygonRegionOperationStatus::Success) {
         return failure(CoveragePlanningError::GeometryFailure);
     }
-    if (trackFeasible.regions.empty()) {
+    if (nominalTrackFeasible.regions.empty()) {
         return failure(CoveragePlanningError::NoNavigableArea);
     }
-    if (trackFeasible.regions.size() != 1) {
+    if (nominalTrackFeasible.regions.size() != 1) {
         return failure(CoveragePlanningError::DisconnectedFeasibleRegion);
     }
 
     const Geometry::PolygonRegionOperationResult reachable =
-        Geometry::bufferPolygonRegions(trackFeasible.regions, normalizedProblem.swathWidthM / 2.0);
+        Geometry::bufferPolygonRegions(nominalTrackFeasible.regions, normalizedProblem.swathWidthM / 2.0);
     if (reachable.status != Geometry::PolygonRegionOperationStatus::Success) {
         return failure(CoveragePlanningError::GeometryFailure);
     }
@@ -86,12 +88,51 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
         return failure(CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
     }
 
+    const double totalMarginM = normalizedProblem.safetyMarginM + normalizedProblem.executionSafety.executionMarginM;
+    if (!std::isfinite(totalMarginM)) {
+        return failure(CoveragePlanningError::GeometryFailure);
+    }
+    const Geometry::PolygonRegionOperationResult executionTrackFeasible =
+        Geometry::buildTrackFeasibleRegionConservativeMiter(normalizedProblem.region.outerBoundary,
+                                                            normalizedProblem.region.noGoRegions, totalMarginM);
+    if (executionTrackFeasible.status != Geometry::PolygonRegionOperationStatus::Success) {
+        return failure(CoveragePlanningError::GeometryFailure);
+    }
+    if (executionTrackFeasible.regions.empty()) {
+        return failure(CoveragePlanningError::NoNavigableArea);
+    }
+    if (executionTrackFeasible.regions.size() != 1) {
+        return failure(CoveragePlanningError::DisconnectedFeasibleRegion);
+    }
+    const Geometry::PolygonRegionContainmentResult conservative =
+        Geometry::isRegionSetContained(executionTrackFeasible.regions, nominalTrackFeasible.regions);
+    if (conservative.status != Geometry::PolygonRegionOperationStatus::Success) {
+        return failure(CoveragePlanningError::GeometryFailure);
+    }
+    if (!conservative.contained) {
+        return failure(CoveragePlanningError::ExecutionRegionNotConservative);
+    }
+    const Geometry::PolygonRegionOperationResult executionReachable =
+        Geometry::bufferPolygonRegions(executionTrackFeasible.regions, normalizedProblem.swathWidthM / 2.0);
+    if (executionReachable.status != Geometry::PolygonRegionOperationStatus::Success) {
+        return failure(CoveragePlanningError::GeometryFailure);
+    }
+    const Geometry::PolygonRegionContainmentResult executionReachability =
+        Geometry::isRegionSetContained(coverageTarget.regions, executionReachable.regions);
+    if (executionReachability.status != Geometry::PolygonRegionOperationStatus::Success) {
+        return failure(CoveragePlanningError::GeometryFailure);
+    }
+    if (!executionReachability.contained) {
+        return failure(CoveragePlanningError::CoverageImpossibleWithExecutionMargin);
+    }
+
     CoverageFreeSpaceResult result;
     result.status = PlanningStatus::Success;
     result.error = CoveragePlanningError::None;
     result.freeSpace.coverageTarget = coverageTarget.regions.front();
-    result.freeSpace.trackFeasibleRegion = trackFeasible.regions;
-    result.message = "Coverage target and connected track-feasible region generated";
+    result.freeSpace.nominalTrackFeasibleRegion = nominalTrackFeasible.regions;
+    result.freeSpace.executionTrackFeasibleRegion = executionTrackFeasible.regions;
+    result.message = "Coverage target and connected nominal and execution regions generated";
     return result;
 }
 

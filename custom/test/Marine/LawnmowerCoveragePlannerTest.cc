@@ -163,6 +163,21 @@ void LawnmowerCoveragePlannerTest::_testNoGoCapabilityGate()
     QVERIFY(solution.path.empty());
 }
 
+void LawnmowerCoveragePlannerTest::_testExecutionProfileCapabilityGate()
+{
+    const LawnmowerCoveragePlanner planner;
+    CoveragePlanningProblem input = rectangleProblem(20.0, 10.0, 4.0, 0.0);
+    const CoveragePlanningSolution legacy = planner.plan(input);
+    QCOMPARE(legacy.status, PlanningStatus::Success);
+
+    input.executionSafety.executionMarginM = 0.25;
+    const CoveragePlanningSolution unsupported = planner.plan(input);
+    QCOMPARE(unsupported.status, PlanningStatus::Failed);
+    QCOMPARE(unsupported.error, CoveragePlanningError::UnsupportedExecutionSafetyProfile);
+    QVERIFY(unsupported.path.empty());
+    QVERIFY(unsupported.legRoles.empty());
+}
+
 void LawnmowerCoveragePlannerTest::_testGeneralConvexDeterminism()
 {
     CoveragePlanningProblem problem;

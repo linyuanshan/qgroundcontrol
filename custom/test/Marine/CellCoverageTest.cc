@@ -185,7 +185,7 @@ void CellCoverageTest::_testBackendDerivedRoundedCells()
     const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);
     QVERIFY2(freeSpace.status == PlanningStatus::Success, freeSpace.message.c_str());
     const CoverageDecompositionResult decomposition =
-        decomposeBoustrophedon(freeSpace.freeSpace.trackFeasibleRegion, problem.requestedSweepAngleDeg);
+        decomposeBoustrophedon(freeSpace.freeSpace.nominalTrackFeasibleRegion, problem.requestedSweepAngleDeg);
     QVERIFY2(decomposition.status == PlanningStatus::Success, decomposition.message.c_str());
 
     const double mathAngleDeg = Geometry::navigationAngleToMathAngle(problem.requestedSweepAngleDeg);
@@ -244,13 +244,30 @@ void CellCoverageTest::_testNonCardinalAndNarrowCells()
     verifyCoverage(first.cells.front());
 }
 
-void CellCoverageTest::_testFailureIsAtomic()
+void CellCoverageTest::_testAlternateLaneParity()
 {
     const Polygon2D unsafe =
         polygon({{0.0, 0.0}, {10.0, 0.0}, {10.0, 1.5}, {3.0, 3.0}, {10.0, 4.5}, {10.0, 10.0}, {0.0, 10.0}});
     const std::vector<CoverageCell> cells = {
         {.id = 0, .polygon = rectangle(20.0, 0.0, 30.0, 10.0)},
         {.id = 1, .polygon = unsafe},
+    };
+    const CellCoverageGenerationResult result = generateCellCoverage(cells, 4.0, 90.0);
+
+    QVERIFY2(result.status == PlanningStatus::Success, result.message.c_str());
+    QCOMPARE(result.cells.size(), cells.size());
+    for (const CellCoverage& coverage : result.cells) {
+        verifyCoverage(coverage);
+    }
+    compareResults(result, generateCellCoverage(cells, 4.0, 90.0));
+}
+
+void CellCoverageTest::_testFailureIsAtomic()
+{
+    const Polygon2D invalid = polygon({{0.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}, {10.0, 0.0}});
+    const std::vector<CoverageCell> cells = {
+        {.id = 0, .polygon = rectangle(20.0, 0.0, 30.0, 10.0)},
+        {.id = 1, .polygon = invalid},
     };
     const CellCoverageGenerationResult result = generateCellCoverage(cells, 4.0, 90.0);
 

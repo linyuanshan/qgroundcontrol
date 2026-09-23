@@ -26,6 +26,8 @@ void CoverageInspectionPlanCreator::createPlan(const QGeoCoordinate& mapCenterCo
     Marine::MarineTask task;
     task.name = CoverageInspectionComplexItem::canonicalName;
     task.planner.plannerId = "marine.coverage.bcd";
+    // Frozen Rover V1 candidate from P2-13E; not a universal vehicle default.
+    task.planner.executionSafety.executionMarginM = 0.25;
     const double latitude = mapCenterCoord.latitude();
     const double longitude = mapCenterCoord.longitude();
     constexpr double delta = 0.0005;

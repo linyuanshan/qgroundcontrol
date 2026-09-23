@@ -335,7 +335,7 @@ void NominalCoverageValidatorTest::_testP2CVerticalSlice()
     const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);
     QVERIFY2(freeSpace.status == PlanningStatus::Success, freeSpace.message.c_str());
     const CoverageDecompositionResult decomposition =
-        decomposeBoustrophedon(freeSpace.freeSpace.trackFeasibleRegion, problem.requestedSweepAngleDeg);
+        decomposeBoustrophedon(freeSpace.freeSpace.executionTrackFeasibleRegion, problem.requestedSweepAngleDeg);
     QVERIFY2(decomposition.status == PlanningStatus::Success, decomposition.message.c_str());
     const CellCoverageGenerationResult generated =
         generateCellCoverage(decomposition.cells, problem.swathWidthM, problem.requestedSweepAngleDeg);
@@ -355,7 +355,7 @@ void NominalCoverageValidatorTest::_testP2CVerticalSlice()
     QVERIFY(preOrderCompleteness.uncoveredAreaM2 > preOrderCompleteness.toleranceM2);
 
     const BoundaryCoverageSupportResult boundarySupport =
-        generateBoundaryCoverageSupport(freeSpace.freeSpace.trackFeasibleRegion);
+        generateBoundaryCoverageSupport(freeSpace.freeSpace.executionTrackFeasibleRegion);
     QVERIFY2(boundarySupport.status == PlanningStatus::Success, boundarySupport.message.c_str());
     QCOMPARE(boundarySupport.components.size(), std::size_t{2});
 
@@ -366,11 +366,11 @@ void NominalCoverageValidatorTest::_testP2CVerticalSlice()
         QVERIFY(Geometry::pointInsidePolygonRegion(boundaryFootprint.regions, point));
     }
 
-    const CellOrderingResult ordered =
-        orderCellTraversals(freeSpace.freeSpace.trackFeasibleRegion, generated.cells, generated.traversalStates);
+    const CellOrderingResult ordered = orderCellTraversals(freeSpace.freeSpace.executionTrackFeasibleRegion,
+                                                           generated.cells, generated.traversalStates);
     QVERIFY2(ordered.status == PlanningStatus::Success, ordered.message.c_str());
     const ComplexCoverageAssemblyResult assembly = assembleComplexCoverage(
-        freeSpace.freeSpace.trackFeasibleRegion, boundarySupport.components, generated.cells, ordered.visits);
+        freeSpace.freeSpace.executionTrackFeasibleRegion, boundarySupport.components, generated.cells, ordered.visits);
     QVERIFY2(assembly.status == PlanningStatus::Success, assembly.message.c_str());
 
     std::set<CoverageCellId> visited;
@@ -407,7 +407,7 @@ void NominalCoverageValidatorTest::_testHalfSwathSafetyPrecheck()
     const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);
     QCOMPARE(freeSpace.status, PlanningStatus::Failed);
     QCOMPARE(freeSpace.error, CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
-    QVERIFY(freeSpace.freeSpace.trackFeasibleRegion.empty());
+    QVERIFY(freeSpace.freeSpace.executionTrackFeasibleRegion.empty());
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(NominalCoverageValidatorTest, TestLabel::Unit)

@@ -12,5 +12,6 @@ private slots:
     void _testNoGoDecompositionCoversEveryCell();
     void _testBackendDerivedRoundedCells();
     void _testNonCardinalAndNarrowCells();
+    void _testAlternateLaneParity();
     void _testFailureIsAtomic();
 };

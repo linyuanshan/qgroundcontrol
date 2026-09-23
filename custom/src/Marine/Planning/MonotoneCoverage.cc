@@ -98,7 +98,8 @@ LaneScheduleResult deriveLaneSchedule(const Polygon2D& targetPolygon, const Poly
 
 MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon,
                                     double swathWidthM, double navigationAngleDeg,
-                                    std::span<const double> lanePositionsYM, GeometryValidationMode validationMode)
+                                    std::span<const double> lanePositionsYM, GeometryValidationMode validationMode,
+                                    bool startFromMaximumX = false)
 {
     const bool backendDerived = validationMode == GeometryValidationMode::BackendDerived;
     const Marine::PolygonRegionSet2D targetRegions{{.outerBoundary = targetPolygon}};
@@ -198,7 +199,7 @@ MonotoneCoverageResult generateCore(const Polygon2D& targetPolygon, const Polygo
         const Marine::Geometry::ScanlineInterval& interval = intersection.intervals.front();
         Point2D first{.xM = interval.minimumXM, .yM = laneY};
         Point2D second{.xM = interval.maximumXM, .yM = laneY};
-        if ((laneIndex % 2) != 0) {
+        if (((laneIndex % 2) != 0) != startFromMaximumX) {
             std::swap(first, second);
         }
         const std::size_t startIndex = result.path.size();
@@ -281,10 +282,11 @@ MonotoneCoverageResult generateMonotoneCoverage(const Polygon2D& targetPolygon, 
 MonotoneCoverageResult generateMonotoneCoverageForValidatedGeometry(const Polygon2D& targetPolygon,
                                                                     const Polygon2D& navigablePolygon,
                                                                     double swathWidthM, double navigationAngleDeg,
-                                                                    std::span<const double> lanePositionsYM)
+                                                                    std::span<const double> lanePositionsYM,
+                                                                    bool startFromMaximumX)
 {
     return generateCore(targetPolygon, navigablePolygon, swathWidthM, navigationAngleDeg, lanePositionsYM,
-                        GeometryValidationMode::BackendDerived);
+                        GeometryValidationMode::BackendDerived, startFromMaximumX);
 }
 
 MonotoneCoverageResult generateMonotoneCoverage(const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon,

@@ -73,6 +73,7 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlan()
     QCOMPARE(task->type, MarineTaskType::CoverageInspection);
     QCOMPARE(task->name, std::string("Coverage Inspection"));
     QCOMPARE(task->planner.plannerId, std::string("marine.coverage.bcd"));
+    QCOMPARE(task->planner.executionSafety.executionMarginM, 0.25);
     QCOMPARE(task->region.outerBoundary.vertices.size(), std::size_t(4));
     QVERIFY(task->region.outerBoundary.vertices.front().latitudeDeg != mapCenter.latitude());
     QVERIFY(task->region.outerBoundary.vertices.front().longitudeDeg != mapCenter.longitude());

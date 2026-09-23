@@ -11,4 +11,5 @@ private slots:
     void _testManualNormalizationAndDeterminism();
     void _testAutoSelectionAndInputOrder();
     void _testFailurePropagation();
+    void _testExecutionSafeScenarios();
 };

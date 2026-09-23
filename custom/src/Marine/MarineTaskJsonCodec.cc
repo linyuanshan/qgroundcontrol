@@ -2,13 +2,15 @@
 
 #include <QtCore/QJsonArray>
 
+#include <cmath>
 #include <utility>
 
 #include "JsonParsing.h"
 
 namespace {
 
-constexpr int currentVersion = 1;
+constexpr int currentVersion = 2;
+constexpr int legacyVersion = 1;
 constexpr const char* versionKey = "version";
 constexpr const char* idKey = "id";
 constexpr const char* typeKey = "type";
@@ -24,6 +26,8 @@ constexpr const char* sweepAngleModeKey = "sweepAngleMode";
 constexpr const char* sweepAngleDegKey = "sweepAngleDeg";
 constexpr const char* plannerKey = "planner";
 constexpr const char* plannerIdKey = "id";
+constexpr const char* executionSafetyKey = "executionSafety";
+constexpr const char* executionMarginMKey = "executionMarginM";
 constexpr const char* sensorsKey = "sensors";
 constexpr const char* cameraEnabledKey = "cameraEnabled";
 constexpr const char* cameraRecordKey = "cameraRecord";
@@ -114,7 +118,9 @@ bool MarineTaskJsonCodec::save(const MarineTask& task, QJsonObject& json, QStrin
                                      {safetyMarginMKey, task.coverage.safetyMarginM},
                                      {sweepAngleModeKey, sweepAngleModeToString(task.coverage.sweepAngleMode)},
                                      {sweepAngleDegKey, task.coverage.sweepAngleDeg}};
-    const QJsonObject plannerObject{{plannerIdKey, QString::fromStdString(task.planner.plannerId)}};
+    const QJsonObject plannerObject{
+        {plannerIdKey, QString::fromStdString(task.planner.plannerId)},
+        {executionSafetyKey, QJsonObject{{executionMarginMKey, task.planner.executionSafety.executionMarginM}}}};
     const QJsonObject sensorsObject{{cameraEnabledKey, task.sensors.cameraEnabled},
                                     {cameraRecordKey, task.sensors.cameraRecord},
                                     {sonarEnabledKey, task.sensors.sonarEnabled},
@@ -141,7 +147,8 @@ bool MarineTaskJsonCodec::load(const QJsonObject& json, MarineTask& task, QStrin
     if (!JsonParsing::validateKeys(json, versionKeys, errorString)) {
         return false;
     }
-    if (json.value(versionKey).toInt() != currentVersion) {
+    const int version = json.value(versionKey).toInt();
+    if ((version != legacyVersion) && (version != currentVersion)) {
         errorString = QStringLiteral("Unsupported marine task version");
         return false;
     }
@@ -184,6 +191,7 @@ bool MarineTaskJsonCodec::load(const QJsonObject& json, MarineTask& task, QStrin
     const QJsonObject plannerObject = json.value(plannerKey).toObject();
     const QList<JsonParsing::KeyValidateInfo> plannerKeys = {
         {plannerIdKey, QJsonValue::String, true},
+        {executionSafetyKey, QJsonValue::Object, version == currentVersion},
     };
     if (!JsonParsing::validateKeys(plannerObject, plannerKeys, errorString)) {
         return false;
@@ -234,6 +242,21 @@ bool MarineTaskJsonCodec::load(const QJsonObject& json, MarineTask& task, QStrin
         loadedTask.coverage.sweepAngleDeg = coverageObject.value(sweepAngleDegKey).toDouble();
     }
     loadedTask.planner.plannerId = plannerObject.value(plannerIdKey).toString().toStdString();
+    if (version == currentVersion) {
+        const QJsonObject executionSafetyObject = plannerObject.value(executionSafetyKey).toObject();
+        const QList<JsonParsing::KeyValidateInfo> executionSafetyKeys = {
+            {executionMarginMKey, QJsonValue::Double, true},
+        };
+        if (!JsonParsing::validateKeys(executionSafetyObject, executionSafetyKeys, errorString)) {
+            return false;
+        }
+        const double executionMarginM = executionSafetyObject.value(executionMarginMKey).toDouble();
+        if (!std::isfinite(executionMarginM) || (executionMarginM < 0.0)) {
+            errorString = QStringLiteral("Execution margin must be finite and non-negative");
+            return false;
+        }
+        loadedTask.planner.executionSafety.executionMarginM = executionMarginM;
+    }
     loadedTask.sensors.cameraEnabled = sensorsObject.value(cameraEnabledKey).toBool();
     loadedTask.sensors.cameraRecord = sensorsObject.value(cameraRecordKey).toBool();
     loadedTask.sensors.sonarEnabled = sensorsObject.value(sonarEnabledKey).toBool();

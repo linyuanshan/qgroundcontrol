@@ -391,9 +391,9 @@ void BoustrophedonDecompositionTest::_testRoundedHoleEndToEnd()
     problem.requestedSweepAngleDeg = 90.0;
     const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);
     QCOMPARE(freeSpace.status, PlanningStatus::Success);
-    QVERIFY(!freeSpace.freeSpace.trackFeasibleRegion.empty());
-    const auto result = decompose(freeSpace.freeSpace.trackFeasibleRegion.front(), 90.0);
-    verifyCellInvariants(result, freeSpace.freeSpace.trackFeasibleRegion.front(), 90.0);
+    QVERIFY(!freeSpace.freeSpace.executionTrackFeasibleRegion.empty());
+    const auto result = decompose(freeSpace.freeSpace.executionTrackFeasibleRegion.front(), 90.0);
+    verifyCellInvariants(result, freeSpace.freeSpace.executionTrackFeasibleRegion.front(), 90.0);
 }
 
 void BoustrophedonDecompositionTest::_testP204CriticalEventAndNarrowRegionInvariants()

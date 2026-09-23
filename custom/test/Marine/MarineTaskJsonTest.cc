@@ -3,6 +3,8 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 
+#include <limits>
+
 #include "MarineTaskJsonCodec.h"
 
 using namespace Marine;
@@ -25,6 +27,7 @@ MarineTask createTask()
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
     task.coverage.sweepAngleDeg = 37.5;
     task.planner.plannerId = "marine.coverage.mock";
+    task.planner.executionSafety.executionMarginM = 0.25;
     task.sensors.cameraEnabled = true;
     task.sensors.cameraRecord = false;
     task.sensors.sonarEnabled = true;
@@ -60,7 +63,7 @@ void MarineTaskJsonTest::_testRoundTrip()
     const QJsonObject json = saveTask(source);
     const MarineTask loaded = loadTask(json);
 
-    QCOMPARE(json.value("version").toInt(), 1);
+    QCOMPARE(json.value("version").toInt(), 2);
     QCOMPARE(json.value("type").toString(), QStringLiteral("coverageInspection"));
     QVERIFY(loaded.id == source.id);
     QVERIFY(loaded.name == source.name);
@@ -74,6 +77,9 @@ void MarineTaskJsonTest::_testRoundTrip()
     QCOMPARE(loaded.coverage.sweepAngleMode, source.coverage.sweepAngleMode);
     QCOMPARE(loaded.coverage.sweepAngleDeg, source.coverage.sweepAngleDeg);
     QVERIFY(loaded.planner.plannerId == source.planner.plannerId);
+    QCOMPARE(loaded.planner.executionSafety.executionMarginM, 0.25);
+    QCOMPARE(json.value("planner").toObject().value("executionSafety").toObject().value("executionMarginM").toDouble(),
+             0.25);
 }
 
 void MarineTaskJsonTest::_testNoGoRegions()
@@ -120,7 +126,7 @@ void MarineTaskJsonTest::_testUnknownField()
 
 void MarineTaskJsonTest::_testUnsupportedVersion()
 {
-    const QJsonObject json{{"version", 2}, {"futureField", true}};
+    const QJsonObject json{{"version", 3}, {"futureField", true}};
 
     QString errorString;
     MarineTask loaded;
@@ -148,6 +154,49 @@ void MarineTaskJsonTest::_testMissingRegion()
     MarineTask loaded;
     QVERIFY(!MarineTaskJsonCodec::load(json, loaded, errorString));
     QVERIFY(!errorString.isEmpty());
+}
+
+void MarineTaskJsonTest::_testLegacyV1DefaultsToZero()
+{
+    QJsonObject json = saveTask(createTask());
+    json.insert("version", 1);
+    QJsonObject planner = json.value("planner").toObject();
+    planner.remove("executionSafety");
+    json.insert("planner", planner);
+
+    const MarineTask loaded = loadTask(json);
+    QCOMPARE(loaded.planner.executionSafety.executionMarginM, 0.0);
+    QCOMPARE(saveTask(loaded).value("version").toInt(), 2);
+}
+
+void MarineTaskJsonTest::_testInvalidExecutionSafety()
+{
+    const QJsonObject valid = saveTask(createTask());
+    for (const QJsonValue& value : {QJsonValue(-0.1), QJsonValue("0.25"), QJsonValue()}) {
+        QJsonObject json = valid;
+        QJsonObject planner = json.value("planner").toObject();
+        QJsonObject executionSafety = planner.value("executionSafety").toObject();
+        executionSafety.insert("executionMarginM", value);
+        planner.insert("executionSafety", executionSafety);
+        json.insert("planner", planner);
+        MarineTask loaded;
+        QString errorString;
+        QVERIFY(!MarineTaskJsonCodec::load(json, loaded, errorString));
+        QVERIFY(!errorString.isEmpty());
+    }
+
+    QJsonObject missing = valid;
+    QJsonObject planner = missing.value("planner").toObject();
+    planner.remove("executionSafety");
+    missing.insert("planner", planner);
+    MarineTask loaded;
+    QString errorString;
+    QVERIFY(!MarineTaskJsonCodec::load(missing, loaded, errorString));
+
+    MarineTask invalid = createTask();
+    invalid.planner.executionSafety.executionMarginM = std::numeric_limits<double>::infinity();
+    QJsonObject saved;
+    QVERIFY(!MarineTaskJsonCodec::save(invalid, saved, errorString));
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(MarineTaskJsonTest, TestLabel::Unit)

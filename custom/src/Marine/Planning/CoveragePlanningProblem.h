@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "Geometry/GeometryTypes.h"
+#include "MarineTask.h"
 #include "MarineTypes.h"
 #include "PathLegRole.h"
 
@@ -15,8 +16,12 @@ enum class CoveragePlanningError
     InvalidOuterBoundary,
     InvalidSwathWidth,
     InvalidSafetyMargin,
+    InvalidExecutionMargin,
     InvalidSweepAngle,
     CoverageImpossibleWithSafetyMargin,
+    CoverageImpossibleWithExecutionMargin,
+    UnsupportedExecutionSafetyProfile,
+    ExecutionRegionNotConservative,
     UnsupportedNoGoRegion,
     SafetyInsetEmpty,
     SafetyInsetDisconnected,
@@ -42,6 +47,7 @@ struct CoveragePlanningProblem
     Region2D region;
     double swathWidthM = 0.0;
     double safetyMarginM = 0.0;
+    ExecutionSafetyProfile executionSafety;
     SweepAngleMode sweepAngleMode = SweepAngleMode::Auto;
     // Navigation bearing: 0 degrees North, 90 degrees East, clockwise positive.
     double requestedSweepAngleDeg = 0.0;

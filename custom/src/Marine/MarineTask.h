@@ -28,9 +28,15 @@ struct CoverageConfig
     double sweepAngleDeg = 0.0;
 };
 
+struct ExecutionSafetyProfile
+{
+    double executionMarginM = 0.0;
+};
+
 struct PlannerConfig
 {
     std::string plannerId;
+    ExecutionSafetyProfile executionSafety;
 };
 
 struct MarineTask

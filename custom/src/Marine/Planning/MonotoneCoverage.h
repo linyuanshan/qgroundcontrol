@@ -62,7 +62,7 @@ struct MonotoneCoverageResult
 /// The polygons are revalidated with backend-aware predicates before entering the shared coverage core.
 [[nodiscard]] MonotoneCoverageResult generateMonotoneCoverageForValidatedGeometry(
     const Polygon2D& targetPolygon, const Polygon2D& navigablePolygon, double swathWidthM, double navigationAngleDeg,
-    std::span<const double> lanePositionsYM);
+    std::span<const double> lanePositionsYM, bool startFromMaximumX = false);
 
 /// Generates a schedule from the nominal polygon and delegates to the same fixed-angle core.
 [[nodiscard]] MonotoneCoverageResult generateMonotoneCoverage(const Polygon2D& targetPolygon,

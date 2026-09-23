@@ -18,4 +18,7 @@ private slots:
     void _testSafetyExceedsHalfSwath();
     void _testUnreachableCoverage();
     void _testDeterminism();
+    void _testMiterPolygonShapes();
+    void _testExecutionMarginFailure();
+    void _testSharpAngleConservativenessGate();
 };

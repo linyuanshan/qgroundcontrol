@@ -1130,7 +1130,8 @@ void MarineSITLValidationTest::_validateP2Scenarios()
             QCOMPARE(freeSpace.status, PlanningStatus::Success);
             for (std::size_t index = 1; index < localSolution.path.size(); ++index) {
                 QVERIFY(Geometry::segmentInsidePolygonRegionForValidatedGeometry(
-                    freeSpace.freeSpace.trackFeasibleRegion, localSolution.path[index - 1], localSolution.path[index]));
+                    freeSpace.freeSpace.executionTrackFeasibleRegion, localSolution.path[index - 1],
+                    localSolution.path[index]));
             }
             completeness =
                 validateNominalCoverage(PolygonRegionSet2D{freeSpace.freeSpace.coverageTarget}, localSolution.path,
@@ -1373,7 +1374,7 @@ void MarineSITLValidationTest::_diagnoseS04Execution()
     const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);
     QCOMPARE(freeSpace.status, PlanningStatus::Success);
     const QSet<int> targetedPathIndices =
-        targetedStopPathIndices(canonicalPath, freeSpace.freeSpace.trackFeasibleRegion);
+        targetedStopPathIndices(canonicalPath, freeSpace.freeSpace.executionTrackFeasibleRegion);
     if (definition->stopPolicy == DiagnosticStopPolicy::TargetedStop) {
         QVERIFY(!targetedPathIndices.isEmpty());
         QVERIFY(targetedPathIndices.size() < static_cast<qsizetype>(canonicalPath.size()));

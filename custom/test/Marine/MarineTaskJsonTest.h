@@ -14,4 +14,6 @@ private slots:
     void _testUnsupportedVersion();
     void _testMissingId();
     void _testMissingRegion();
+    void _testLegacyV1DefaultsToZero();
+    void _testInvalidExecutionSafety();
 };

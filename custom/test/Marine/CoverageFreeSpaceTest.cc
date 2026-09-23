@@ -129,10 +129,10 @@ void CoverageFreeSpaceTest::_testCoverageTargetAndTrackFeasibleRegion()
     QCOMPARE(result.status, PlanningStatus::Success);
     QCOMPARE(result.error, CoveragePlanningError::None);
     QCOMPARE(result.freeSpace.coverageTarget.holes.size(), std::size_t{2});
-    QCOMPARE(result.freeSpace.trackFeasibleRegion.size(), std::size_t{1});
-    QCOMPARE(result.freeSpace.trackFeasibleRegion.front().holes.size(), std::size_t{2});
+    QCOMPARE(result.freeSpace.nominalTrackFeasibleRegion.size(), std::size_t{1});
+    QCOMPARE(result.freeSpace.nominalTrackFeasibleRegion.front().holes.size(), std::size_t{2});
     QVERIFY(result.freeSpace.coverageTarget.isFinite());
-    QVERIFY(result.freeSpace.trackFeasibleRegion.front().isFinite());
+    QVERIFY(result.freeSpace.nominalTrackFeasibleRegion.front().isFinite());
 }
 
 void CoverageFreeSpaceTest::_testInflationMergesNoGo()
@@ -222,7 +222,83 @@ void CoverageFreeSpaceTest::_testDeterminism()
     for (std::size_t index = 0; index < first.freeSpace.coverageTarget.holes.size(); ++index) {
         comparePolygon(first.freeSpace.coverageTarget.holes[index], second.freeSpace.coverageTarget.holes[index]);
     }
-    compareRegionSet(first.freeSpace.trackFeasibleRegion, second.freeSpace.trackFeasibleRegion);
+    compareRegionSet(first.freeSpace.nominalTrackFeasibleRegion, second.freeSpace.nominalTrackFeasibleRegion);
+    compareRegionSet(first.freeSpace.executionTrackFeasibleRegion, second.freeSpace.executionTrackFeasibleRegion);
+}
+
+void CoverageFreeSpaceTest::_testMiterPolygonShapes()
+{
+    const Polygon2D outer = rectangle(0.0, 0.0, 60.0, 60.0);
+    const Polygon2D axisAligned = rectangle(20.0, 20.0, 30.0, 30.0);
+    const Polygon2D rotated{{{25.0, 18.0}, {32.0, 25.0}, {25.0, 32.0}, {18.0, 25.0}}};
+    const Polygon2D convex{{{20.0, 20.0}, {30.0, 20.0}, {33.0, 27.0}, {25.0, 33.0}, {18.0, 27.0}}};
+    const Polygon2D concave{{{18.0, 18.0}, {32.0, 18.0}, {32.0, 22.0}, {24.0, 22.0}, {24.0, 30.0}, {18.0, 30.0}}};
+    const std::vector<std::vector<Polygon2D>> cases = {
+        {axisAligned},
+        {rotated},
+        {convex},
+        {concave},
+        {rectangle(12.0, 20.0, 20.0, 28.0), rectangle(35.0, 20.0, 43.0, 28.0)},
+    };
+
+    for (const std::vector<Polygon2D>& noGo : cases) {
+        CoveragePlanningProblem problem = problemWithOuter(outer);
+        problem.swathWidthM = 5.0;
+        problem.safetyMarginM = 0.5;
+        problem.executionSafety.executionMarginM = 0.25;
+        problem.region.noGoRegions = noGo;
+        const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
+        QCOMPARE(result.status, PlanningStatus::Success);
+        QCOMPARE(result.error, CoveragePlanningError::None);
+        const Geometry::PolygonRegionContainmentResult contained = Geometry::isRegionSetContained(
+            result.freeSpace.executionTrackFeasibleRegion, result.freeSpace.nominalTrackFeasibleRegion);
+        QCOMPARE(contained.status, Geometry::PolygonRegionOperationStatus::Success);
+        QVERIFY(contained.contained);
+        QCOMPARE(result.freeSpace.coverageTarget.holes.size(), noGo.size());
+    }
+}
+
+void CoverageFreeSpaceTest::_testExecutionMarginFailure()
+{
+    CoveragePlanningProblem problem = problemWithOuter(rectangle(0.0, 0.0, 20.0, 20.0));
+    problem.swathWidthM = 2.0;
+    problem.safetyMarginM = 0.5;
+    problem.executionSafety.executionMarginM = 0.75;
+    const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
+    QCOMPARE(result.status, PlanningStatus::Failed);
+    QCOMPARE(result.error, CoveragePlanningError::CoverageImpossibleWithExecutionMargin);
+    QVERIFY(result.freeSpace.executionTrackFeasibleRegion.empty());
+}
+
+void CoverageFreeSpaceTest::_testSharpAngleConservativenessGate()
+{
+    CoveragePlanningProblem problem = problemWithOuter(rectangle(0.0, 0.0, 50.0, 50.0));
+    problem.swathWidthM = 5.0;
+    problem.safetyMarginM = 0.5;
+    problem.region.noGoRegions = {{{{10.0, 10.0}, {40.0, 10.0}, {25.0, 10.5}}}};
+    for (const double executionMarginM : {0.0, 0.25}) {
+        problem.executionSafety.executionMarginM = executionMarginM;
+        const Geometry::PolygonRegionOperationResult nominal = Geometry::buildTrackFeasibleRegion(
+            problem.region.outerBoundary, problem.region.noGoRegions, problem.safetyMarginM);
+        const Geometry::PolygonRegionOperationResult execution = Geometry::buildTrackFeasibleRegionConservativeMiter(
+            problem.region.outerBoundary, problem.region.noGoRegions,
+            problem.safetyMarginM + problem.executionSafety.executionMarginM);
+        QCOMPARE(nominal.status, Geometry::PolygonRegionOperationStatus::Success);
+        QCOMPARE(execution.status, Geometry::PolygonRegionOperationStatus::Success);
+        const Geometry::PolygonRegionContainmentResult contained =
+            Geometry::isRegionSetContained(execution.regions, nominal.regions);
+        QCOMPARE(contained.status, Geometry::PolygonRegionOperationStatus::Success);
+
+        const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
+        if (contained.contained) {
+            QCOMPARE(result.status, PlanningStatus::Success);
+            QCOMPARE(result.error, CoveragePlanningError::None);
+        } else {
+            QCOMPARE(result.status, PlanningStatus::Failed);
+            QCOMPARE(result.error, CoveragePlanningError::ExecutionRegionNotConservative);
+            QVERIFY(result.freeSpace.executionTrackFeasibleRegion.empty());
+        }
+    }
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(CoverageFreeSpaceTest, TestLabel::Unit)

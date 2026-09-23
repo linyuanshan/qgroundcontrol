@@ -14,6 +14,7 @@ private slots:
     void _testPositiveSafetyMargin();
     void _testCoverageImpossibleWithSafetyMargin();
     void _testNoGoCapabilityGate();
+    void _testExecutionProfileCapabilityGate();
     void _testGeneralConvexDeterminism();
     void _testSafetyInsetFailure();
     void _testNonMonotoneSweepFailure();

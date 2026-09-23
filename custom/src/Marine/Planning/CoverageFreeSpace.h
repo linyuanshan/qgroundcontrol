@@ -7,7 +7,8 @@ namespace Marine {
 struct CoverageFreeSpace
 {
     PolygonRegion2D coverageTarget;
-    PolygonRegionSet2D trackFeasibleRegion;
+    PolygonRegionSet2D nominalTrackFeasibleRegion;
+    PolygonRegionSet2D executionTrackFeasibleRegion;
 };
 
 struct CoverageFreeSpaceResult

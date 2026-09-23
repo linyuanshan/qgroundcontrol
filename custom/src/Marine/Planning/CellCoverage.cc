@@ -150,6 +150,10 @@ CellCoverageGenerationResult generateCellCoverage(std::span<const CoverageCell> 
 
         MonotoneCoverageResult primitive = generateMonotoneCoverageForValidatedGeometry(
             cell->polygon, cell->polygon, swathWidthM, navigationAngleDeg, lanes);
+        if (primitive.error == MonotoneCoverageError::UnsafeConnector) {
+            primitive = generateMonotoneCoverageForValidatedGeometry(cell->polygon, cell->polygon, swathWidthM,
+                                                                     navigationAngleDeg, lanes, true);
+        }
         if (primitive.status != PlanningStatus::Success) {
             return failure(
                 PlanningStatus::Failed, CoveragePlanningError::CellCoverageFailed,

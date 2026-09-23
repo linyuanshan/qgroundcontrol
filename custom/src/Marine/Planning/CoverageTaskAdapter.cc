@@ -1,5 +1,6 @@
 #include "CoverageTaskAdapter.h"
 
+#include <cmath>
 #include <utility>
 
 #include "CoverageProblemValidator.h"
@@ -33,6 +34,11 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
     problem = {};
     geoReference.reset();
     error = CoveragePlanningError::None;
+    if (!std::isfinite(task.planner.executionSafety.executionMarginM) ||
+        (task.planner.executionSafety.executionMarginM < 0.0)) {
+        error = CoveragePlanningError::InvalidExecutionMargin;
+        return false;
+    }
     if (!task.isValid()) {
         error = CoveragePlanningError::InvalidOuterBoundary;
         return false;
@@ -62,6 +68,7 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
 
     converted.swathWidthM = task.coverage.swathWidthM;
     converted.safetyMarginM = task.coverage.safetyMarginM;
+    converted.executionSafety = task.planner.executionSafety;
     converted.sweepAngleMode = task.coverage.sweepAngleMode;
     converted.requestedSweepAngleDeg = task.coverage.sweepAngleDeg;
 

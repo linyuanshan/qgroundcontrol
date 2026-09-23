@@ -4,12 +4,14 @@
 #include <array>
 #include <cmath>
 #include <iterator>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/PolygonRegion.h"
 #include "Planning/BoustrophedonCoveragePlanner.h"
 #include "Planning/CoverageFreeSpace.h"
 #include "Planning/GlobalSweepSelector.h"
@@ -86,9 +88,13 @@ void verifySuccess(const CoveragePlanningProblem& input, const CoveragePlanningS
 
     const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(input);
     QVERIFY2(freeSpace.status == PlanningStatus::Success, freeSpace.message.c_str());
+    const Geometry::PolygonRegionContainmentResult conservative = Geometry::isRegionSetContained(
+        freeSpace.freeSpace.executionTrackFeasibleRegion, freeSpace.freeSpace.nominalTrackFeasibleRegion);
+    QCOMPARE(conservative.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(conservative.contained);
     for (std::size_t index = 1; index < solution.path.size(); ++index) {
         QVERIFY(Geometry::segmentInsidePolygonRegionForValidatedGeometry(
-            freeSpace.freeSpace.trackFeasibleRegion, solution.path.at(index - 1), solution.path.at(index)));
+            freeSpace.freeSpace.executionTrackFeasibleRegion, solution.path.at(index - 1), solution.path.at(index)));
     }
     const CoverageCompletenessResult completeness = validateNominalCoverage(
         PolygonRegionSet2D{freeSpace.freeSpace.coverageTarget}, solution.path, solution.legRoles, input.swathWidthM);
@@ -210,7 +216,7 @@ void BoustrophedonCoveragePlannerTest::_testAutoSelectionAndInputOrder()
         const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(input);
         QVERIFY2(freeSpace.status == PlanningStatus::Success, freeSpace.message.c_str());
         const GlobalSweepSelectionResult selection = selectGlobalSweepAngle(
-            input.region.outerBoundary, freeSpace.freeSpace.trackFeasibleRegion, input.swathWidthM);
+            input.region.outerBoundary, freeSpace.freeSpace.executionTrackFeasibleRegion, input.swathWidthM);
         QVERIFY2(selection.status == PlanningStatus::Success, selection.message.c_str());
         QVERIFY(angleComesFromOuterEdge(input.region.outerBoundary, selection.selectedSweepAngleDeg));
         QCOMPARE(selection.selectedSweepAngleDeg, ExpectedAnglesDeg.at(caseIndex));
@@ -249,6 +255,46 @@ void BoustrophedonCoveragePlannerTest::_testFailurePropagation()
                   CoveragePlanningError::NoNavigableArea);
     verifyFailure(planner, problem(rectangle(0.0, 0.0, 20.0, 10.0), {rectangle(9.0, 1.5, 11.0, 8.5)}),
                   PlanningStatus::Failed, CoveragePlanningError::DisconnectedFeasibleRegion);
+}
+
+void BoustrophedonCoveragePlannerTest::_testExecutionSafeScenarios()
+{
+    std::vector<CoveragePlanningProblem> cases = {
+        problem(polygon({{0.0, 0.0}, {20.0, 0.0}, {20.0, 8.0}, {8.0, 8.0}, {8.0, 20.0}, {0.0, 20.0}})),
+        problem(polygon(
+            {{0.0, 0.0}, {20.0, 0.0}, {20.0, 6.0}, {6.0, 6.0}, {6.0, 14.0}, {20.0, 14.0}, {20.0, 20.0}, {0.0, 20.0}})),
+        problem(rectangle(0.0, 0.0, 20.0, 20.0), {rectangle(8.0, 8.0, 12.0, 12.0)}),
+        problem(polygon({{0.0, 0.0}, {30.0, 0.0}, {30.0, 20.0}, {18.0, 20.0}, {18.0, 10.0}, {0.0, 10.0}}),
+                {rectangle(22.0, 4.0, 26.0, 8.0)}, 4.0, 1.0, 90.00014626),
+        problem(rectangle(0.0, 0.0, 30.0, 20.0), {rectangle(8.0, 8.0, 12.0, 12.0), rectangle(18.0, 8.0, 22.0, 12.0)}),
+    };
+    cases[1].sweepAngleMode = SweepAngleMode::Auto;
+    const BoustrophedonCoveragePlanner planner;
+    for (std::size_t index = 0; index < cases.size(); ++index) {
+        CoveragePlanningProblem& input = cases[index];
+        input.executionSafety.executionMarginM = 0.25;
+        const CoveragePlanningSolution result = planner.plan(input);
+        const std::string evidence = "execution-safe scenario " + std::to_string(index) + ": " + result.message;
+        QVERIFY2(result.status == PlanningStatus::Success, evidence.c_str());
+        verifySuccess(input, result);
+        compareSolutions(result, planner.plan(input));
+        if ((index == 2) || (index == 3)) {
+            QCOMPARE(result.path.size(), index == 2 ? std::size_t{27} : std::size_t{31});
+            QCOMPARE(result.turnCount, index == 2 ? 25 : 29);
+            double shortestLegM = std::numeric_limits<double>::infinity();
+            for (std::size_t leg = 1; leg < result.path.size(); ++leg) {
+                shortestLegM = std::min(shortestLegM, distance(result.path[leg - 1], result.path[leg]));
+            }
+            QVERIFY(std::abs(shortestLegM - 1.5) <= Geometry::LengthEpsilonM);
+            QVERIFY(shortestLegM >= 0.5);
+        }
+    }
+
+    CoveragePlanningProblem autoS04 = cases[3];
+    autoS04.sweepAngleMode = SweepAngleMode::Auto;
+    const CoveragePlanningSolution autoResult = planner.plan(autoS04);
+    verifySuccess(autoS04, autoResult);
+    compareSolutions(autoResult, planner.plan(autoS04));
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(BoustrophedonCoveragePlannerTest, TestLabel::Unit)

@@ -29,6 +29,7 @@ MarineTask createTask()
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
     task.coverage.sweepAngleDeg = 35.0;
     task.planner.plannerId = "marine.coverage.mock";
+    task.planner.executionSafety.executionMarginM = 0.25;
     return task;
 }
 
@@ -57,6 +58,7 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     QVERIFY(problem.region.noGoRegions.empty());
     QCOMPARE(problem.swathWidthM, 8.0);
     QCOMPARE(problem.safetyMarginM, 2.5);
+    QCOMPARE(problem.executionSafety.executionMarginM, 0.25);
     QVERIFY(problem.sweepAngleMode == SweepAngleMode::Manual);
     QCOMPARE(problem.requestedSweepAngleDeg, 35.0);
     QVERIFY(problem.region.isFinite());
@@ -119,6 +121,11 @@ void CoverageTaskAdapterTest::_testValidationAndNormalization()
     task.coverage.safetyMarginM = 4.01;
     QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
     QCOMPARE(problem.safetyMarginM, 4.01);
+
+    task = createTask();
+    task.planner.executionSafety.executionMarginM = -0.1;
+    QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(error, CoveragePlanningError::InvalidExecutionMargin);
 }
 
 void CoverageTaskAdapterTest::_testNoGoConversion()

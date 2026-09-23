@@ -281,19 +281,14 @@ region. Geometry backend precision and coverage tolerance remain unchanged.
 `ArduPilotMissionAdapter` remains a translator. It must not offset polygons, simplify paths, check collisions,
 reroute, or validate coverage.
 
-## Persistence Recommendation
+## Persistence Ownership
 
-No v2 schema changes are made by this amendment. Because the preferred design retains one path, a future v3
-should persist:
-
-- the execution-safe canonical path and roles;
-- the pure `ExecutionSafetyProfile` used to generate it;
-- the execution-boundary policy identifier needed for deterministic audit.
-
-Load must continue to use the stored path without replanning. Existing v1/v2 artifacts load unchanged and
-retain their historical semantics; they must not silently gain a nonzero margin. If a future design ever
-introduces distinct planning and executable paths, both must be stored, not rebuilt on load, to preserve the
-frozen no-replanning invariant.
+`executionMarginM` is planner input and belongs in `MarineTask.planner.executionSafety`. P2-13F advances
+MarineTask JSON to version 2 and requires this field. A version 1 Task loads with an explicit zero margin.
+The existing CoverageInspection planning artifact version 2 already stores the one canonical path, roles,
+metrics, angle, cell count, and turn count; its schema does not change. Planning artifact versions 1 and 2
+continue to load without replanning. A user-initiated replan of a legacy Task may use the current Miter
+algorithm with its retained zero margin.
 
 ## Runtime Geofence Defence-in-Depth
 
@@ -319,12 +314,12 @@ P2-13F should implement only the frozen direction:
 5. Validate every final leg against the execution region and validate Coverage roles against the unchanged
    `CoverageTarget`.
 6. Preserve one canonical path and leave `ArduPilotMissionAdapter` path-only and unchanged.
-7. Introduce planning-artifact v3 to persist the profile, execution-boundary policy, canonical path, and roles;
-   load v1/v2 unchanged and never replan on load.
+7. Introduce MarineTask JSON v2 with the planner-owned execution margin; load Task v1 as zero margin, and keep
+   CoverageInspection planning artifact v2 unchanged with no replan on load.
 8. Add deterministic Round-versus-Miter, margin-frontier, no-short-arc-waypoint, safety, completeness, and
    backward-compatibility tests.
-9. Integrate the frozen `0.25 m` Rover profile candidate and repeat S03/S04 SITL. S04 must have zero samples
-   inside the original No-Go and still complete its mission and CoverageTarget.
+9. Integrate the frozen `0.25 m` Rover profile candidate. Formal S03/S04 SITL revalidation is deferred to
+   P2-13G; S04 must have zero samples inside the original No-Go and still complete its mission and CoverageTarget.
 
 Explicitly excluded from P2-13F: parameter tuning, stop hints, turn-radius models, path smoothing frameworks,
 geofence integration, P2-14 field validation, and any MissionAdapter planning behavior.

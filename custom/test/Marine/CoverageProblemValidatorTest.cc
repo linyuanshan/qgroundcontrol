@@ -90,6 +90,18 @@ void CoverageProblemValidatorTest::_testNumericValidation()
     problem = validProblem();
     problem.safetyMarginM = problem.swathWidthM / 2.0;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
+
+    problem = validProblem();
+    problem.executionSafety.executionMarginM = -0.01;
+    QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::InvalidExecutionMargin);
+
+    problem = validProblem();
+    problem.executionSafety.executionMarginM = std::numeric_limits<double>::infinity();
+    QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::InvalidExecutionMargin);
+
+    problem = validProblem();
+    problem.executionSafety.executionMarginM = 0.25;
+    QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
 }
 
 void CoverageProblemValidatorTest::_testAngleNormalization()
@@ -148,6 +160,8 @@ void CoverageProblemValidatorTest::_testErrorMapping()
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::InvalidSwathWidth),
              PlanningStatus::InvalidInput);
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::InvalidSafetyMargin),
+             PlanningStatus::InvalidInput);
+    QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::InvalidExecutionMargin),
              PlanningStatus::InvalidInput);
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::InvalidSweepAngle),
              PlanningStatus::InvalidInput);

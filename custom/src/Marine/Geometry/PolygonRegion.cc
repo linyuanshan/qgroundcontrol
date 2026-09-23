@@ -426,6 +426,44 @@ PolygonRegionOperationResult buildTrackFeasibleRegion(const Polygon2D& outerBoun
     return executeBoolean(Clipper2Lib::ClipType::Difference, insetOuter, inflatedNoGo);
 }
 
+PolygonRegionOperationResult buildTrackFeasibleRegionConservativeMiter(const Polygon2D& outerBoundary,
+                                                                       const std::vector<Polygon2D>& noGoRegions,
+                                                                       double marginM)
+{
+    if ((validateNoGoRegions(outerBoundary, noGoRegions) != NoGoValidationStatus::Success) || !std::isfinite(marginM) ||
+        (marginM < 0.0)) {
+        return {PolygonRegionOperationStatus::InvalidInput, {}};
+    }
+    if (marginM == 0.0) {
+        return buildCoverageTarget(outerBoundary, noGoRegions);
+    }
+
+    const double scaledMargin = marginM * CoordinateScalePerM;
+    if (!std::isfinite(scaledMargin) || (scaledMargin > 1e15)) {
+        return {PolygonRegionOperationStatus::GeometryFailure, {}};
+    }
+
+    Clipper2Lib::Path64 outerPath;
+    Clipper2Lib::Paths64 noGoPaths;
+    if (!toClipperPath(outerBoundary, true, outerPath) || !polygonsToPositivePaths(noGoRegions, noGoPaths)) {
+        return {PolygonRegionOperationStatus::GeometryFailure, {}};
+    }
+
+    const Clipper2Lib::Paths64 insetOuter = Clipper2Lib::InflatePaths(
+        {outerPath}, -scaledMargin, Clipper2Lib::JoinType::Miter, Clipper2Lib::EndType::Polygon);
+    if (insetOuter.empty()) {
+        return {PolygonRegionOperationStatus::Success, {}};
+    }
+    Clipper2Lib::ClipperOffset noGoOffset(2.0, ArcToleranceClipperUnits);
+    noGoOffset.AddPaths(noGoPaths, Clipper2Lib::JoinType::Miter, Clipper2Lib::EndType::Polygon);
+    Clipper2Lib::Paths64 inflatedNoGo;
+    noGoOffset.Execute(scaledMargin, inflatedNoGo);
+    if (noGoOffset.ErrorCode() != 0) {
+        return {PolygonRegionOperationStatus::GeometryFailure, {}};
+    }
+    return executeBoolean(Clipper2Lib::ClipType::Difference, insetOuter, inflatedNoGo);
+}
+
 PolygonRegionOperationResult bufferPolygonRegions(const PolygonRegionSet2D& regions, double distanceM)
 {
     if (!std::isfinite(distanceM) || (distanceM < 0.0) || !allRegionsValid(regions)) {

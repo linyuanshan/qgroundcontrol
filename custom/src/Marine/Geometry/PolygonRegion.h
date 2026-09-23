@@ -55,6 +55,8 @@ struct LineSegment2D
 [[nodiscard]] PolygonRegionOperationResult buildTrackFeasibleRegion(const Polygon2D& outerBoundary,
                                                                     const std::vector<Polygon2D>& noGoRegions,
                                                                     double safetyMarginM);
+[[nodiscard]] PolygonRegionOperationResult buildTrackFeasibleRegionConservativeMiter(
+    const Polygon2D& outerBoundary, const std::vector<Polygon2D>& noGoRegions, double marginM);
 [[nodiscard]] PolygonRegionOperationResult bufferPolygonRegions(const PolygonRegionSet2D& regions, double distanceM);
 [[nodiscard]] PolygonRegionOperationResult bufferLineSegments(std::span<const LineSegment2D> segments, double radiusM);
 [[nodiscard]] PolygonRegionOperationResult differencePolygonRegions(const PolygonRegionSet2D& subjects,

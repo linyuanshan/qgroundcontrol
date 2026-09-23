@@ -1,6 +1,7 @@
 #include "MarinePlanIntegrationTest.h"
 
 #include <QtCore/QFile>
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
@@ -98,12 +99,14 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     constexpr double ExpectedSwathWidthM = 20.0;
     constexpr double ExpectedSafetyMarginM = 0.0;
     constexpr double ExpectedSweepAngleDeg = 90.0;
+    constexpr double ExpectedExecutionMarginM = 0.25;
 
     QString expectedTaskId;
     PlanningResult expectedPlanningResult;
     QVariantList expectedPathRoleRuns;
     QList<MissionItem*> expectedMissionItems;
     QPointer<MarinePlanContext> firstContext;
+    QJsonObject savedPlanJson;
 
     {
         PlanMasterController controller(MAV_AUTOPILOT_ARDUPILOTMEGA, MAV_TYPE_GROUND_ROVER);
@@ -136,6 +139,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         configuredTask.sensors.sonarEnabled = false;
         configuredTask.sensors.sonarRecord = true;
         configuredTask.planner.plannerId = expectedPlannerId;
+        configuredTask.planner.executionSafety.executionMarginM = ExpectedExecutionMarginM;
         context->addTask(configuredTask);
 
         QVERIFY(item->addNoGoRegion());
@@ -163,10 +167,25 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
 
         QFile savedPlan(planPath);
         QVERIFY(savedPlan.open(QIODevice::ReadOnly | QIODevice::Text));
-        const QJsonObject savedJson = QJsonDocument::fromJson(savedPlan.readAll()).object();
-        QVERIFY(savedJson.contains(QStringLiteral("marine")));
-        QCOMPARE(savedJson.value(QStringLiteral("marine")).toObject().value(QStringLiteral("tasks")).toArray().size(),
-                 1);
+        savedPlanJson = QJsonDocument::fromJson(savedPlan.readAll()).object();
+        QVERIFY(savedPlanJson.contains(QStringLiteral("marine")));
+        QCOMPARE(
+            savedPlanJson.value(QStringLiteral("marine")).toObject().value(QStringLiteral("tasks")).toArray().size(),
+            1);
+        const QJsonObject savedTask = savedPlanJson.value(QStringLiteral("marine"))
+                                          .toObject()
+                                          .value(QStringLiteral("tasks"))
+                                          .toArray()
+                                          .first()
+                                          .toObject();
+        QCOMPARE(savedTask.value(QStringLiteral("version")).toInt(), 2);
+        QCOMPARE(savedTask.value(QStringLiteral("planner"))
+                     .toObject()
+                     .value(QStringLiteral("executionSafety"))
+                     .toObject()
+                     .value(QStringLiteral("executionMarginM"))
+                     .toDouble(),
+                 ExpectedExecutionMarginM);
     }
 
     QVERIFY(firstContext.isNull());
@@ -189,6 +208,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     QCOMPARE(restoredTask->vehicleId, expectedVehicleId);
     QCOMPARE(restoredTask->type, MarineTaskType::CoverageInspection);
     QCOMPARE(restoredTask->planner.plannerId, expectedPlannerId);
+    QCOMPARE(restoredTask->planner.executionSafety.executionMarginM, ExpectedExecutionMarginM);
     QCOMPARE(restoredTask->coverage.swathWidthM, ExpectedSwathWidthM);
     QCOMPARE(restoredTask->coverage.safetyMarginM, ExpectedSafetyMarginM);
     QCOMPARE(restoredTask->coverage.sweepAngleMode, SweepAngleMode::Manual);
@@ -236,6 +256,69 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     QList<MissionItem*> restoredMissionItems;
     restoredItem->appendMissionItems(restoredMissionItems, this);
     compareMissionItems(restoredMissionItems, expectedMissionItems);
+
+    for (const int artifactVersion : {1, 2}) {
+        QJsonObject legacyPlan = savedPlanJson;
+        QJsonObject marine = legacyPlan.value(QStringLiteral("marine")).toObject();
+        QJsonArray tasks = marine.value(QStringLiteral("tasks")).toArray();
+        QJsonObject legacyTask = tasks.first().toObject();
+        legacyTask.insert(QStringLiteral("version"), 1);
+        QJsonObject legacyPlanner = legacyTask.value(QStringLiteral("planner")).toObject();
+        legacyPlanner.remove(QStringLiteral("executionSafety"));
+        legacyTask.insert(QStringLiteral("planner"), legacyPlanner);
+        tasks.replace(0, legacyTask);
+        marine.insert(QStringLiteral("tasks"), tasks);
+        legacyPlan.insert(QStringLiteral("marine"), marine);
+
+        QJsonObject mission = legacyPlan.value(QStringLiteral("mission")).toObject();
+        QJsonArray items = mission.value(QStringLiteral("items")).toArray();
+        bool foundArtifact = false;
+        for (qsizetype index = 0; index < items.size(); ++index) {
+            QJsonObject item = items[index].toObject();
+            if (item.value(QStringLiteral("complexItemType")).toString() != QStringLiteral("coverageInspection")) {
+                continue;
+            }
+            foundArtifact = true;
+            if (artifactVersion == 1) {
+                item.insert(QStringLiteral("version"), 1);
+                for (const QString& key : {QStringLiteral("legRoles"), QStringLiteral("coverageLengthM"),
+                                           QStringLiteral("transitLengthM"), QStringLiteral("cellCount")}) {
+                    item.remove(key);
+                }
+            }
+            items.replace(index, item);
+        }
+        QVERIFY(foundArtifact);
+        mission.insert(QStringLiteral("items"), items);
+        legacyPlan.insert(QStringLiteral("mission"), mission);
+
+        const QString legacyPath =
+            temporaryDirectory.filePath(QStringLiteral("marine-v1-task-artifact-v%1.plan").arg(artifactVersion));
+        QFile legacyFile(legacyPath);
+        QVERIFY(legacyFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        const QByteArray legacyBytes = QJsonDocument(legacyPlan).toJson();
+        QCOMPARE(legacyFile.write(legacyBytes), static_cast<qint64>(legacyBytes.size()));
+        legacyFile.close();
+
+        PlanMasterController legacyController(MAV_AUTOPILOT_ARDUPILOTMEGA, MAV_TYPE_GROUND_ROVER);
+        legacyController.setFlyView(false);
+        legacyController.start();
+        legacyController.loadFromFile(legacyPath);
+        auto* legacyContext = legacyController.findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+        QVERIFY(legacyContext != nullptr);
+        const MarineTask* loadedTask = legacyContext->task(expectedTaskId.toStdString());
+        QVERIFY(loadedTask != nullptr);
+        QCOMPARE(loadedTask->planner.executionSafety.executionMarginM, 0.0);
+        auto* loadedItem = coverageItem(legacyController);
+        QVERIFY(loadedItem != nullptr);
+        QCOMPARE(loadedItem->planningState(), CoverageInspectionComplexItem::Planned);
+        QCOMPARE(loadedItem->planningResult().path.size(), expectedPlanningResult.path.size());
+        QCOMPARE(loadedItem->planningResult().legRoles.size(),
+                 artifactVersion == 1 ? std::size_t{0} : expectedPlanningResult.legRoles.size());
+        for (std::size_t index = 0; index < expectedPlanningResult.path.size(); ++index) {
+            comparePoint(loadedItem->planningResult().path[index], expectedPlanningResult.path[index]);
+        }
+    }
 }
 
 UT_REGISTER_TEST(MarinePlanIntegrationTest, TestLabel::Integration, TestLabel::MissionManager)

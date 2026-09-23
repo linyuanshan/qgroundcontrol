@@ -61,8 +61,8 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
     double selectedSweepAngleDeg = normalizedProblem.requestedSweepAngleDeg;
     if (normalizedProblem.sweepAngleMode == SweepAngleMode::Auto) {
         const GlobalSweepSelectionResult selection =
-            selectGlobalSweepAngle(normalizedProblem.region.outerBoundary, freeSpace.freeSpace.trackFeasibleRegion,
-                                   normalizedProblem.swathWidthM);
+            selectGlobalSweepAngle(normalizedProblem.region.outerBoundary,
+                                   freeSpace.freeSpace.executionTrackFeasibleRegion, normalizedProblem.swathWidthM);
         if (selection.status != PlanningStatus::Success) {
             return failure(selection.status, selection.error, selection.message);
         }
@@ -70,7 +70,7 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
     }
 
     const CoverageDecompositionResult decomposition =
-        decomposeBoustrophedon(freeSpace.freeSpace.trackFeasibleRegion, selectedSweepAngleDeg);
+        decomposeBoustrophedon(freeSpace.freeSpace.executionTrackFeasibleRegion, selectedSweepAngleDeg);
     if (decomposition.status != PlanningStatus::Success) {
         return failure(decomposition.status, decomposition.error, decomposition.message);
     }
@@ -82,21 +82,29 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
     }
 
     const BoundaryCoverageSupportResult boundarySupport =
-        generateBoundaryCoverageSupport(freeSpace.freeSpace.trackFeasibleRegion);
+        generateBoundaryCoverageSupport(freeSpace.freeSpace.executionTrackFeasibleRegion);
     if (boundarySupport.status != PlanningStatus::Success) {
         return failure(boundarySupport.status, boundarySupport.error, boundarySupport.message);
     }
 
-    const CellOrderingResult ordering =
-        orderCellTraversals(freeSpace.freeSpace.trackFeasibleRegion, cellCoverage.cells, cellCoverage.traversalStates);
+    const CellOrderingResult ordering = orderCellTraversals(freeSpace.freeSpace.executionTrackFeasibleRegion,
+                                                            cellCoverage.cells, cellCoverage.traversalStates);
     if (ordering.status != PlanningStatus::Success) {
         return failure(ordering.status, ordering.error, ordering.message);
     }
 
-    ComplexCoverageAssemblyResult assembly = assembleComplexCoverage(
-        freeSpace.freeSpace.trackFeasibleRegion, boundarySupport.components, cellCoverage.cells, ordering.visits);
+    ComplexCoverageAssemblyResult assembly =
+        assembleComplexCoverage(freeSpace.freeSpace.executionTrackFeasibleRegion, boundarySupport.components,
+                                cellCoverage.cells, ordering.visits);
     if (assembly.status != PlanningStatus::Success) {
         return failure(assembly.status, assembly.error, assembly.message);
+    }
+    for (std::size_t index = 1; index < assembly.path.size(); ++index) {
+        if (!Geometry::segmentInsidePolygonRegion(freeSpace.freeSpace.executionTrackFeasibleRegion,
+                                                  assembly.path[index - 1], assembly.path[index])) {
+            return failure(CoveragePlanningError::InvalidGeneratedPath,
+                           "Coverage path leaves the execution-safe region");
+        }
     }
 
     const PolygonRegionSet2D coverageTarget{freeSpace.freeSpace.coverageTarget};

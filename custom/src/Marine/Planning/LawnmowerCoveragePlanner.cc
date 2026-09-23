@@ -166,6 +166,9 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     if (validationError != CoveragePlanningError::None) {
         return failureSolution(validationError);
     }
+    if (normalizedProblem.executionSafety.executionMarginM > 0.0) {
+        return failureSolution(CoveragePlanningError::UnsupportedExecutionSafetyProfile);
+    }
     if (!normalizedProblem.region.noGoRegions.empty()) {
         return failureSolution(CoveragePlanningError::UnsupportedNoGoRegion);
     }

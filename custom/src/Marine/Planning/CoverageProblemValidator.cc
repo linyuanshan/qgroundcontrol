@@ -17,6 +17,9 @@ CoveragePlanningError CoverageProblemValidator::validateAndNormalize(CoveragePla
     if (!std::isfinite(problem.safetyMarginM) || (problem.safetyMarginM < 0.0)) {
         return CoveragePlanningError::InvalidSafetyMargin;
     }
+    if (!std::isfinite(problem.executionSafety.executionMarginM) || (problem.executionSafety.executionMarginM < 0.0)) {
+        return CoveragePlanningError::InvalidExecutionMargin;
+    }
 
     switch (problem.sweepAngleMode) {
         case SweepAngleMode::Auto:
@@ -53,9 +56,13 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::NoGoOverlapOrTouch:
         case CoveragePlanningError::InvalidSwathWidth:
         case CoveragePlanningError::InvalidSafetyMargin:
+        case CoveragePlanningError::InvalidExecutionMargin:
         case CoveragePlanningError::InvalidSweepAngle:
             return PlanningStatus::InvalidInput;
         case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
+        case CoveragePlanningError::CoverageImpossibleWithExecutionMargin:
+        case CoveragePlanningError::UnsupportedExecutionSafetyProfile:
+        case CoveragePlanningError::ExecutionRegionNotConservative:
         case CoveragePlanningError::NoNavigableArea:
         case CoveragePlanningError::DisconnectedFeasibleRegion:
         case CoveragePlanningError::UnsupportedNoGoRegion:
@@ -96,10 +103,18 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
             return "Coverage swath width must be finite and greater than zero";
         case CoveragePlanningError::InvalidSafetyMargin:
             return "Safety margin must be finite and non-negative";
+        case CoveragePlanningError::InvalidExecutionMargin:
+            return "Execution margin must be finite and non-negative";
         case CoveragePlanningError::InvalidSweepAngle:
             return "Manual sweep angle must be finite";
         case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
             return "The nominal work region cannot be fully covered while keeping centerlines inside the safety inset";
+        case CoveragePlanningError::CoverageImpossibleWithExecutionMargin:
+            return "The nominal work region cannot be fully covered inside the execution-safe region";
+        case CoveragePlanningError::UnsupportedExecutionSafetyProfile:
+            return "The selected coverage planner does not support a nonzero execution margin";
+        case CoveragePlanningError::ExecutionRegionNotConservative:
+            return "Execution-safe region is not contained in the nominal track-feasible region";
         case CoveragePlanningError::NoNavigableArea:
             return "Safety processing leaves no navigable centerline area";
         case CoveragePlanningError::DisconnectedFeasibleRegion:

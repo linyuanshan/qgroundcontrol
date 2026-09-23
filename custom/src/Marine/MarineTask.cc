@@ -1,6 +1,7 @@
 #include "MarineTask.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <random>
 
@@ -42,7 +43,8 @@ MarineTask::MarineTask() : id(generateUuid()) {}
 
 bool MarineTask::isValid() const
 {
-    return !id.empty() && (region.outerBoundary.vertices.size() >= 3);
+    return !id.empty() && (region.outerBoundary.vertices.size() >= 3) &&
+           std::isfinite(planner.executionSafety.executionMarginM) && (planner.executionSafety.executionMarginM >= 0.0);
 }
 
 }  // namespace Marine
