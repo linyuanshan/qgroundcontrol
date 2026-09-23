@@ -242,6 +242,50 @@ void MarineGeometryTest::_testScanlineVertexAndBoundaryCases()
              Geometry::ScanlineStatus::InvalidInput);
 }
 
+void MarineGeometryTest::_testValidatedScanlineDegeneracies()
+{
+    const Polygon2D rectanglePolygon = rectangle();
+    const Geometry::ScanlineResult ordinary =
+        Geometry::intersectScanlineForValidatedGeometry(rectanglePolygon, 5.0);
+    QCOMPARE(ordinary.status, Geometry::ScanlineStatus::Success);
+    QCOMPARE(ordinary.intervals.size(), 1);
+
+    const Polygon2D diamond{{{0.0, 5.0}, {5.0, 0.0}, {10.0, 5.0}, {5.0, 10.0}}};
+    const Geometry::ScanlineResult vertex = Geometry::intersectScanlineForValidatedGeometry(diamond, 5.0);
+    QCOMPARE(vertex.status, Geometry::ScanlineStatus::Success);
+    QCOMPARE(vertex.intervals.size(), 1);
+    compareWithinTolerance(vertex.intervals.front().minimumXM, 0.0);
+    compareWithinTolerance(vertex.intervals.front().maximumXM, 10.0);
+
+    const Geometry::ScanlineResult horizontal =
+        Geometry::intersectScanlineForValidatedGeometry(rectanglePolygon, 0.0);
+    QCOMPARE(horizontal.status, Geometry::ScanlineStatus::Success);
+    QCOMPARE(horizontal.intervals.size(), 1);
+    compareWithinTolerance(horizontal.intervals.front().minimumXM, 0.0);
+    compareWithinTolerance(horizontal.intervals.front().maximumXM, 20.0);
+
+    const Polygon2D oddCrossingCell{{{-4.750000000000001, 0.75},
+                                     {-3.25, 0.75},
+                                     {-3.25, 1.2500000000000002},
+                                     {14.750000000000004, 1.25},
+                                     {14.750000000000002, 7.25},
+                                     {-4.750000000000001, 7.250000000000001},
+                                     {-4.750000000000001, 1.2500000000000004}}};
+    for (const double deltaM : {0.0, 0.00025, -0.00025, 0.0005, -0.0005}) {
+        const Geometry::ScanlineResult result =
+            Geometry::intersectScanlineForValidatedGeometry(oddCrossingCell, 1.25 + deltaM);
+        QCOMPARE(result.status, Geometry::ScanlineStatus::Success);
+        QCOMPARE(result.intervals.size(), 1);
+        QVERIFY(result.intervals.front().maximumXM > result.intervals.front().minimumXM);
+    }
+
+    const Polygon2D tangent{{{0.0, 0.0}, {5.0, 5.0}, {10.0, 0.0}, {10.0, -5.0}, {0.0, -5.0}}};
+    const Geometry::ScanlineResult tangentResult =
+        Geometry::intersectScanlineForValidatedGeometry(tangent, 5.0);
+    QCOMPARE(tangentResult.status, Geometry::ScanlineStatus::NoIntersection);
+    QVERIFY(tangentResult.intervals.empty());
+}
+
 void MarineGeometryTest::_testPointContainment()
 {
     const Polygon2D polygon = rectangle();

@@ -370,6 +370,70 @@ Marine::Geometry::ScanlineResult intersectScanlineCore(const Marine::Polygon2D& 
     return {Marine::Geometry::ScanlineStatus::Success, std::move(intervals)};
 }
 
+Marine::Geometry::ScanlineResult intersectValidatedScanlineCore(const Marine::Polygon2D& sweepAlignedPolygon,
+                                                                double yM)
+{
+    std::vector<double> criticalXs;
+    std::vector<Marine::Geometry::ScanlineInterval> intervals;
+    criticalXs.reserve(sweepAlignedPolygon.vertices.size() * 2);
+
+    for (std::size_t index = 0; index < sweepAlignedPolygon.vertices.size(); ++index) {
+        const Marine::Point2D& first = sweepAlignedPolygon.vertices[index];
+        const Marine::Point2D& second =
+            sweepAlignedPolygon.vertices[(index + 1) % sweepAlignedPolygon.vertices.size()];
+        const double deltaY = second.yM - first.yM;
+        if (std::abs(deltaY) <= Marine::Geometry::LengthEpsilonM) {
+            if (std::abs(first.yM - yM) <= Marine::Geometry::LengthEpsilonM) {
+                criticalXs.push_back(first.xM);
+                criticalXs.push_back(second.xM);
+                appendInterval(intervals, first.xM, second.xM);
+            }
+            continue;
+        }
+
+        const double minimumY = std::min(first.yM, second.yM);
+        const double maximumY = std::max(first.yM, second.yM);
+        if ((yM < minimumY - Marine::Geometry::LengthEpsilonM) ||
+            (yM > maximumY + Marine::Geometry::LengthEpsilonM)) {
+            continue;
+        }
+
+        const double ratio = (yM - first.yM) / deltaY;
+        criticalXs.push_back(first.xM + (ratio * (second.xM - first.xM)));
+    }
+
+    std::sort(criticalXs.begin(), criticalXs.end());
+    std::vector<double> uniqueCriticalXs;
+    uniqueCriticalXs.reserve(criticalXs.size());
+    for (const double criticalX : criticalXs) {
+        if (uniqueCriticalXs.empty() ||
+            (std::abs(criticalX - uniqueCriticalXs.back()) > Marine::Geometry::LengthEpsilonM)) {
+            uniqueCriticalXs.push_back(criticalX);
+        } else {
+            uniqueCriticalXs.back() = (uniqueCriticalXs.back() + criticalX) / 2.0;
+        }
+    }
+
+    for (std::size_t index = 1; index < uniqueCriticalXs.size(); ++index) {
+        const double minimumX = uniqueCriticalXs[index - 1];
+        const double maximumX = uniqueCriticalXs[index];
+        if ((maximumX - minimumX) <= Marine::Geometry::LengthEpsilonM) {
+            continue;
+        }
+
+        const Marine::Point2D midpoint{(minimumX + maximumX) / 2.0, yM};
+        if (pointLocationUnchecked(sweepAlignedPolygon, midpoint) != PointLocation::Outside) {
+            intervals.push_back({minimumX, maximumX});
+        }
+    }
+
+    intervals = mergeIntervals(std::move(intervals));
+    if (intervals.empty()) {
+        return {Marine::Geometry::ScanlineStatus::NoIntersection, {}};
+    }
+    return {Marine::Geometry::ScanlineStatus::Success, std::move(intervals)};
+}
+
 }  // namespace
 
 namespace Marine::Geometry {
@@ -512,7 +576,7 @@ ScanlineResult intersectScanlineForValidatedGeometry(const Polygon2D& sweepAlign
     if ((sweepAlignedPolygon.vertices.size() < 3) || !sweepAlignedPolygon.isFinite() || !std::isfinite(yM)) {
         return {ScanlineStatus::InvalidInput, {}};
     }
-    return intersectScanlineCore(sweepAlignedPolygon, yM);
+    return intersectValidatedScanlineCore(sweepAlignedPolygon, yM);
 }
 
 bool containsPoint(const Polygon2D& polygon, const Point2D& point)

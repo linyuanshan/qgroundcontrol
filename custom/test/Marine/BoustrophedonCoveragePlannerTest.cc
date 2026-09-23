@@ -6,14 +6,17 @@
 #include <iterator>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "Geometry/MarineGeometry.h"
+#include "Geometry/GeoReference.h"
 #include "Geometry/PolygonRegion.h"
 #include "Planning/BoustrophedonCoveragePlanner.h"
 #include "Planning/CoverageFreeSpace.h"
+#include "Planning/CoverageTaskAdapter.h"
 #include "Planning/GlobalSweepSelector.h"
 #include "Planning/NominalCoverageValidator.h"
 
@@ -29,6 +32,56 @@ Polygon2D polygon(std::initializer_list<Point2D> vertices)
 Polygon2D rectangle(double minimumX, double minimumY, double maximumX, double maximumY)
 {
     return polygon({{minimumX, minimumY}, {maximumX, minimumY}, {maximumX, maximumY}, {minimumX, maximumY}});
+}
+
+void translatePolygon(Polygon2D& polygonValue, const Point2D& offset)
+{
+    for (Point2D& point : polygonValue.vertices) {
+        point.xM += offset.xM;
+        point.yM += offset.yM;
+    }
+}
+
+Polygon2D s04Outer()
+{
+    return polygon({{0.0, 0.0}, {30.0, 0.0}, {30.0, 20.0}, {18.0, 20.0}, {18.0, 10.0}, {0.0, 10.0}});
+}
+
+CoveragePlanningProblem anchoredS04Problem()
+{
+    CoveragePlanningProblem problemValue;
+    problemValue.region.outerBoundary = s04Outer();
+    problemValue.region.noGoRegions = {rectangle(22.0, 4.0, 26.0, 8.0)};
+    problemValue.swathWidthM = 4.0;
+    problemValue.safetyMarginM = 1.0;
+    problemValue.sweepAngleMode = SweepAngleMode::Auto;
+
+    const BoustrophedonCoveragePlanner planner;
+    const CoveragePlanningSolution initial = planner.plan(problemValue);
+    if ((initial.status != PlanningStatus::Success) || initial.path.empty()) {
+        return {};
+    }
+    const Point2D offset{-initial.path.front().xM, -initial.path.front().yM};
+    translatePolygon(problemValue.region.outerBoundary, offset);
+    for (Polygon2D& noGo : problemValue.region.noGoRegions) {
+        translatePolygon(noGo, offset);
+    }
+    problemValue.executionSafety.executionMarginM = 0.25;
+    return problemValue;
+}
+
+GeoPolygon toGeoPolygon(const Polygon2D& polygonValue, const GeoReference& reference)
+{
+    GeoPolygon result;
+    result.vertices.reserve(polygonValue.vertices.size());
+    for (const Point2D& point : polygonValue.vertices) {
+        const std::optional<GeoPoint> geoPoint = reference.toGeo(point);
+        if (!geoPoint) {
+            return {};
+        }
+        result.vertices.push_back(*geoPoint);
+    }
+    return result;
 }
 
 CoveragePlanningProblem problem(Polygon2D outer, std::vector<Polygon2D> noGoRegions = {}, double swathWidthM = 4.0,
@@ -295,6 +348,43 @@ void BoustrophedonCoveragePlannerTest::_testExecutionSafeScenarios()
     const CoveragePlanningSolution autoResult = planner.plan(autoS04);
     verifySuccess(autoS04, autoResult);
     compareSolutions(autoResult, planner.plan(autoS04));
+}
+
+void BoustrophedonCoveragePlannerTest::_testGeoRoundTripS04Regression()
+{
+    CoveragePlanningProblem localProblem = anchoredS04Problem();
+    QVERIFY(localProblem.region.isFinite());
+    const BoustrophedonCoveragePlanner planner;
+    const CoveragePlanningSolution localResult = planner.plan(localProblem);
+    verifySuccess(localProblem, localResult);
+
+    const std::optional<GeoReference> reference = GeoReference::create({47.3980756, 8.5458749, 0.0});
+    QVERIFY(reference.has_value());
+    MarineTask task;
+    task.name = "P2-13I S04 Geo round-trip";
+    task.planner.plannerId = "marine.coverage.bcd";
+    task.planner.executionSafety.executionMarginM = localProblem.executionSafety.executionMarginM;
+    task.coverage.swathWidthM = localProblem.swathWidthM;
+    task.coverage.safetyMarginM = localProblem.safetyMarginM;
+    task.coverage.sweepAngleMode = localProblem.sweepAngleMode;
+    task.coverage.sweepAngleDeg = localProblem.requestedSweepAngleDeg;
+    task.region.outerBoundary = toGeoPolygon(localProblem.region.outerBoundary, *reference);
+    for (const Polygon2D& noGo : localProblem.region.noGoRegions) {
+        task.region.noGoRegions.push_back(toGeoPolygon(noGo, *reference));
+    }
+
+    CoveragePlanningProblem roundTripProblem;
+    std::optional<GeoReference> roundTripReference;
+    CoveragePlanningError adapterError = CoveragePlanningError::None;
+    QVERIFY2(CoverageTaskAdapter::buildProblem(task, roundTripProblem, roundTripReference, adapterError),
+             "S04 Geo round-trip adapter failed");
+    QVERIFY(roundTripReference.has_value());
+
+    const CoveragePlanningSolution first = planner.plan(roundTripProblem);
+    verifySuccess(roundTripProblem, first);
+    for (int repetition = 0; repetition < 3; ++repetition) {
+        compareSolutions(first, planner.plan(roundTripProblem));
+    }
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(BoustrophedonCoveragePlannerTest, TestLabel::Unit)
