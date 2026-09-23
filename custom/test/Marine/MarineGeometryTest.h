@@ -18,6 +18,7 @@ private slots:
     void _testPolygonMonotonicity();
     void _testScanlineIntervals();
     void _testScanlineVertexAndBoundaryCases();
+    void _testValidatedScanlineDegeneracies();
     void _testPointContainment();
     void _testSegmentContainment();
     void _testPolygonRegionSegmentContainment();

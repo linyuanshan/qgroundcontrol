@@ -12,4 +12,5 @@ private slots:
     void _testAutoSelectionAndInputOrder();
     void _testFailurePropagation();
     void _testExecutionSafeScenarios();
+    void _testGeoRoundTripS04Regression();
 };
