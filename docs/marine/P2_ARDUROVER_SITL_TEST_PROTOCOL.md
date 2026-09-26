@@ -1,6 +1,10 @@
 # P2 ArduRover SITL Test Protocol
 
-Status: **BLOCKED — S04 actual trajectory entered the original No-Go polygon**
+Status: **P2-13 TECHNICAL PASS — P2-13K closed all four formal SITL scenarios; documentation closure recorded below. P2-14: DO NOT START.**
+
+The failure and blocked results in the dated sections below are retained as historical evidence from their
+respective runs. They are superseded as the current P2-13 status only by the complete, single-run P2-13K closure
+record at the end of this document; none of the earlier evidence has been deleted or rewritten as a pass.
 
 This protocol records the integrated planning, persistence, mission-upload, and execution evidence required by
 P2-13. Unit tests, MockLink, and planner-only evidence do not replace execution of the four frozen representative
@@ -114,7 +118,7 @@ the polygon boundary. The incident analysis is retained as
 `build/P2-13-evidence/S04/S04-incident.svg`. The SVG is generated validation evidence, not a native QGC
 screenshot.
 
-## Acceptance Summary
+## Historical Acceptance Summary — Initial Run (2026-09-22)
 
 | Scenario | Planning | Completeness | Save/load v2 | Upload | AUTO | WP progression | Mission complete | No-Go | Trajectory | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -277,7 +281,7 @@ Result: **P2-13 remains BLOCKED. P2-14 must not start.**
 - Clazy remains a supplemental static-analysis SKIP. The full pre-commit run remains blocked by the existing
   read-only cache/database ACL issue. These toolchain debts do not alter the S04 safety failure.
 
-## Validation Run Record — 2026-09-22
+## Historical Validation Run Record — 2026-09-22
 
 - The authoritative standalone run used `QGC_P2_SITL_EVIDENCE_DIR=build/P2-13-evidence` and completed in
   `852.053 s`.
@@ -300,5 +304,68 @@ Result: **P2-13 remains BLOCKED. P2-14 must not start.**
   blocked by the existing CRLF line-ending state of `custom/CMakeLists.txt`; no unrelated whole-file rewrite was
   made for this validation-only package.
 
-Result: **P2-13 BLOCKED**. Retain the telemetry and incident evidence, stop this work package, and do not begin
-P2-14.
+Historical result at the end of this run: **P2-13 BLOCKED**. This finding was correct for the evidence then
+available; see the later P2-13K closure record below for the subsequent complete formal rerun.
+
+## P2-13 Closure Evolution Record
+
+The following sequence records the intermediate evidence and why each run did not close P2-13. The original
+S04 No-Go breach above remains preserved as a real historical failure; only a later full four-scenario run can
+supersede it for current acceptance.
+
+| Work package | Result and retained significance |
+| --- | --- |
+| P2-13G | BLOCKED during planning: S04 cell 2 lane generation failed at a backend-derived scanline coincident with several vertices. The formal four-scenario execution did not reach S04. Evidence is retained under `build/P2-13G-evidence`. |
+| P2-13H | Numerical robustness diagnostic isolated the scanline/intersection discrepancy after geographic/local round-trips; the failing cell showed three crossings at one lane and no valid interval. Diagnostic outputs are retained under `build/P2-13H`. |
+| P2-13I | Commit `415fe3cda` (`fix(marine): handle degenerate coverage scanlines`) added robust backend-derived scanline intersection handling and regression coverage. This was a bounded geometry correction, not a change to the frozen SITL scenario or vehicle parameters. |
+| P2-13J | S01/S02 passed, then the formal run exceeded the 300 s QtTest function timeout during S03; S04 was not run. The earlier S01/S02 evidence was not treated as a complete closure. |
+| P2-13J-R | The timeout was extended and the full run restarted, but this run timed out while waiting for Mission Complete. It did not close the required four-scenario gates. |
+| P2-13J-D | A separate start-sequencing diagnostic found an S01 run with the vehicle armed/AUTO while mission state remained `NOT_STARTED`; no `MAV_CMD_MISSION_START` acknowledgement or waypoint-reached event was present. A successful reference log included the accepted start command and `ACTIVE` transition. Diagnostic evidence remains under `build/P2-13J-D`. |
+| P2-13J-E | Isolated mission execution state in the SITL harness. Fresh-state and deliberately stale-state S01 smoke runs both observed accepted mission start, `ACTIVE`, ordered waypoint completion, and Mission Complete. This was harness verification, not the final four-scenario acceptance run. |
+| P2-13K | One complete formal S01–S04 run on the frozen environment passed all planning, start, execution, completion, and applicable original-No-Go gates. Detailed authoritative results follow. |
+
+## Final Four-Scenario Closure — P2-13K — 2026-09-26
+
+### Frozen run identity
+
+- QGroundControl HEAD: `01517197a7116a59c77a8528e801463b348c5338` (`test(marine): isolate SITL mission execution state`).
+- Formal test: `MarineSITLValidationTest::_validateP2Scenarios()`; one continuous run in order S01 → S02 → S03 → S04.
+- Evidence root: `build/P2-13K-evidence`; the directory contains per-scenario `.plan`, `.tlog`, trajectory CSV,
+  planned and actual overlays, `result.json`, and `execution-state.json`, plus root `baseline.json` and SHA256
+  manifest. Evidence is not committed.
+- ArduRover `4.7.0`; image `qgc-ardurover-sitl:rover-4.7.0`, ID
+  `sha256:001f20d07215138f2cb4aebc8eb691c8f4c3a23825a01f343b3f5397d262d3f0`; fresh container; frame `rover`;
+  home `47.397742,8.545594,488,0`; TCP `127.0.0.1:5760`.
+- `QTEST_FUNCTION_TIMEOUT=3600000` ms. Smoke/diagnostic scenario selectors and diagnostic path variables were
+  absent. No planner, task geometry, sweep, swath, safety margin, or vehicle parameter was tuned for this run.
+- Frozen parameters were read-only verified: `WP_RADIUS=3.0`, `WP_SPEED=5.0`, `TURN_RADIUS≈0.9`,
+  `ATC_TURN_MAX_G≈0.6`, `WP_ACCEL=0`, `WP_JERK=0`.
+
+### Results
+
+All four scenarios passed planning, nominal coverage completeness, v2 save/reload invariance, waypoint-only
+mission audit (`MAV_CMD_NAV_WAYPOINT`), upload, `MAV_CMD_MISSION_START` ACK `MAV_RESULT_ACCEPTED` (result 0),
+observed `MISSION_STATE_ACTIVE`, ordered waypoint progression, and Mission Complete.
+
+| Scenario | Path points / turns | Mission start / active | Ordered waypoints | Mission Complete | Original No-Go samples | Minimum signed clearance | Max penetration | Result |
+| --- | ---: | --- | --- | --- | ---: | ---: | ---: | --- |
+| S01 / P2-A | 17 / 15 | ACCEPTED / yes | 17 of 17 | yes | N/A — no No-Go | N/A | N/A | PASS |
+| S02 / P2-B | 27 / 25 | ACCEPTED / yes | 27 of 27 | yes | N/A — no No-Go | N/A | N/A | PASS |
+| S03 / P2-C | 27 / 25 | ACCEPTED / yes | 27 of 27 | yes | **0 / 412** | `+0.896120 m` | `0 m` | PASS |
+| S04 / P2-D | 31 / 29 | ACCEPTED / yes | 31 of 31 | yes | **0 / 458** | `+0.465923 m` | `0 m` | PASS |
+
+For S03 and S04, `safetyBandIntrusion=true`: actual vehicle samples entered the nominal safety band but remained
+outside every original No-Go polygon. Under the frozen acceptance criteria, this is a recorded execution-side
+limitation, not a hard failure; the hard gate is zero samples inside original No-Go. It does not assert that the
+actual trajectory stayed outside the safety band. The minimum clearances are positive distances to the original
+No-Go boundary, and maximum penetration is zero.
+
+### Closure decision
+
+- P2-13K: **PASS / CLOSED**.
+- P2-13: **TECHNICAL PASS**. With this documentation closure recorded, the four-scenario P2-13 technical gate is
+  **PASS / CLOSED**.
+- P2-14: **DO NOT START**; no P2-14 work was started by this validation.
+- The initial S04 failure (`30/939` samples, `1.545811 m` maximum penetration), P2-13G planning block, later
+  timeout/start-state diagnostics, and all intermediate results remain historical evidence and are not erased by
+  this closure.
