@@ -85,17 +85,32 @@ struct TrajectorySample
     int missionSequence = -1;
 };
 
+struct MissionStateSample
+{
+    qint64 timestampMs = 0;
+    int sequence = -1;
+    int state = MISSION_STATE_UNKNOWN;
+    int mode = 0;
+};
+
 struct MissionRunResult
 {
+    bool initialArmed = false;
+    QString initialFlightMode;
+    bool initialFlying = false;
     bool readyToFly = false;
     bool positionEstimateReady = false;
     bool started = false;
     bool enteredAuto = false;
     bool missionComplete = false;
     bool timedOut = false;
+    bool missionStartAckSeen = false;
+    int missionStartAckResult = -1;
+    bool missionActiveObserved = false;
     QStringList statusTexts;
     QList<int> reachedSequences;
     QList<int> currentSequences;
+    QList<MissionStateSample> missionStateHistory;
     std::vector<TrajectorySample> trajectory;
     QString prearmError;
 };
@@ -420,6 +435,9 @@ bool writeJson(const QString& path, const QJsonObject& object)
 MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog)
 {
     MissionRunResult result;
+    result.initialArmed = vehicle->armed();
+    result.initialFlightMode = vehicle->flightMode();
+    result.initialFlying = vehicle->flying();
     int currentSequence = vehicle->missionManager()->currentIndex();
     QEventLoop loop;
     QTimer timeout;
@@ -443,6 +461,21 @@ MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog
                 mavlink_ekf_status_report_t status{};
                 mavlink_msg_ekf_status_report_decode(&message, &status);
                 result.positionEstimateReady = (status.flags & EKF_POS_HORIZ_ABS) != 0;
+            } else if (message.msgid == MAVLINK_MSG_ID_COMMAND_ACK) {
+                mavlink_command_ack_t acknowledgement{};
+                mavlink_msg_command_ack_decode(&message, &acknowledgement);
+                if (acknowledgement.command == MAV_CMD_MISSION_START) {
+                    result.missionStartAckSeen = true;
+                    result.missionStartAckResult = static_cast<int>(acknowledgement.result);
+                }
+            } else if (message.msgid == MAVLINK_MSG_ID_MISSION_CURRENT && message.len >= 5) {
+                mavlink_mission_current_t current{};
+                mavlink_msg_mission_current_decode(&message, &current);
+                result.missionStateHistory.append({QDateTime::currentMSecsSinceEpoch(),
+                                                   static_cast<int>(current.seq),
+                                                   static_cast<int>(current.mission_state),
+                                                   static_cast<int>(current.mission_mode)});
+                result.missionActiveObserved |= current.mission_state == MISSION_STATE_ACTIVE;
             } else if (message.msgid == MAVLINK_MSG_ID_STATUSTEXT) {
                 mavlink_statustext_t status{};
                 mavlink_msg_statustext_decode(&message, &status);
@@ -496,19 +529,32 @@ MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog
         return result;
     }
 
-    timeout.start(MissionTimeoutMs);
     vehicle->startMission();
     result.started = true;
 
     QElapsedTimer modeWait;
     modeWait.start();
-    while ((modeWait.elapsed() < ConnectionTimeoutMs) &&
-           (!vehicle->armed() || (vehicle->flightMode() != vehicle->missionFlightMode()))) {
+    const bool rover = vehicle->vehicleType() == MAV_TYPE_GROUND_ROVER;
+    while (modeWait.elapsed() < ConnectionTimeoutMs) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
         QTest::qWait(50);
+        const bool modeReady = vehicle->armed() && (vehicle->flightMode() == vehicle->missionFlightMode());
+        const bool startEvidenceReady = !rover || (result.missionStartAckSeen &&
+                                                   (result.missionStartAckResult == MAV_RESULT_ACCEPTED) &&
+                                                   result.missionActiveObserved);
+        if (modeReady && startEvidenceReady) {
+            break;
+        }
+        if (rover && result.missionStartAckSeen && (result.missionStartAckResult != MAV_RESULT_ACCEPTED)) {
+            break;
+        }
     }
-    result.enteredAuto = vehicle->armed() && (vehicle->flightMode() == vehicle->missionFlightMode());
+    result.enteredAuto = vehicle->armed() && (vehicle->flightMode() == vehicle->missionFlightMode()) &&
+                         (!rover || (result.missionStartAckSeen &&
+                                     (result.missionStartAckResult == MAV_RESULT_ACCEPTED) &&
+                                     result.missionActiveObserved));
     if (result.enteredAuto) {
+        timeout.start(MissionTimeoutMs);
         loop.exec();
     }
 
@@ -673,6 +719,36 @@ bool resetMissionExecutionState(Vehicle* vehicle)
         QTest::qWait(50);
     }
     return (vehicle->flightMode() == vehicle->pauseFlightMode()) && !vehicle->armed();
+}
+
+QJsonObject missionExecutionState(Vehicle* vehicle, const QString& prefix)
+{
+    return {{prefix + QStringLiteral("Armed"), vehicle->armed()},
+            {prefix + QStringLiteral("FlightMode"), vehicle->flightMode()},
+            {prefix + QStringLiteral("Flying"), vehicle->flying()},
+            {prefix + QStringLiteral("MissionCurrent"), vehicle->missionManager()->currentIndex()}};
+}
+
+bool seedStaleMissionExecutionState(Vehicle* vehicle)
+{
+    vehicle->setFlightMode(vehicle->missionFlightMode());
+    QElapsedTimer modeWait;
+    modeWait.start();
+    while ((vehicle->flightMode() != vehicle->missionFlightMode()) && (modeWait.elapsed() < ConnectionTimeoutMs)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QTest::qWait(50);
+    }
+    if (vehicle->flightMode() != vehicle->missionFlightMode()) {
+        return false;
+    }
+    vehicle->setArmed(true, true);
+    QElapsedTimer armWait;
+    armWait.start();
+    while (!vehicle->armed() && (armWait.elapsed() < ConnectionTimeoutMs)) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        QTest::qWait(50);
+    }
+    return vehicle->armed() && (vehicle->flightMode() == vehicle->missionFlightMode());
 }
 
 bool prepositionAtFirstWaypoint(Vehicle* vehicle, const QList<MissionItem*>& fullMission, int missionItemListPathOffset,
@@ -1035,6 +1111,26 @@ void MarineSITLValidationTest::_validateP2Scenarios()
 
     QVERIFY(vehicle->parameterManager()->parameterExists(ParameterManager::defaultComponentId,
                                                          QStringLiteral("WP_RADIUS")));
+    const QList<QPair<QString, double>> expectedParameters{
+        {QStringLiteral("WP_RADIUS"), 3.0},
+        {QStringLiteral("WP_SPEED"), 5.0},
+        {QStringLiteral("TURN_RADIUS"), 0.9},
+        {QStringLiteral("ATC_TURN_MAX_G"), 0.6},
+        {QStringLiteral("WP_ACCEL"), 0.0},
+        {QStringLiteral("WP_JERK"), 0.0},
+    };
+    QStringList parameterNames;
+    for (const auto& expectedParameter : expectedParameters) {
+        parameterNames.append(expectedParameter.first);
+    }
+    const QJsonObject parameterValues = parameterSnapshot(vehicle->parameterManager(), parameterNames);
+    for (const auto& expectedParameter : expectedParameters) {
+        const QJsonObject parameter = parameterValues.value(expectedParameter.first).toObject();
+        QVERIFY2(parameter.value(QStringLiteral("present")).toBool(),
+                 qPrintable(QStringLiteral("Missing %1").arg(expectedParameter.first)));
+        QVERIFY2(std::abs(parameter.value(QStringLiteral("value")).toDouble() - expectedParameter.second) <= 1e-3,
+                 qPrintable(QStringLiteral("Unexpected %1 value").arg(expectedParameter.first)));
+    }
     const double waypointRadiusM = vehicle->parameterManager()
                                        ->getParameter(ParameterManager::defaultComponentId, QStringLiteral("WP_RADIUS"))
                                        ->rawValue()
@@ -1045,11 +1141,22 @@ void MarineSITLValidationTest::_validateP2Scenarios()
                                                                  .arg(vehicle->firmwareMinorVersion())
                                                                  .arg(vehicle->firmwarePatchVersion())},
                          {QStringLiteral("wpRadiusM"), waypointRadiusM},
+                         {QStringLiteral("parameters"), parameterValues},
                          {QStringLiteral("tcpEndpoint"), QStringLiteral("127.0.0.1:5760")},
                          {QStringLiteral("recordedAtUtc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}};
     QVERIFY(writeJson(QDir(evidenceRoot).filePath(QStringLiteral("baseline.json")), baseline));
 
+    const QString requestedScenario = qEnvironmentVariable("QGC_P2_SITL_SCENARIO");
+    if (!requestedScenario.isEmpty()) {
+        const auto definitions = scenarios();
+        QVERIFY(std::any_of(definitions.cbegin(), definitions.cend(), [&](const ScenarioDefinition& definition) {
+            return definition.id == requestedScenario;
+        }));
+    }
     for (const ScenarioDefinition& definition : scenarios()) {
+        if (!requestedScenario.isEmpty() && (definition.id != requestedScenario)) {
+            continue;
+        }
         TEST_CONTEXT(QStringLiteral("P2-13 %1").arg(definition.id));
         const QString scenarioDirectory = QDir(evidenceRoot).filePath(definition.id);
         QVERIFY(QDir().mkpath(scenarioDirectory));
@@ -1165,6 +1272,21 @@ void MarineSITLValidationTest::_validateP2Scenarios()
         qDeleteAll(missionItems);
         missionItems.clear();
 
+        const bool seedStaleState = (definition.id == QStringLiteral("S01")) &&
+                                    (qEnvironmentVariableIntValue("QGC_P2_SITL_SEED_STALE_EXECUTION_STATE") == 1);
+        const bool staleStateSeeded = !seedStaleState || seedStaleMissionExecutionState(vehicle);
+        const QJsonObject preResetState = missionExecutionState(vehicle, QStringLiteral("preReset"));
+        const bool resetSucceeded = resetMissionExecutionState(vehicle);
+        const QJsonObject postResetState = missionExecutionState(vehicle, QStringLiteral("postReset"));
+        QJsonObject executionState = preResetState;
+        for (const QString& key : postResetState.keys()) {
+            executionState.insert(key, postResetState.value(key));
+        }
+        QVERIFY2(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("execution-state.json")), executionState),
+                 "Cannot write execution-state.json");
+        QVERIFY2(staleStateSeeded, "Unable to create stale armed AUTO test precondition");
+        QVERIFY2(resetSucceeded, "Unable to reset Rover mission execution state");
+
         QSignalSpy sendSpy(vehicle->missionManager(), &MissionManager::sendComplete);
         QVERIFY(sendSpy.isValid());
         restoredController.sendToVehicle();
@@ -1186,10 +1308,31 @@ void MarineSITLValidationTest::_validateP2Scenarios()
         const MissionRunResult missionRun =
             executeMission(vehicle, static_cast<int>(expectedResult.path.size()) - 1 + missionSequenceOffset, tlog);
         tlog.close();
+        QJsonArray initialMissionStateHistory;
+        for (const MissionStateSample& sample : missionRun.missionStateHistory) {
+            initialMissionStateHistory.append(QJsonObject{{QStringLiteral("timestampMs"), sample.timestampMs},
+                                                          {QStringLiteral("sequence"), sample.sequence},
+                                                          {QStringLiteral("missionState"), sample.state},
+                                                          {QStringLiteral("missionMode"), sample.mode}});
+        }
+        QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("result.json")),
+                          {{QStringLiteral("scenario"), definition.id},
+                           {QStringLiteral("initialArmed"), missionRun.initialArmed},
+                           {QStringLiteral("initialFlightMode"), missionRun.initialFlightMode},
+                           {QStringLiteral("initialFlying"), missionRun.initialFlying},
+                           {QStringLiteral("missionStartAckSeen"), missionRun.missionStartAckSeen},
+                           {QStringLiteral("missionStartAckResult"), missionRun.missionStartAckResult},
+                           {QStringLiteral("missionActiveObserved"), missionRun.missionActiveObserved},
+                           {QStringLiteral("missionStateHistory"), initialMissionStateHistory},
+                           {QStringLiteral("missionComplete"), missionRun.missionComplete},
+                           {QStringLiteral("timedOut"), missionRun.timedOut}}));
         QVERIFY2(missionRun.readyToFly,
                  qPrintable(QStringLiteral("Rover did not become ready to fly: %1").arg(missionRun.prearmError)));
         QVERIFY(missionRun.started);
         QVERIFY2(missionRun.enteredAuto, "Rover did not arm and enter AUTO");
+        QVERIFY2(missionRun.missionStartAckSeen && (missionRun.missionStartAckResult == MAV_RESULT_ACCEPTED),
+                 "Rover did not acknowledge MAV_CMD_MISSION_START with ACCEPTED");
+        QVERIFY2(missionRun.missionActiveObserved, "Rover did not report MISSION_STATE_ACTIVE");
         QVERIFY2(!missionRun.timedOut, "Timed out waiting for Mission Complete");
         QVERIFY2(missionRun.missionComplete, "ArduRover did not report Mission Complete");
         QVERIFY2(missionRun.reachedSequences.contains(static_cast<int>(expectedResult.path.size()) - 1 +
@@ -1270,6 +1413,13 @@ void MarineSITLValidationTest::_validateP2Scenarios()
             {QStringLiteral("plannedImageSha256"), QString::fromLatin1(sha256(plannedImagePath))},
             {QStringLiteral("actualImageSha256"), QString::fromLatin1(sha256(actualImagePath))},
             {QStringLiteral("missionComplete"), missionRun.missionComplete},
+            {QStringLiteral("initialArmed"), missionRun.initialArmed},
+            {QStringLiteral("initialFlightMode"), missionRun.initialFlightMode},
+            {QStringLiteral("initialFlying"), missionRun.initialFlying},
+            {QStringLiteral("missionStartAckSeen"), missionRun.missionStartAckSeen},
+            {QStringLiteral("missionStartAckResult"), missionRun.missionStartAckResult},
+            {QStringLiteral("missionActiveObserved"), missionRun.missionActiveObserved},
+            {QStringLiteral("missionStateHistory"), initialMissionStateHistory},
             {QStringLiteral("reachedSequences"), reachedJson},
             {QStringLiteral("statusTexts"), statusTextJson},
             {QStringLiteral("enteredOriginalNoGo"), enteredOriginalNoGo},
@@ -1280,8 +1430,7 @@ void MarineSITLValidationTest::_validateP2Scenarios()
                  (minimumNoGoClearanceM + Geometry::LengthEpsilonM < definition.safetyMarginM)},
         };
         QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("result.json")), resultJson));
-        vehicle->setArmed(false, true);
-        QTRY_VERIFY_WITH_TIMEOUT(!vehicle->armed(), ConnectionTimeoutMs);
+        QVERIFY2(resetMissionExecutionState(vehicle), "Unable to reset Rover after completed scenario");
     }
 }
 
