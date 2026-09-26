@@ -190,6 +190,14 @@ std::optional<int> Platform::initialize(int argc, char* argv[],
     if (!qEnvironmentVariableIsSet("QT_WIN_DEBUG_CONSOLE")) {
         (void) qputenv("QT_WIN_DEBUG_CONSOLE", "attach");
     }
+    // Some Windows D3D11 setups repaint only after a window expose event when Qt relies on vsync throttling.
+    const QString graphicsBackend = qEnvironmentVariable("QSG_RHI_BACKEND");
+    const bool usingD3D11 =
+        graphicsBackend.isEmpty() || graphicsBackend.compare(QLatin1String("d3d11"), Qt::CaseInsensitive) == 0;
+    if (usingD3D11 && !args.useSwRast && !qEnvironmentVariableIsSet("QT_QUICK_BACKEND") &&
+        !qEnvironmentVariableIsSet("QSG_NO_VSYNC")) {
+        (void) qputenv("QSG_NO_VSYNC", "1");
+    }
     if (qEnvironmentVariable("QSG_RHI_BACKEND").compare(QLatin1String("d3d12"), Qt::CaseInsensitive) == 0) {
         // Qt 6.10 does not reliably select D3D12 from QSG_RHI_BACKEND on Windows. Make the test/diagnostic override
         // explicit before the scene graph is initialized; the default path remains Qt's D3D11 backend.
