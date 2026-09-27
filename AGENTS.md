@@ -45,7 +45,7 @@ V05 governance state:
 | Complete | P2 v0.5 Specification Architecture Design Freeze |
 | Complete | V05-00C AGENTS.md Authority Reconciliation |
 | Complete | V05-00C-OPT AGENTS.md Context Optimization |
-| Next gate | Pre-V05-01 working-tree and baseline reconciliation |
+| Complete | Pre-V05-01 working-tree and baseline reconciliation |
 | Not authorized | V05-01 production implementation |
 
 V05-01 must not begin until the pre-V05-01 gate is completed and the project owner explicitly
