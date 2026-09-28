@@ -45,9 +45,13 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
     if (validationError != CoveragePlanningError::None) {
         return failure(validationError);
     }
+    const auto boundaryError = CoverageProblemValidator::validateLegacyCoincidentBoundaries(normalizedProblem.region);
+    if (boundaryError != CoveragePlanningError::None) {
+        return failure(boundaryError);
+    }
 
     const CoveragePlanningError noGoError = errorForNoGoStatus(
-        Geometry::validateNoGoRegions(normalizedProblem.region.outerBoundary, normalizedProblem.region.noGoRegions));
+        Geometry::validateNoGoRegions(normalizedProblem.region.coverageBoundary, normalizedProblem.region.noGoRegions));
     if (noGoError != CoveragePlanningError::None) {
         return failure(noGoError);
     }
@@ -56,14 +60,15 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
     }
 
     const Geometry::PolygonRegionOperationResult coverageTarget =
-        Geometry::buildCoverageTarget(normalizedProblem.region.outerBoundary, normalizedProblem.region.noGoRegions);
+        Geometry::buildCoverageTarget(normalizedProblem.region.coverageBoundary, normalizedProblem.region.noGoRegions);
     if ((coverageTarget.status != Geometry::PolygonRegionOperationStatus::Success) ||
         (coverageTarget.regions.size() != 1)) {
         return failure(CoveragePlanningError::GeometryFailure);
     }
 
-    const Geometry::PolygonRegionOperationResult nominalTrackFeasible = Geometry::buildTrackFeasibleRegion(
-        normalizedProblem.region.outerBoundary, normalizedProblem.region.noGoRegions, normalizedProblem.safetyMarginM);
+    const Geometry::PolygonRegionOperationResult nominalTrackFeasible =
+        Geometry::buildTrackFeasibleRegion(normalizedProblem.region.coverageBoundary,
+                                           normalizedProblem.region.noGoRegions, normalizedProblem.safetyMarginM);
     if (nominalTrackFeasible.status != Geometry::PolygonRegionOperationStatus::Success) {
         return failure(CoveragePlanningError::GeometryFailure);
     }
@@ -93,7 +98,7 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
         return failure(CoveragePlanningError::GeometryFailure);
     }
     const Geometry::PolygonRegionOperationResult executionTrackFeasible =
-        Geometry::buildTrackFeasibleRegionConservativeMiter(normalizedProblem.region.outerBoundary,
+        Geometry::buildTrackFeasibleRegionConservativeMiter(normalizedProblem.region.coverageBoundary,
                                                             normalizedProblem.region.noGoRegions, totalMarginM);
     if (executionTrackFeasible.status != Geometry::PolygonRegionOperationStatus::Success) {
         return failure(CoveragePlanningError::GeometryFailure);

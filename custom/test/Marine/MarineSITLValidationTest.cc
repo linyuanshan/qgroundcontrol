@@ -167,7 +167,8 @@ std::vector<ScenarioDefinition> scenarios()
 CoveragePlanningProblem problemFor(const ScenarioDefinition& definition)
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary = definition.outer;
+    problem.region.coverageBoundary = definition.outer;
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = definition.noGoRegions;
     problem.swathWidthM = definition.swathWidthM;
     problem.safetyMarginM = definition.safetyMarginM;
@@ -194,7 +195,8 @@ CoveragePlanningProblem anchorFirstPathPoint(CoveragePlanningProblem problem, QS
     }
 
     const Point2D offset{-initial.path.front().xM, -initial.path.front().yM};
-    translatePolygon(problem.region.outerBoundary, offset);
+    translatePolygon(problem.region.coverageBoundary, offset);
+    translatePolygon(problem.region.navigationBoundary, offset);
     for (Polygon2D& noGo : problem.region.noGoRegions) {
         translatePolygon(noGo, offset);
     }
@@ -363,7 +365,7 @@ QRectF plotBounds(const CoveragePlanningProblem& problem, const std::vector<Poin
         maximumX = std::max(maximumX, point.xM);
         maximumY = std::max(maximumY, point.yM);
     };
-    for (const Point2D& point : problem.region.outerBoundary.vertices) {
+    for (const Point2D& point : problem.region.coverageBoundary.vertices) {
         include(point);
     }
     for (const Point2D& point : actual) {
@@ -402,7 +404,7 @@ bool renderEvidence(const QString& path, const QString& title, const CoveragePla
 
     const QRectF canvas(70.0, 90.0, 1260.0, 830.0);
     const QRectF bounds = plotBounds(problem, actual);
-    drawPolygon(painter, problem.region.outerBoundary, bounds, canvas, QPen(Qt::black, 3.0));
+    drawPolygon(painter, problem.region.coverageBoundary, bounds, canvas, QPen(Qt::black, 3.0));
     for (const Polygon2D& noGo : problem.region.noGoRegions) {
         drawPolygon(painter, noGo, bounds, canvas, QPen(QColor(190, 0, 0), 3.0), QBrush(QColor(255, 210, 210)));
     }
@@ -942,7 +944,8 @@ QJsonObject analyzeExecutionCandidate(const ScenarioDefinition& definition, doub
                 geometryStatus = candidate.status;
                 executionRegion = candidate.regions;
                 if (candidate.status == Geometry::PolygonRegionOperationStatus::Success) {
-                    planningProblem.region.outerBoundary = insetOuter.regions.front().outerBoundary;
+                    planningProblem.region.coverageBoundary = insetOuter.regions.front().outerBoundary;
+                    planningProblem.region.navigationBoundary = planningProblem.region.coverageBoundary;
                     planningProblem.region.noGoRegions = std::move(inflatedNoGo);
                     planningProblem.safetyMarginM = 0.0;
                 }
@@ -1195,7 +1198,7 @@ void MarineSITLValidationTest::_validateP2Scenarios()
             MarineTask task = *createdTask;
             task.name = definition.id.toStdString() + " P2 SITL validation";
             task.planner.plannerId = "marine.coverage.bcd";
-            task.region.coverageBoundary = toGeoPolygon(anchoredProblem.region.outerBoundary, *anchorReference);
+            task.region.coverageBoundary = toGeoPolygon(anchoredProblem.region.coverageBoundary, *anchorReference);
             task.region.navigationBoundary = task.region.coverageBoundary;
             task.region.noGoRegions.clear();
             for (const Polygon2D& noGo : anchoredProblem.region.noGoRegions) {

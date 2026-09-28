@@ -61,7 +61,7 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
     double selectedSweepAngleDeg = normalizedProblem.requestedSweepAngleDeg;
     if (normalizedProblem.sweepAngleMode == SweepAngleMode::Auto) {
         const GlobalSweepSelectionResult selection =
-            selectGlobalSweepAngle(normalizedProblem.region.outerBoundary,
+            selectGlobalSweepAngle(normalizedProblem.region.coverageBoundary,
                                    freeSpace.freeSpace.executionTrackFeasibleRegion, normalizedProblem.swathWidthM);
         if (selection.status != PlanningStatus::Success) {
             return failure(selection.status, selection.error, selection.message);

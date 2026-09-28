@@ -325,7 +325,8 @@ void NominalCoverageValidatorTest::_testArtificialGapRegression()
 void NominalCoverageValidatorTest::_testP2CVerticalSlice()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary = rectangle(0.0, 0.0, 20.0, 20.0);
+    problem.region.coverageBoundary = rectangle(0.0, 0.0, 20.0, 20.0);
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = {rectangle(8.0, 8.0, 12.0, 12.0)};
     problem.swathWidthM = 4.0;
     problem.safetyMarginM = 1.0;
@@ -398,7 +399,8 @@ void NominalCoverageValidatorTest::_testP2CVerticalSlice()
 void NominalCoverageValidatorTest::_testHalfSwathSafetyPrecheck()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary = rectangle(0.0, 0.0, 20.0, 20.0);
+    problem.region.coverageBoundary = rectangle(0.0, 0.0, 20.0, 20.0);
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 4.0;
     problem.safetyMarginM = problem.swathWidthM / 2.0;
     problem.sweepAngleMode = SweepAngleMode::Manual;

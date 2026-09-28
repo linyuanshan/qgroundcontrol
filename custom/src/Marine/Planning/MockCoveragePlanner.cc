@@ -50,6 +50,14 @@ CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem
         solution.message = CoverageProblemValidator::messageForError(validationError);
         return solution;
     }
+    const auto boundaryError = CoverageProblemValidator::validateLegacyCoincidentBoundaries(normalizedProblem.region);
+    if (boundaryError != CoveragePlanningError::None) {
+        CoveragePlanningSolution solution;
+        solution.status = CoverageProblemValidator::statusForError(boundaryError);
+        solution.error = boundaryError;
+        solution.message = CoverageProblemValidator::messageForError(boundaryError);
+        return solution;
+    }
     if (!normalizedProblem.region.noGoRegions.empty()) {
         CoveragePlanningSolution solution;
         solution.status = CoverageProblemValidator::statusForError(CoveragePlanningError::UnsupportedNoGoRegion);
@@ -58,7 +66,7 @@ CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem
         return solution;
     }
 
-    const Polygon2D& boundary = normalizedProblem.region.outerBoundary;
+    const Polygon2D& boundary = normalizedProblem.region.coverageBoundary;
     const Point2D& first = boundary.vertices.front();
     const Point2D center = polygonCenter(boundary);
     const Point2D& opposite = boundary.vertices.at(boundary.vertices.size() / 2);

@@ -50,7 +50,8 @@ Polygon2D s04Outer()
 CoveragePlanningProblem anchoredS04Problem()
 {
     CoveragePlanningProblem problemValue;
-    problemValue.region.outerBoundary = s04Outer();
+    problemValue.region.coverageBoundary = s04Outer();
+    problemValue.region.navigationBoundary = problemValue.region.coverageBoundary;
     problemValue.region.noGoRegions = {rectangle(22.0, 4.0, 26.0, 8.0)};
     problemValue.swathWidthM = 4.0;
     problemValue.safetyMarginM = 1.0;
@@ -62,7 +63,8 @@ CoveragePlanningProblem anchoredS04Problem()
         return {};
     }
     const Point2D offset{-initial.path.front().xM, -initial.path.front().yM};
-    translatePolygon(problemValue.region.outerBoundary, offset);
+    translatePolygon(problemValue.region.coverageBoundary, offset);
+    translatePolygon(problemValue.region.navigationBoundary, offset);
     for (Polygon2D& noGo : problemValue.region.noGoRegions) {
         translatePolygon(noGo, offset);
     }
@@ -88,7 +90,8 @@ CoveragePlanningProblem problem(Polygon2D outer, std::vector<Polygon2D> noGoRegi
                                 double safetyMarginM = 1.0, double angleDeg = 90.0)
 {
     CoveragePlanningProblem result;
-    result.region.outerBoundary = std::move(outer);
+    result.region.coverageBoundary = std::move(outer);
+    result.region.navigationBoundary = result.region.coverageBoundary;
     result.region.noGoRegions = std::move(noGoRegions);
     result.swathWidthM = swathWidthM;
     result.safetyMarginM = safetyMarginM;
@@ -269,9 +272,9 @@ void BoustrophedonCoveragePlannerTest::_testAutoSelectionAndInputOrder()
         const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(input);
         QVERIFY2(freeSpace.status == PlanningStatus::Success, freeSpace.message.c_str());
         const GlobalSweepSelectionResult selection = selectGlobalSweepAngle(
-            input.region.outerBoundary, freeSpace.freeSpace.executionTrackFeasibleRegion, input.swathWidthM);
+            input.region.coverageBoundary, freeSpace.freeSpace.executionTrackFeasibleRegion, input.swathWidthM);
         QVERIFY2(selection.status == PlanningStatus::Success, selection.message.c_str());
-        QVERIFY(angleComesFromOuterEdge(input.region.outerBoundary, selection.selectedSweepAngleDeg));
+        QVERIFY(angleComesFromOuterEdge(input.region.coverageBoundary, selection.selectedSweepAngleDeg));
         QCOMPARE(selection.selectedSweepAngleDeg, ExpectedAnglesDeg.at(caseIndex));
 
         const CoveragePlanningSolution first = planner.plan(input);
@@ -280,9 +283,10 @@ void BoustrophedonCoveragePlannerTest::_testAutoSelectionAndInputOrder()
         verifySuccess(input, first);
         QCOMPARE(first.selectedSweepAngleDeg, selection.selectedSweepAngleDeg);
 
-        std::ranges::reverse(input.region.outerBoundary.vertices);
-        std::rotate(input.region.outerBoundary.vertices.begin(), std::next(input.region.outerBoundary.vertices.begin()),
-                    input.region.outerBoundary.vertices.end());
+        std::ranges::reverse(input.region.coverageBoundary.vertices);
+        std::rotate(input.region.coverageBoundary.vertices.begin(),
+                    std::next(input.region.coverageBoundary.vertices.begin()),
+                    input.region.coverageBoundary.vertices.end());
         compareSolutions(first, planner.plan(input));
     }
     QCOMPARE(cases.front().sweepAngleMode, SweepAngleMode::Auto);
@@ -369,7 +373,7 @@ void BoustrophedonCoveragePlannerTest::_testGeoRoundTripS04Regression()
     task.safety.preferredSafetyMarginM = localProblem.safetyMarginM;
     task.coverage.sweepAngleMode = localProblem.sweepAngleMode;
     task.coverage.sweepAngleDeg = localProblem.requestedSweepAngleDeg;
-    task.region.coverageBoundary = toGeoPolygon(localProblem.region.outerBoundary, *reference);
+    task.region.coverageBoundary = toGeoPolygon(localProblem.region.coverageBoundary, *reference);
     task.region.navigationBoundary = task.region.coverageBoundary;
     for (const Polygon2D& noGo : localProblem.region.noGoRegions) {
         task.region.noGoRegions.push_back(toGeoPolygon(noGo, *reference));

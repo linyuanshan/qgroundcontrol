@@ -14,12 +14,13 @@ CoveragePlanningProblem rectangleProblem(double widthM, double heightM, double s
                                          double safetyMarginM = 0.0)
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {0.0, 0.0},
         {widthM, 0.0},
         {widthM, heightM},
         {0.0, heightM},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = swathWidthM;
     problem.safetyMarginM = safetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
@@ -181,9 +182,10 @@ void LawnmowerCoveragePlannerTest::_testExecutionProfileCapabilityGate()
 void LawnmowerCoveragePlannerTest::_testGeneralConvexDeterminism()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {-2.0, 4.0}, {0.0, 0.0}, {12.0, -1.0}, {18.0, 5.0}, {13.0, 10.0}, {2.0, 9.0},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 3.0;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 27.0;
@@ -218,9 +220,10 @@ void LawnmowerCoveragePlannerTest::_testSafetyInsetFailure()
 void LawnmowerCoveragePlannerTest::_testNonMonotoneSweepFailure()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {0.0, 0.0}, {10.0, 0.0}, {10.0, 3.0}, {3.0, 3.0}, {3.0, 7.0}, {10.0, 7.0}, {10.0, 10.0}, {0.0, 10.0},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 2.0;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 0.0;
@@ -236,9 +239,10 @@ void LawnmowerCoveragePlannerTest::_testNonMonotoneSweepFailure()
 void LawnmowerCoveragePlannerTest::_testUnsafeConnectorFailure()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {0.0, 0.0}, {10.0, 0.0}, {10.0, 1.5}, {3.0, 3.0}, {10.0, 4.5}, {10.0, 10.0}, {0.0, 10.0},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 4.0;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 90.0;
@@ -257,7 +261,7 @@ void LawnmowerCoveragePlannerTest::_testSuccessfulPathInvariants()
     const LawnmowerCoveragePlanner planner;
     const CoveragePlanningSolution solution = planner.plan(problem);
     const Geometry::PolygonInsetResult inset =
-        Geometry::insetPolygon(problem.region.outerBoundary, problem.safetyMarginM);
+        Geometry::insetPolygon(problem.region.coverageBoundary, problem.safetyMarginM);
 
     QCOMPARE(solution.status, PlanningStatus::Success);
     QCOMPARE(inset.status, Geometry::PolygonInsetStatus::Success);
@@ -347,12 +351,13 @@ void LawnmowerCoveragePlannerTest::_testAutoAngleTieBreak()
 void LawnmowerCoveragePlannerTest::_testAutoRotatedRectangle()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {0.0, 0.0},
         {17.3205080757, 10.0},
         {12.3205080757, 18.6602540378},
         {-5.0, 8.6602540378},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 4.0;
     problem.sweepAngleMode = SweepAngleMode::Auto;
 
@@ -367,9 +372,10 @@ void LawnmowerCoveragePlannerTest::_testAutoRotatedRectangle()
 void LawnmowerCoveragePlannerTest::_testAutoFiltersNonMonotoneCandidates()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {0.0, 0.0}, {10.0, 0.0}, {10.0, 3.0}, {3.0, 3.0}, {3.0, 7.0}, {10.0, 7.0}, {10.0, 10.0}, {0.0, 10.0},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 20.0;
     problem.sweepAngleMode = SweepAngleMode::Auto;
 
@@ -384,9 +390,10 @@ void LawnmowerCoveragePlannerTest::_testAutoFiltersNonMonotoneCandidates()
 void LawnmowerCoveragePlannerTest::_testAutoIrregularPolygonDeterminism()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {-2.0, 4.0}, {0.0, 0.0}, {12.0, -1.0}, {18.0, 5.0}, {13.0, 10.0}, {2.0, 9.0},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 3.0;
     problem.sweepAngleMode = SweepAngleMode::Auto;
 

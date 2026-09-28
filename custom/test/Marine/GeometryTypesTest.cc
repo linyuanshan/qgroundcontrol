@@ -17,7 +17,8 @@ void GeometryTypesTest::_testDefaults()
     QVERIFY(point.isFinite());
     QVERIFY(polygon.vertices.empty());
     QVERIFY(polygon.isFinite());
-    QVERIFY(region.outerBoundary.vertices.empty());
+    QVERIFY(region.coverageBoundary.vertices.empty());
+    QVERIFY(region.navigationBoundary.vertices.empty());
     QVERIFY(region.noGoRegions.empty());
     QVERIFY(region.isFinite());
 }
@@ -37,10 +38,13 @@ void GeometryTypesTest::_testFiniteValidation()
     QVERIFY(!polygon.isFinite());
 
     Region2D region;
-    region.outerBoundary = {{{0.0, 0.0}, {10.0, 0.0}, {0.0, 10.0}}};
+    region.coverageBoundary = {{{0.0, 0.0}, {10.0, 0.0}, {0.0, 10.0}}};
     region.noGoRegions.push_back({{{1.0, 1.0}, {2.0, 1.0}, {1.0, 2.0}}});
     QVERIFY(region.isFinite());
     region.noGoRegions.front().vertices.front().yM = infinity;
+    QVERIFY(!region.isFinite());
+    region.noGoRegions.clear();
+    region.navigationBoundary = {{{0.0, 0.0}, {infinity, 0.0}, {0.0, 10.0}}};
     QVERIFY(!region.isFinite());
 }
 

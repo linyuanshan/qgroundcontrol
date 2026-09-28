@@ -11,12 +11,13 @@ namespace {
 CoveragePlanningProblem validProblem()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {0.0, 0.0},
         {20.0, 0.0},
         {20.0, 10.0},
         {0.0, 10.0},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 6.0;
     problem.safetyMarginM = 2.0;
     problem.sweepAngleMode = SweepAngleMode::Manual;
@@ -37,31 +38,38 @@ void CoverageProblemValidatorTest::_testPolygonValidation()
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
 
     problem = validProblem();
-    problem.region.outerBoundary.vertices = {{0.0, 0.0}, {10.0, 0.0}};
+    problem.region.coverageBoundary.vertices = {{0.0, 0.0}, {10.0, 0.0}};
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     verifyInvalidOuterBoundary(problem);
 
     problem = validProblem();
-    problem.region.outerBoundary.vertices = {{0.0, 0.0}, {10.0, 0.0}, {10.0, 0.0}, {0.0, 10.0}};
+    problem.region.coverageBoundary.vertices = {{0.0, 0.0}, {10.0, 0.0}, {10.0, 0.0}, {0.0, 10.0}};
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     verifyInvalidOuterBoundary(problem);
 
     problem = validProblem();
-    problem.region.outerBoundary.vertices[1] = {0.0005, 0.0};
+    problem.region.coverageBoundary.vertices[1] = {0.0005, 0.0};
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     verifyInvalidOuterBoundary(problem);
 
     problem = validProblem();
-    problem.region.outerBoundary.vertices[1] = {0.002, 0.0};
+    problem.region.coverageBoundary.vertices[1] = {0.002, 0.0};
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
 
     problem = validProblem();
-    problem.region.outerBoundary.vertices = {{0.0, 0.0}, {10.0, 0.0}, {20.0, 0.0}};
+    problem.region.coverageBoundary.vertices = {{0.0, 0.0}, {10.0, 0.0}, {20.0, 0.0}};
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     verifyInvalidOuterBoundary(problem);
 
     problem = validProblem();
-    problem.region.outerBoundary.vertices = {{0.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}, {10.0, 0.0}};
+    problem.region.coverageBoundary.vertices = {{0.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}, {10.0, 0.0}};
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     verifyInvalidOuterBoundary(problem);
 
     problem = validProblem();
-    problem.region.outerBoundary.vertices.front().xM = std::numeric_limits<double>::quiet_NaN();
+    problem.region.coverageBoundary.vertices.front().xM = std::numeric_limits<double>::quiet_NaN();
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     verifyInvalidOuterBoundary(problem);
 }
 

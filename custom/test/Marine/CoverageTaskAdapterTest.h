@@ -11,6 +11,7 @@ private slots:
     void _testInvalidTaskGeometry();
     void _testValidationAndNormalization();
     void _testNoGoConversion();
+    void _testSeparateNavigationConversion();
     void _testSolutionMapping();
     void _testTaskPlannerRoundTrip();
 };

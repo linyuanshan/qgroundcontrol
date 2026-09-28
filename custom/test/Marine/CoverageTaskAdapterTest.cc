@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 
+#include "CoverageGeometry.h"
 #include "CoverageTaskAdapter.h"
 #include "MockCoveragePlanner.h"
 #include "PlannerRegistry.h"
@@ -56,7 +57,7 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     QVERIFY(error == CoveragePlanningError::None);
     QVERIFY(qAbs(reference->origin().latitudeDeg - 38.001) < CoordinateToleranceDeg);
     QVERIFY(qAbs(reference->origin().longitudeDeg - 121.001) < CoordinateToleranceDeg);
-    QCOMPARE(problem.region.outerBoundary.vertices.size(), task.region.coverageBoundary.vertices.size());
+    QCOMPARE(problem.region.coverageBoundary.vertices.size(), task.region.coverageBoundary.vertices.size());
     QVERIFY(problem.region.noGoRegions.empty());
     QCOMPARE(problem.swathWidthM, 8.0);
     QCOMPARE(problem.safetyMarginM, 2.5);
@@ -65,11 +66,35 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     QCOMPARE(problem.requestedSweepAngleDeg, 35.0);
     QVERIFY(problem.region.isFinite());
 
-    for (std::size_t index = 0; index < problem.region.outerBoundary.vertices.size(); ++index) {
-        const std::optional<GeoPoint> roundTrip = reference->toGeo(problem.region.outerBoundary.vertices[index]);
+    for (std::size_t index = 0; index < problem.region.coverageBoundary.vertices.size(); ++index) {
+        const std::optional<GeoPoint> roundTrip = reference->toGeo(problem.region.coverageBoundary.vertices[index]);
         QVERIFY(roundTrip.has_value());
         compareGeoPoint(*roundTrip, task.region.coverageBoundary.vertices[index]);
     }
+}
+
+void CoverageTaskAdapterTest::_testSeparateNavigationConversion()
+{
+    MarineTask task = createTask();
+    task.region.navigationBoundary.vertices = {
+        {37.999, 120.999, 0.0}, {37.999, 121.004, 0.0}, {38.004, 121.004, 0.0}, {38.004, 120.999, 0.0}};
+    task.region.noGoRegions = {{{{38.001, 121.003, 0.0}, {38.001, 121.0035, 0.0}, {38.0015, 121.0035, 0.0}}}};
+    CoveragePlanningProblem problem;
+    std::optional<GeoReference> reference;
+    CoveragePlanningError error;
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(problem.region.navigationBoundary.vertices.size(), task.region.navigationBoundary.vertices.size());
+    for (std::size_t index = 0; index < problem.region.navigationBoundary.vertices.size(); ++index) {
+        const auto roundTrip = reference->toGeo(problem.region.navigationBoundary.vertices[index]);
+        QVERIFY(roundTrip.has_value());
+        compareGeoPoint(*roundTrip, task.region.navigationBoundary.vertices[index]);
+    }
+    QCOMPARE(buildCoverageGeometry(problem.region).error, CoveragePlanningError::None);
+    QCOMPARE(problem.region.noGoRegions.size(), std::size_t{1});
+    task.region.navigationBoundary = {};
+    QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(error, CoveragePlanningError::InvalidNavigationBoundary);
+    QVERIFY(!reference.has_value());
 }
 
 void CoverageTaskAdapterTest::_testInvalidTaskGeometry()

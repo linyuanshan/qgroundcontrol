@@ -14,12 +14,13 @@ namespace {
 CoveragePlanningProblem createValidProblem()
 {
     CoveragePlanningProblem problem;
-    problem.region.outerBoundary.vertices = {
+    problem.region.coverageBoundary.vertices = {
         {0.0, 0.0},
         {20.0, 0.0},
         {20.0, 10.0},
         {0.0, 10.0},
     };
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 5.0;
     problem.safetyMarginM = 1.0;
     problem.sweepAngleMode = SweepAngleMode::Manual;

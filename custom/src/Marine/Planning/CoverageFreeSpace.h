@@ -19,6 +19,7 @@ struct CoverageFreeSpaceResult
     std::string message;
 };
 
+/// Historical C=N safety/reachability pipeline. V05 raw C/N/O geometry uses buildCoverageGeometry instead.
 [[nodiscard]] CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& problem);
 
 }  // namespace Marine

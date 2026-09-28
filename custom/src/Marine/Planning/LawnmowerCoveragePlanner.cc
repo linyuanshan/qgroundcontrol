@@ -92,7 +92,7 @@ Marine::CoveragePlanningSolution generateCandidate(const Marine::CoveragePlannin
     }
 
     const Marine::MonotoneCoverageResult primitiveResult = Marine::generateMonotoneCoverage(
-        problem.region.outerBoundary, navigablePolygon, problem.swathWidthM, navigationAngleDeg);
+        problem.region.coverageBoundary, navigablePolygon, problem.swathWidthM, navigationAngleDeg);
 
     Marine::CoveragePlanningError primitiveError = Marine::CoveragePlanningError::GeometryFailure;
     switch (primitiveResult.error) {
@@ -166,6 +166,10 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     if (validationError != CoveragePlanningError::None) {
         return failureSolution(validationError);
     }
+    const auto boundaryError = CoverageProblemValidator::validateLegacyCoincidentBoundaries(normalizedProblem.region);
+    if (boundaryError != CoveragePlanningError::None) {
+        return failureSolution(boundaryError);
+    }
     if (normalizedProblem.executionSafety.executionMarginM > 0.0) {
         return failureSolution(CoveragePlanningError::UnsupportedExecutionSafetyProfile);
     }
@@ -174,7 +178,7 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     }
 
     Geometry::PolygonInsetResult inset =
-        Geometry::insetPolygon(normalizedProblem.region.outerBoundary, normalizedProblem.safetyMarginM);
+        Geometry::insetPolygon(normalizedProblem.region.coverageBoundary, normalizedProblem.safetyMarginM);
     const CoveragePlanningError insetError = errorForInsetStatus(inset.status);
     if (insetError != CoveragePlanningError::None) {
         return failureSolution(insetError);
@@ -193,7 +197,7 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     bool foundCandidate = false;
     bool foundMonotoneAngle = false;
     CoveragePlanningError candidateFailure = CoveragePlanningError::InvalidGeneratedPath;
-    for (const double navigationAngleDeg : edgeAngleCandidates(normalizedProblem.region.outerBoundary)) {
+    for (const double navigationAngleDeg : edgeAngleCandidates(normalizedProblem.region.coverageBoundary)) {
         const double mathAngleDeg = Geometry::navigationAngleToMathAngle(navigationAngleDeg);
         if (!Geometry::isSweepMonotone(inset.polygon, mathAngleDeg)) {
             continue;

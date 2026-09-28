@@ -14,6 +14,11 @@ enum class CoveragePlanningError
 {
     None,
     InvalidOuterBoundary,
+    InvalidNavigationBoundary,
+    CoverageOutsideNavigationBoundary,
+    EmptyCoverageTarget,
+    InvalidCoverageTarget,
+    UnsupportedSeparateBoundaries,
     InvalidSwathWidth,
     InvalidSafetyMargin,
     InvalidExecutionMargin,

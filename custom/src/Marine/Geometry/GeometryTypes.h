@@ -32,7 +32,7 @@ struct Region2D
 {
     [[nodiscard]] bool isFinite() const
     {
-        if (!outerBoundary.isFinite()) {
+        if (!coverageBoundary.isFinite() || !navigationBoundary.isFinite()) {
             return false;
         }
         for (const Polygon2D& noGoRegion : noGoRegions) {
@@ -43,7 +43,8 @@ struct Region2D
         return true;
     }
 
-    Polygon2D outerBoundary;
+    Polygon2D coverageBoundary;
+    Polygon2D navigationBoundary;
     std::vector<Polygon2D> noGoRegions;
 };
 

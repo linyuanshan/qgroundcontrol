@@ -2,14 +2,16 @@
 
 #include <cmath>
 
-#include "Geometry/MarineGeometry.h"
+#include "CoverageGeometry.h"
+#include "Geometry/PolygonRegion.h"
 
 namespace Marine {
 
 CoveragePlanningError CoverageProblemValidator::validateAndNormalize(CoveragePlanningProblem& problem)
 {
-    if (!Geometry::isSimpleNonDegeneratePolygon(problem.region.outerBoundary)) {
-        return CoveragePlanningError::InvalidOuterBoundary;
+    const auto geometry = buildCoverageGeometry(problem.region);
+    if (geometry.error != CoveragePlanningError::None) {
+        return geometry.error;
     }
     if (!std::isfinite(problem.swathWidthM) || (problem.swathWidthM <= 0.0)) {
         return CoveragePlanningError::InvalidSwathWidth;
@@ -44,12 +46,28 @@ CoveragePlanningError CoverageProblemValidator::validateAndNormalize(CoveragePla
     return CoveragePlanningError::None;
 }
 
+CoveragePlanningError CoverageProblemValidator::validateLegacyCoincidentBoundaries(const Region2D& region)
+{
+    const auto reverseContainment = Geometry::isRegionSetContained({{.outerBoundary = region.navigationBoundary}},
+                                                                   {{.outerBoundary = region.coverageBoundary}});
+    if (reverseContainment.status != Geometry::PolygonRegionOperationStatus::Success) {
+        return CoveragePlanningError::GeometryFailure;
+    }
+    // Callers have already validated C subset-of N.
+    return reverseContainment.contained ? CoveragePlanningError::None
+                                        : CoveragePlanningError::UnsupportedSeparateBoundaries;
+}
+
 PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError error)
 {
     switch (error) {
         case CoveragePlanningError::None:
             return PlanningStatus::Success;
         case CoveragePlanningError::InvalidOuterBoundary:
+        case CoveragePlanningError::InvalidNavigationBoundary:
+        case CoveragePlanningError::CoverageOutsideNavigationBoundary:
+        case CoveragePlanningError::EmptyCoverageTarget:
+        case CoveragePlanningError::InvalidCoverageTarget:
         case CoveragePlanningError::InvalidNoGoRegion:
         case CoveragePlanningError::NoGoOutsideBoundary:
         case CoveragePlanningError::NoGoBoundaryConflict:
@@ -66,6 +84,7 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::NoNavigableArea:
         case CoveragePlanningError::DisconnectedFeasibleRegion:
         case CoveragePlanningError::UnsupportedNoGoRegion:
+        case CoveragePlanningError::UnsupportedSeparateBoundaries:
         case CoveragePlanningError::SafetyInsetEmpty:
         case CoveragePlanningError::SafetyInsetDisconnected:
         case CoveragePlanningError::NonMonotoneSweep:
@@ -88,15 +107,25 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
         case CoveragePlanningError::None:
             return {};
         case CoveragePlanningError::InvalidOuterBoundary:
-            return "Work region outer boundary must be a finite, non-self-intersecting polygon with at least three "
+            return "Coverage boundary must be a finite, non-self-intersecting polygon with at least three "
                    "distinct points and non-zero area";
+        case CoveragePlanningError::InvalidNavigationBoundary:
+            return "Navigation boundary must be a finite, simple, non-degenerate polygon";
+        case CoveragePlanningError::CoverageOutsideNavigationBoundary:
+            return "Coverage area must be contained in navigation area";
+        case CoveragePlanningError::EmptyCoverageTarget:
+            return "Coverage target must have positive area after subtracting no-go regions";
+        case CoveragePlanningError::InvalidCoverageTarget:
+            return "Coverage target geometry is invalid after subtracting no-go regions";
+        case CoveragePlanningError::UnsupportedSeparateBoundaries:
+            return "The historical planner requires coincident coverage and navigation boundaries";
         case CoveragePlanningError::InvalidNoGoRegion:
             return "Each no-go region must be a finite, simple polygon with at least three distinct points and "
                    "non-zero area";
         case CoveragePlanningError::NoGoOutsideBoundary:
-            return "Each no-go region must be fully inside the work-region outer boundary";
+            return "Each no-go region must be fully inside the navigation boundary";
         case CoveragePlanningError::NoGoBoundaryConflict:
-            return "No-go regions must not touch or cross the work-region outer boundary";
+            return "No-go regions must not touch or cross the navigation boundary";
         case CoveragePlanningError::NoGoOverlapOrTouch:
             return "No-go regions must not overlap, touch, or contain one another";
         case CoveragePlanningError::InvalidSwathWidth:

@@ -51,8 +51,12 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
     }
 
     CoveragePlanningProblem converted;
-    if (!toLocalPolygon(task.region.coverageBoundary, *reference, converted.region.outerBoundary)) {
+    if (!toLocalPolygon(task.region.coverageBoundary, *reference, converted.region.coverageBoundary)) {
         error = CoveragePlanningError::InvalidOuterBoundary;
+        return false;
+    }
+    if (!toLocalPolygon(task.region.navigationBoundary, *reference, converted.region.navigationBoundary)) {
+        error = CoveragePlanningError::InvalidNavigationBoundary;
         return false;
     }
 

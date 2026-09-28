@@ -94,6 +94,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PathLegRole.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoveragePlanningProblem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageGeometry.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageGeometry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageProblemValidator.cc
@@ -121,6 +123,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageGeometryTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageGeometryTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageFreeSpaceTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageFreeSpaceTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.cc
@@ -171,6 +175,17 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageGeometryTest
+        LABELS
+        Unit
     )
 
     cmake_language(
