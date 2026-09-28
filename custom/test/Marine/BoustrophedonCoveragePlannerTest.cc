@@ -365,10 +365,12 @@ void BoustrophedonCoveragePlannerTest::_testGeoRoundTripS04Regression()
     task.planner.plannerId = "marine.coverage.bcd";
     task.planner.executionSafety.executionMarginM = localProblem.executionSafety.executionMarginM;
     task.coverage.swathWidthM = localProblem.swathWidthM;
-    task.coverage.safetyMarginM = localProblem.safetyMarginM;
+    task.safety.hardSafetyMarginM = localProblem.safetyMarginM;
+    task.safety.preferredSafetyMarginM = localProblem.safetyMarginM;
     task.coverage.sweepAngleMode = localProblem.sweepAngleMode;
     task.coverage.sweepAngleDeg = localProblem.requestedSweepAngleDeg;
-    task.region.outerBoundary = toGeoPolygon(localProblem.region.outerBoundary, *reference);
+    task.region.coverageBoundary = toGeoPolygon(localProblem.region.outerBoundary, *reference);
+    task.region.navigationBoundary = task.region.coverageBoundary;
     for (const Polygon2D& noGo : localProblem.region.noGoRegions) {
         task.region.noGoRegions.push_back(toGeoPolygon(noGo, *reference));
     }

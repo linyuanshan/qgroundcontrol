@@ -114,7 +114,7 @@ bool validGeoPoint(const GeoPoint& point)
            (point.longitudeDeg <= 180.0);
 }
 
-bool validateV2PlanningResult(const PlanningResult& result, QString& errorString)
+bool validateInfrastructureResult(const PlanningResult& result, QString& errorString)
 {
     if (!std::isfinite(result.selectedSweepAngleDeg) || (result.selectedSweepAngleDeg < 0.0) ||
         (result.selectedSweepAngleDeg >= 180.0) || (result.turnCount < 0)) {
@@ -173,7 +173,11 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
                     _syncNoGoPolygonsFromTask();
                 }
                 emit taskDataChanged();
-                invalidatePlan();
+                setDirty(true);
+                emit readyForSaveStateChanged();
+                if (_planningArtifact && (!_task() || !_planningArtifact->identity.matches(*_task()))) {
+                    invalidatePlan();
+                }
             }
         });
         connect(_marineContext, &MarinePlanContext::tasksCleared, this, [this]() {
@@ -201,6 +205,7 @@ void CoverageInspectionComplexItem::setTaskId(const QString& taskId)
         return;
     }
 
+    _planningArtifact.reset();
     _taskId = newTaskId;
     _syncWorkRegionPolygonFromTask();
     _syncNoGoPolygonsFromTask();
@@ -246,17 +251,20 @@ void CoverageInspectionComplexItem::setSwathWidthM(double swathWidthM)
 double CoverageInspectionComplexItem::safetyMarginM() const
 {
     const MarineTask* marineTask = _task();
-    return (marineTask != nullptr) ? marineTask->coverage.safetyMarginM : 0.0;
+    return (marineTask != nullptr) ? marineTask->safety.hardSafetyMarginM : 0.0;
 }
 
 void CoverageInspectionComplexItem::setSafetyMarginM(double safetyMarginM)
 {
     const MarineTask* marineTask = _task();
-    if ((marineTask == nullptr) || (marineTask->coverage.safetyMarginM == safetyMarginM)) {
+    if ((marineTask == nullptr) || (marineTask->safety.hardSafetyMarginM == safetyMarginM)) {
         return;
     }
     MarineTask updatedTask = *marineTask;
-    updatedTask.coverage.safetyMarginM = safetyMarginM;
+    updatedTask.safety.hardSafetyMarginM = safetyMarginM;
+    if (updatedTask.safety.preferredSafetyMarginM < safetyMarginM) {
+        updatedTask.safety.preferredSafetyMarginM = safetyMarginM;
+    }
     _replaceTask(updatedTask);
 }
 
@@ -372,7 +380,7 @@ void CoverageInspectionComplexItem::setSonarRecord(bool record)
 QVariantList CoverageInspectionComplexItem::outerBoundary() const
 {
     const MarineTask* marineTask = _task();
-    return (marineTask != nullptr) ? _toQGeoCoordinates(marineTask->region.outerBoundary) : QVariantList();
+    return (marineTask != nullptr) ? _toQGeoCoordinates(marineTask->region.coverageBoundary) : QVariantList();
 }
 
 QVariantList CoverageInspectionComplexItem::noGoRegions() const
@@ -450,7 +458,7 @@ QVariantList CoverageInspectionComplexItem::generatedPathRoleRuns() const
 
 bool CoverageInspectionComplexItem::plan()
 {
-    _legacyPlanningArtifact = false;
+    _planningArtifact.reset();
     PlanningResult result;
     if (!noGoRegionsReady()) {
         result.status = PlanningStatus::InvalidInput;
@@ -468,6 +476,13 @@ bool CoverageInspectionComplexItem::plan()
     if (task == nullptr) {
         result.status = PlanningStatus::InvalidInput;
         result.message = "Marine task was not found";
+        _applyPlanningResult(std::move(result));
+        return false;
+    }
+
+    if (!task->schemaValid()) {
+        result.status = PlanningStatus::InvalidInput;
+        result.message = "Task v3 planning inputs are incomplete or invalid";
         _applyPlanningResult(std::move(result));
         return false;
     }
@@ -507,13 +522,23 @@ bool CoverageInspectionComplexItem::plan()
         result.turnCount = 0;
     }
     const bool success = result.status == PlanningStatus::Success;
-    _applyPlanningResult(std::move(result));
+    const auto identity = PlanningInputIdentity::fromTask(*task);
+    if (!identity) {
+        result = {};
+        result.message = "Task v3 planning inputs are incomplete or invalid";
+        _applyPlanningResult(std::move(result));
+        return false;
+    }
+    _planningArtifact = InfrastructurePlanningArtifact{std::move(result), *identity, false};
+    _applyPlanningResult({});
     return success;
 }
 
 void CoverageInspectionComplexItem::invalidatePlan()
 {
-    _legacyPlanningArtifact = false;
+    if (_planningArtifact) {
+        _planningArtifact->stale = true;
+    }
     _applyPlanningResult({});
 }
 
@@ -633,6 +658,10 @@ int CoverageInspectionComplexItem::lastSequenceNumber() const
 
 void CoverageInspectionComplexItem::appendMissionItems(QList<MissionItem*>& items, QObject* missionItemParent)
 {
+    // InfrastructureOnly artifacts have no execution certification, including fresh results.
+    if (_planningArtifact) {
+        return;
+    }
     int nextSequenceNumber = _sequenceNumber;
     QString errorString;
     if (!ArduPilotMissionAdapter::appendWaypoints(_planningResult, items, missionItemParent, nextSequenceNumber,
@@ -653,7 +682,8 @@ void CoverageInspectionComplexItem::applyNewAltitude(double newAltitude)
 
 VisualMissionItem::ReadyForSaveState CoverageInspectionComplexItem::readyForSaveState() const
 {
-    return (_planningState == Planned) ? ReadyForSave : NotReadyForSaveData;
+    const MarineTask* task = _task();
+    return (task && task->schemaValid() && noGoRegionsReady()) ? ReadyForSave : NotReadyForSaveData;
 }
 
 void CoverageInspectionComplexItem::setDirty(bool dirty)
@@ -680,30 +710,33 @@ void CoverageInspectionComplexItem::setSequenceNumber(int sequenceNumber)
 
 void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
 {
-    const bool saveLegacyArtifact = _legacyPlanningArtifact && (_planningResult.status == PlanningStatus::Success);
-    if (!saveLegacyArtifact) {
-        QString errorString;
-        if (!validateV2PlanningResult(_planningResult, errorString)) {
-            qWarning().noquote() << "Coverage inspection planning artifact was not saved:" << errorString;
-            return;
-        }
+    const MarineTask* task = _task();
+    const auto currentIdentity = task ? PlanningInputIdentity::fromTask(*task) : std::nullopt;
+    if (!currentIdentity) {
+        return;
     }
-
+    const PlanningResult& result = _planningArtifact ? _planningArtifact->result : _planningResult;
+    const PlanningInputIdentity& identity = _planningArtifact ? _planningArtifact->identity : *currentIdentity;
+    QString errorString;
+    if (!validateInfrastructureResult(result, errorString)) {
+        return;
+    }
     QJsonObject object;
-    object.insert(JsonParsing::jsonVersionKey,
-                  saveLegacyArtifact ? LegacyPlanningArtifactVersion : CurrentPlanningArtifactVersion);
+    object.insert(JsonParsing::jsonVersionKey, CurrentPlanningArtifactVersion);
+    object.insert("resultContract", "InfrastructureOnly");
+    object.insert("inputIdentity", identity.toJson());
     object.insert(VisualMissionItem::jsonTypeKey, VisualMissionItem::jsonTypeComplexItemValue);
     object.insert(ComplexMissionItem::jsonComplexItemTypeKey, jsonComplexItemTypeValue);
     object.insert(_jsonTaskIdKey, taskId());
-    object.insert(_jsonPlanningStatusKey, planningStatusToString(_planningResult.status));
-    object.insert(_jsonPathLengthKey, _planningResult.pathLengthM);
-    object.insert(_jsonPlanningMessageKey, QString::fromStdString(_planningResult.message));
-    object.insert(_jsonSelectedSweepAngleKey, _planningResult.selectedSweepAngleDeg);
-    object.insert(_jsonTurnCountKey, _planningResult.turnCount);
+    object.insert(_jsonPlanningStatusKey, planningStatusToString(result.status));
+    object.insert(_jsonPathLengthKey, result.pathLengthM);
+    object.insert(_jsonPlanningMessageKey, QString::fromStdString(result.message));
+    object.insert(_jsonSelectedSweepAngleKey, result.selectedSweepAngleDeg);
+    object.insert(_jsonTurnCountKey, result.turnCount);
 
-    if (!saveLegacyArtifact) {
+    {
         QJsonArray legRoles;
-        for (const PathLegRole role : _planningResult.legRoles) {
+        for (const PathLegRole role : result.legRoles) {
             const QString roleName = pathLegRoleToString(role);
             if (roleName.isEmpty()) {
                 qWarning() << "Coverage inspection planning artifact contains an unsupported path leg role";
@@ -712,20 +745,35 @@ void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
             legRoles.append(roleName);
         }
         object.insert(_jsonLegRolesKey, legRoles);
-        object.insert(_jsonCoverageLengthKey, _planningResult.coverageLengthM);
-        object.insert(_jsonTransitLengthKey, _planningResult.transitLengthM);
-        object.insert(_jsonCellCountKey, _planningResult.cellCount);
+        object.insert(_jsonCoverageLengthKey, result.coverageLengthM);
+        object.insert(_jsonTransitLengthKey, result.transitLengthM);
+        object.insert(_jsonCellCountKey, result.cellCount);
     }
 
     QJsonValue pathValue;
-    GeoJsonHelper::saveGeoCoordinateArray(generatedPath(), true, pathValue);
+    QVariantList path;
+    for (const auto& point : result.path) {
+        path.append(QVariant::fromValue(_toQGeoCoordinate(point)));
+    }
+    GeoJsonHelper::saveGeoCoordinateArray(path, true, pathValue);
     object.insert(_jsonGeneratedPathKey, pathValue);
     missionItems.append(object);
 }
 
 bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequenceNumber, QString& errorString)
 {
+    const QJsonValue version = object.value(JsonParsing::jsonVersionKey);
+    if (!version.isDouble() || version.toDouble() != CurrentPlanningArtifactVersion) {
+        errorString = tr("Unsupported development schema: Marine planning artifact version %1 (expected 3)")
+                          .arg(version.toVariant().toString());
+        return false;
+    }
+    if (object.value("resultContract").toString() != QStringLiteral("InfrastructureOnly")) {
+        errorString = tr("Unsupported development schema: Marine artifact resultContract");
+        return false;
+    }
     const QList<JsonParsing::KeyValidateInfo> keyInfoList = {
+        {"inputIdentity", QJsonValue::Object, true},
         {.key = JsonParsing::jsonVersionKey, .type = QJsonValue::Double, .required = true},
         {.key = VisualMissionItem::jsonTypeKey, .type = QJsonValue::String, .required = true},
         {.key = ComplexMissionItem::jsonComplexItemTypeKey, .type = QJsonValue::String, .required = true},
@@ -734,12 +782,12 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         {.key = _jsonGeneratedPathKey, .type = QJsonValue::Array, .required = true},
         {.key = _jsonPathLengthKey, .type = QJsonValue::Double, .required = true},
         {.key = _jsonPlanningMessageKey, .type = QJsonValue::String, .required = true},
-        {.key = _jsonSelectedSweepAngleKey, .type = QJsonValue::Double, .required = false},
-        {.key = _jsonTurnCountKey, .type = QJsonValue::Double, .required = false},
-        {.key = _jsonLegRolesKey, .type = QJsonValue::Array, .required = false},
-        {.key = _jsonCoverageLengthKey, .type = QJsonValue::Double, .required = false},
-        {.key = _jsonTransitLengthKey, .type = QJsonValue::Double, .required = false},
-        {.key = _jsonCellCountKey, .type = QJsonValue::Double, .required = false},
+        {.key = _jsonSelectedSweepAngleKey, .type = QJsonValue::Double, .required = true},
+        {.key = _jsonTurnCountKey, .type = QJsonValue::Double, .required = true},
+        {.key = _jsonLegRolesKey, .type = QJsonValue::Array, .required = true},
+        {.key = _jsonCoverageLengthKey, .type = QJsonValue::Double, .required = true},
+        {.key = _jsonTransitLengthKey, .type = QJsonValue::Double, .required = true},
+        {.key = _jsonCellCountKey, .type = QJsonValue::Double, .required = true},
     };
     if (!JsonParsing::validateKeys(object, keyInfoList, errorString)) {
         return false;
@@ -749,23 +797,6 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         errorString = tr("Unsupported coverage inspection complex item type");
         return false;
     }
-    int version = 0;
-    if (!jsonInteger(object.value(JsonParsing::jsonVersionKey), version) ||
-        ((version != LegacyPlanningArtifactVersion) && (version != CurrentPlanningArtifactVersion))) {
-        errorString = tr("Coverage inspection version is not supported");
-        return false;
-    }
-    if (version == CurrentPlanningArtifactVersion) {
-        const QStringList requiredV2Keys = {
-            QString::fromLatin1(_jsonLegRolesKey),      QString::fromLatin1(_jsonCoverageLengthKey),
-            QString::fromLatin1(_jsonTransitLengthKey), QString::fromLatin1(_jsonSelectedSweepAngleKey),
-            QString::fromLatin1(_jsonCellCountKey),     QString::fromLatin1(_jsonTurnCountKey),
-        };
-        if (!JsonParsing::validateRequiredKeys(object, requiredV2Keys, errorString)) {
-            return false;
-        }
-    }
-
     const std::string loadedTaskId = object.value(_jsonTaskIdKey).toString().toStdString();
     if ((_marineContext == nullptr) || (_marineContext->task(loadedTaskId) == nullptr)) {
         errorString = tr("Marine coverage item references missing task '%1'").arg(QString::fromStdString(loadedTaskId));
@@ -799,25 +830,7 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
                                .longitudeDeg = coordinate.longitude(),
                                .altitudeM = coordinate.altitude()});
     }
-    if (version == LegacyPlanningArtifactVersion) {
-        if (!std::isfinite(result.pathLengthM) || (result.pathLengthM < 0.0)) {
-            errorString = tr("Coverage inspection path length is invalid");
-            return false;
-        }
-        if (!std::isfinite(result.selectedSweepAngleDeg) || (result.selectedSweepAngleDeg < 0.0) ||
-            (result.selectedSweepAngleDeg >= 180.0) || (result.turnCount < 0)) {
-            errorString = tr("Coverage inspection planning metrics are invalid");
-            return false;
-        }
-        if ((result.status == PlanningStatus::Success) && result.path.empty()) {
-            errorString = tr("A successful coverage inspection must contain a generated path");
-            return false;
-        }
-        if ((result.status != PlanningStatus::Success) && !result.path.empty()) {
-            errorString = tr("An unplanned coverage inspection cannot contain a generated path");
-            return false;
-        }
-    } else {
+    {
         const QJsonArray roles = object.value(_jsonLegRolesKey).toArray();
         result.legRoles.reserve(static_cast<std::size_t>(roles.size()));
         for (const QJsonValue& value : roles) {
@@ -838,18 +851,22 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
             errorString = tr("Coverage inspection cell count is invalid");
             return false;
         }
-        if (!validateV2PlanningResult(result, errorString)) {
+        if (!validateInfrastructureResult(result, errorString)) {
             return false;
         }
     }
 
+    PlanningInputIdentity identity;
+    if (!PlanningInputIdentity::fromJson(object.value("inputIdentity").toObject(), identity, errorString)) {
+        return false;
+    }
+    const bool stale = !identity.matches(*_marineContext->task(loadedTaskId));
     _taskId = loadedTaskId;
     _sequenceNumber = sequenceNumber;
     _syncWorkRegionPolygonFromTask();
     _syncNoGoPolygonsFromTask();
-    _applyPlanningResult(std::move(result));
-    _legacyPlanningArtifact =
-        (version == LegacyPlanningArtifactVersion) && (_planningResult.status == PlanningStatus::Success);
+    _planningArtifact = InfrastructurePlanningArtifact{std::move(result), std::move(identity), stale};
+    _applyPlanningResult({});
     setDirty(false);
     return true;
 }
@@ -952,11 +969,11 @@ void CoverageInspectionComplexItem::_workRegionPolygonChanged()
     }
 
     MarineTask updatedTask = *marineTask;
-    updatedTask.region.outerBoundary.vertices.clear();
+    updatedTask.region.coverageBoundary.vertices.clear();
     const QList<QGeoCoordinate> coordinates = _workRegionPolygon.coordinateList();
-    updatedTask.region.outerBoundary.vertices.reserve(static_cast<std::size_t>(coordinates.size()));
+    updatedTask.region.coverageBoundary.vertices.reserve(static_cast<std::size_t>(coordinates.size()));
     for (const QGeoCoordinate& coordinate : coordinates) {
-        updatedTask.region.outerBoundary.vertices.push_back(
+        updatedTask.region.coverageBoundary.vertices.push_back(
             {.latitudeDeg = coordinate.latitude(), .longitudeDeg = coordinate.longitude(), .altitudeM = 0.0});
     }
     _replaceTask(updatedTask);
@@ -967,8 +984,8 @@ void CoverageInspectionComplexItem::_syncWorkRegionPolygonFromTask()
     QList<QGeoCoordinate> coordinates;
     const MarineTask* marineTask = _task();
     if (marineTask != nullptr) {
-        coordinates.reserve(static_cast<qsizetype>(marineTask->region.outerBoundary.vertices.size()));
-        for (const GeoPoint& point : marineTask->region.outerBoundary.vertices) {
+        coordinates.reserve(static_cast<qsizetype>(marineTask->region.coverageBoundary.vertices.size()));
+        for (const GeoPoint& point : marineTask->region.coverageBoundary.vertices) {
             coordinates.append(_toQGeoCoordinate(point));
         }
     }

@@ -29,12 +29,14 @@ private slots:
     void _testQmlTaskProperties();
     void _testWorkRegionEditing();
     void _testNoGoRegionEditing();
+    void _testSafetyMarginEditPreservesTaskValidity();
     void _testSweepAngleProperties();
     void _testSaveLoad();
     void _testLawnmowerSaveLoad();
-    void _testLegacyV1Migration();
+    void _testLegacySchemasRejected();
     void _testUnplannedSaveLoad();
     void _testLoadValidation();
+    void _testArtifactIdentity();
 
 private:
     Marine::MarinePlanContext* _marineContext = nullptr;

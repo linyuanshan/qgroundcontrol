@@ -72,11 +72,15 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlan()
     QVERIFY(task != nullptr);
     QCOMPARE(task->type, MarineTaskType::CoverageInspection);
     QCOMPARE(task->name, std::string("Coverage Inspection"));
-    QCOMPARE(task->planner.plannerId, std::string("marine.coverage.bcd"));
+    QCOMPARE(task->planner.plannerId, std::string("marine.coverage.auto"));
     QCOMPARE(task->planner.executionSafety.executionMarginM, 0.25);
-    QCOMPARE(task->region.outerBoundary.vertices.size(), std::size_t(4));
-    QVERIFY(task->region.outerBoundary.vertices.front().latitudeDeg != mapCenter.latitude());
-    QVERIFY(task->region.outerBoundary.vertices.front().longitudeDeg != mapCenter.longitude());
+    QCOMPARE(task->region.coverageBoundary.vertices.size(), std::size_t(4));
+    QCOMPARE(task->region.navigationBoundary.vertices.size(), std::size_t(4));
+    QCOMPARE(task->region.navigationBoundary.vertices.front().latitudeDeg,
+             task->region.coverageBoundary.vertices.front().latitudeDeg);
+    QCOMPARE(task->safety.preferredSafetyMarginM, task->safety.hardSafetyMarginM);
+    QVERIFY(task->region.coverageBoundary.vertices.front().latitudeDeg != mapCenter.latitude());
+    QVERIFY(task->region.coverageBoundary.vertices.front().longitudeDeg != mapCenter.longitude());
 }
 
 void CoverageInspectionPlanCreatorTest::_testCreatePlanReplacesExistingPlan()
@@ -108,32 +112,40 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanReplacesExistingPlan()
 void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter()
 {
     _creator->createPlan(QGeoCoordinate(38.1, 121.1));
-
     auto* coverageItem = missionController()->visualItems()->value<CoverageInspectionComplexItem*>(1);
     QVERIFY(coverageItem != nullptr);
     coverageItem->setSwathWidthM(5.0);
-    QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
-    QCOMPARE(coverageItem->planningResult().status, PlanningStatus::Success);
-    QVERIFY(coverageItem->planningResult().path.size() > 3);
-    QCOMPARE(coverageItem->planningResult().legRoles.size(), coverageItem->planningResult().path.size() - 1);
-    QVERIFY(coverageItem->planningResult().coverageLengthM > 0.0);
-    QVERIFY(coverageItem->planningResult().transitLengthM >= 0.0);
-    QCOMPARE(coverageItem->planningResult().pathLengthM,
-             coverageItem->planningResult().coverageLengthM + coverageItem->planningResult().transitLengthM);
-    QVERIFY(coverageItem->planningResult().cellCount >= 1);
-    QVERIFY(coverageItem->planningResult().turnCount > 0);
-    QVERIFY(coverageItem->planningResult().message.find("Boustrophedon") != std::string::npos);
+    QCOMPARE(coverageItem->plannerId(), QStringLiteral("marine.coverage.auto"));
+    QVERIFY(!coverageItem->plan());
+    QVERIFY(coverageItem->planningResult().path.empty());
 
+    // Explicit historical planner exercises 2D creation without implementing Auto resolution.
+    MarineTask task = *_marineContext->task(coverageItem->taskId().toStdString());
+    task.planner.plannerId = "marine.coverage.bcd";
+    QVERIFY(_marineContext->updateTask(task));
+    QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
+    QVERIFY(coverageItem->planningArtifact().has_value());
+    const auto& result = coverageItem->planningArtifact()->result;
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QVERIFY(result.path.size() > 3);
+    QCOMPARE(result.legRoles.size(), result.path.size() - 1);
+    QVERIFY(result.coverageLengthM > 0.0);
+    QVERIFY(result.transitLengthM >= 0.0);
+    QCOMPARE(result.pathLengthM, result.coverageLengthM + result.transitLengthM);
+    QVERIFY(result.cellCount >= 1);
+    QVERIFY(result.turnCount > 0);
+    QVERIFY(result.message.find("Boustrophedon") != std::string::npos);
+    for (const auto& point : result.path) {
+        QVERIFY(std::isfinite(point.latitudeDeg));
+        QVERIFY(std::isfinite(point.longitudeDeg));
+        QVERIFY(std::isfinite(point.altitudeM));
+        QVERIFY(point.latitudeDeg >= -90.0 && point.latitudeDeg <= 90.0);
+        QVERIFY(point.longitudeDeg >= -180.0 && point.longitudeDeg <= 180.0);
+    }
+    QVERIFY(coverageItem->planningResult().path.empty());
     QList<MissionItem*> missionItems;
     coverageItem->appendMissionItems(missionItems, this);
-    QCOMPARE(missionItems.size(), static_cast<qsizetype>(coverageItem->planningResult().path.size()));
-    for (const MissionItem* missionItem : missionItems) {
-        QVERIFY(std::isfinite(missionItem->param5()));
-        QVERIFY(std::isfinite(missionItem->param6()));
-        QVERIFY(std::isfinite(missionItem->param7()));
-        QVERIFY(missionItem->param5() >= -90.0 && missionItem->param5() <= 90.0);
-        QVERIFY(missionItem->param6() >= -180.0 && missionItem->param6() <= 180.0);
-    }
+    QVERIFY(missionItems.isEmpty());
 }
 
 UT_REGISTER_TEST(CoverageInspectionPlanCreatorTest, TestLabel::Unit, TestLabel::MissionManager)

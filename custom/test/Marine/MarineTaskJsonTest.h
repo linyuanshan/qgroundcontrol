@@ -12,8 +12,12 @@ private slots:
     void _testSensorConfig();
     void _testUnknownField();
     void _testUnsupportedVersion();
-    void _testMissingId();
-    void _testMissingRegion();
-    void _testLegacyV1DefaultsToZero();
-    void _testInvalidExecutionSafety();
+    void _testMissingRequiredField_data();
+    void _testMissingRequiredField();
+    void _testInvalidField_data();
+    void _testInvalidField();
+    void _testInvalidSave();
+    void _testManualAngleNormalization();
+    void _testInvalidCoordinates();
+    void _testNoTopologyValidation();
 };

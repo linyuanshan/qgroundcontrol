@@ -10,6 +10,7 @@
 #include <QtTest/QSignalSpy>
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <memory>
 
@@ -20,6 +21,7 @@
 #include "MarinePlanContext.h"
 #include "MissionItem.h"
 #include "MockCoveragePlanner.h"
+#include "PlanningInputIdentity.h"
 #include "QGCMapPolygon.h"
 
 using namespace Marine;
@@ -31,12 +33,13 @@ MarineTask validTask()
     MarineTask task;
     task.planner.plannerId = "marine.coverage.mock";
     task.coverage.swathWidthM = 5.0;
-    task.region.outerBoundary.vertices = {
+    task.region.coverageBoundary.vertices = {
         {47.3977, 8.5455, 0.0},
         {47.3977, 8.5465, 0.0},
         {47.3987, 8.5465, 0.0},
         {47.3987, 8.5455, 0.0},
     };
+    task.region.navigationBoundary = task.region.coverageBoundary;
     return task;
 }
 
@@ -72,7 +75,7 @@ QJsonObject legacyV1Artifact(const QString& taskId)
     };
 }
 
-QJsonObject roleRunArtifact(const QString& taskId, const std::vector<PathLegRole>& roles)
+QJsonObject roleRunArtifact(const MarineTask& task, const std::vector<PathLegRole>& roles)
 {
     QJsonArray path;
     for (std::size_t pointIndex = 0; pointIndex <= roles.size(); ++pointIndex) {
@@ -92,10 +95,12 @@ QJsonObject roleRunArtifact(const QString& taskId, const std::vector<PathLegRole
     const int transitLegCount = static_cast<int>(roles.size()) - coverageLegCount;
 
     return {
-        {QStringLiteral("version"), 2},
+        {QStringLiteral("version"), 3},
+        {QStringLiteral("resultContract"), QStringLiteral("InfrastructureOnly")},
+        {QStringLiteral("inputIdentity"), PlanningInputIdentity::fromTask(task)->toJson()},
         {QStringLiteral("type"), QStringLiteral("ComplexItem")},
         {QStringLiteral("complexItemType"), QStringLiteral("coverageInspection")},
-        {QStringLiteral("taskId"), taskId},
+        {QStringLiteral("taskId"), QString::fromStdString(task.id)},
         {QStringLiteral("planningStatus"), QStringLiteral("success")},
         {QStringLiteral("planningMessage"), QStringLiteral("Role run fixture")},
         {QStringLiteral("generatedPath"), path},
@@ -109,60 +114,21 @@ QJsonObject roleRunArtifact(const QString& taskId, const std::vector<PathLegRole
     };
 }
 
-void verifyRoleRunsReconstructCanonicalPath(const CoverageInspectionComplexItem& item, int& coverageRunCount,
-                                            int& transitRunCount)
+class CountingPlanner final : public ICoveragePlanner
 {
-    const QVariantList runs = item.generatedPathRoleRuns();
-    QVERIFY(!runs.isEmpty());
+public:
+    mutable int calls = 0;
 
-    QVariantList reconstructedPath;
-    std::vector<PathLegRole> reconstructedRoles;
-    coverageRunCount = 0;
-    transitRunCount = 0;
+    std::string id() const final { return "marine.coverage.counting"; }
 
-    for (const QVariant& runValue : runs) {
-        const QVariantMap run = runValue.toMap();
-        const QString roleName = run.value(QStringLiteral("role")).toString();
-        const QVariantList runPath = run.value(QStringLiteral("path")).toList();
-        QVERIFY(runPath.size() >= 2);
+    std::string displayName() const final { return "Counting test planner"; }
 
-        PathLegRole role = PathLegRole::Coverage;
-        if (roleName == QStringLiteral("coverage")) {
-            ++coverageRunCount;
-        } else {
-            QCOMPARE(roleName, QStringLiteral("transit"));
-            role = PathLegRole::Transit;
-            ++transitRunCount;
-        }
-
-        if (reconstructedPath.isEmpty()) {
-            reconstructedPath = runPath;
-        } else {
-            QCOMPARE(reconstructedPath.last(), runPath.first());
-            for (qsizetype pointIndex = 1; pointIndex < runPath.size(); ++pointIndex) {
-                reconstructedPath.append(runPath[pointIndex]);
-            }
-        }
-        reconstructedRoles.insert(reconstructedRoles.end(), static_cast<std::size_t>(runPath.size() - 1), role);
+    CoveragePlanningSolution plan(const CoveragePlanningProblem& problem) const final
+    {
+        ++calls;
+        return MockCoveragePlanner{}.plan(problem);
     }
-
-    QCOMPARE(reconstructedPath, item.generatedPath());
-    QCOMPARE(reconstructedRoles, item.planningResult().legRoles);
-}
-
-void verifyMissionItems(const QList<MissionItem*>& missionItems, const PlanningResult& result, int firstSequence)
-{
-    QCOMPARE(missionItems.size(), static_cast<qsizetype>(result.path.size()));
-    for (int index = 0; index < missionItems.size(); ++index) {
-        const MissionItem* missionItem = missionItems.at(index);
-        const GeoPoint& point = result.path.at(static_cast<std::size_t>(index));
-        QCOMPARE(missionItem->sequenceNumber(), firstSequence + index);
-        QCOMPARE(missionItem->command(), MAV_CMD_NAV_WAYPOINT);
-        QCOMPARE(missionItem->param5(), point.latitudeDeg);
-        QCOMPARE(missionItem->param6(), point.longitudeDeg);
-        QCOMPARE(missionItem->param7(), 0.0);
-    }
-}
+};
 
 }  // namespace
 
@@ -213,27 +179,25 @@ void CoverageComplexItemTest::_testPlanning()
     _item->setDirty(false);
     QVERIFY(_item->plan());
 
-    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
-    QCOMPARE(_item->planningResult().status, PlanningStatus::Success);
-    QCOMPARE(_item->generatedPath().size(), 3);
-    QCOMPARE(_item->generatedPath().first().value<QGeoCoordinate>(), _item->entryCoordinate());
-    QCOMPARE(_item->generatedPath().last().value<QGeoCoordinate>(), _item->exitCoordinate());
-    QVERIFY(_item->complexDistance() > 0.0);
-    QVERIFY(_item->specifiesCoordinate());
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+    QCOMPARE(_item->planningResult().status, PlanningStatus::Failed);
+    QVERIFY(_item->generatedPath().isEmpty());
+    QVERIFY(_item->planningArtifact().has_value());
+    QCOMPARE(_item->planningArtifact()->result.status, PlanningStatus::Success);
+    QCOMPARE(_item->planningArtifact()->result.path.size(), std::size_t{3});
+    QVERIFY(!_item->planningArtifact()->stale);
+    QCOMPARE(_item->complexDistance(), 0.0);
+    QVERIFY(!_item->specifiesCoordinate());
     QCOMPARE(_item->readyForSaveState(), VisualMissionItem::ReadyForSave);
-    QCOMPARE(_item->lastSequenceNumber(), 2);
+    QCOMPARE(_item->lastSequenceNumber(), 0);
     QVERIFY(_item->dirty());
-    QCOMPARE(stateSpy.count(), 1);
-    QCOMPARE(pathSpy.count(), 1);
-    QCOMPARE(lastSequenceSpy.count(), 1);
+    QCOMPARE(stateSpy.count(), 0);
+    QCOMPARE(pathSpy.count(), 0);
+    QCOMPARE(lastSequenceSpy.count(), 0);
 
     QList<MissionItem*> items;
     _item->appendMissionItems(items, this);
-    QCOMPARE(items.size(), 3);
-    for (int index = 0; index < items.size(); ++index) {
-        QCOMPARE(items.at(index)->sequenceNumber(), index);
-        QCOMPARE(items.at(index)->command(), MAV_CMD_NAV_WAYPOINT);
-    }
+    QVERIFY(items.isEmpty());
 }
 
 void CoverageComplexItemTest::_testLawnmowerPlanning()
@@ -241,7 +205,8 @@ void CoverageComplexItemTest::_testLawnmowerPlanning()
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.lawnmower";
     task.coverage.swathWidthM = 30.0;
-    task.coverage.safetyMarginM = 1.0;
+    task.safety.hardSafetyMarginM = 1.0;
+    task.safety.preferredSafetyMarginM = 1.0;
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
     task.coverage.sweepAngleDeg = 0.0;
     _marineContext->addTask(task);
@@ -249,8 +214,9 @@ void CoverageComplexItemTest::_testLawnmowerPlanning()
 
     QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
 
-    const PlanningResult& result = _item->planningResult();
-    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
+    QVERIFY(_item->planningArtifact().has_value());
+    const PlanningResult& result = _item->planningArtifact()->result;
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
     QCOMPARE(result.status, PlanningStatus::Success);
     QVERIFY(result.path.size() >= 4);
     QCOMPARE(result.path.size() % 2, std::size_t{0});
@@ -261,11 +227,10 @@ void CoverageComplexItemTest::_testLawnmowerPlanning()
     QCOMPARE(result.selectedSweepAngleDeg, 0.0);
     QCOMPARE(result.turnCount, static_cast<int>((result.path.size() / 2) - 1));
     QCOMPARE(_item->plannerId(), QStringLiteral("marine.coverage.lawnmower"));
-    QCOMPARE(_item->selectedSweepAngleDeg(), result.selectedSweepAngleDeg);
-    QCOMPARE(_item->turnCount(), result.turnCount);
-    QCOMPARE(_item->planningMessage(), QString::fromStdString(result.message));
-    QCOMPARE(_item->generatedPath().size(), static_cast<qsizetype>(result.path.size()));
-    QCOMPARE(_item->complexDistance(), result.pathLengthM);
+    QCOMPARE(_item->selectedSweepAngleDeg(), 0.0);
+    QCOMPARE(_item->turnCount(), 0);
+    QVERIFY(_item->generatedPath().isEmpty());
+    QCOMPARE(_item->complexDistance(), 0.0);
     QVERIFY(result.message.find("Manual") != std::string::npos);
 }
 
@@ -288,7 +253,8 @@ void CoverageComplexItemTest::_testLawnmowerUiNoGoRejection()
 
     QVERIFY(!_item->plan());
     QCOMPARE(_item->plannerId(), QStringLiteral("marine.coverage.lawnmower"));
-    QCOMPARE(_item->planningResult().message,
+    QVERIFY(_item->planningArtifact().has_value());
+    QCOMPARE(_item->planningArtifact()->result.message,
              CoverageProblemValidator::messageForError(CoveragePlanningError::UnsupportedNoGoRegion));
 }
 
@@ -297,7 +263,8 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.bcd";
     task.coverage.swathWidthM = 20.0;
-    task.coverage.safetyMarginM = 0.0;
+    task.safety.hardSafetyMarginM = 0.0;
+    task.safety.preferredSafetyMarginM = 0.0;
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
     task.coverage.sweepAngleDeg = 90.0;
     _marineContext->addTask(task);
@@ -314,8 +281,9 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
 
     QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
 
-    const PlanningResult& result = _item->planningResult();
-    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
+    QVERIFY(_item->planningArtifact().has_value());
+    const PlanningResult& result = _item->planningArtifact()->result;
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
     QCOMPARE(result.status, PlanningStatus::Success);
     QVERIFY(!result.path.empty());
     QCOMPARE(result.legRoles.size(), result.path.size() - 1);
@@ -323,64 +291,33 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
     QCOMPARE(result.pathLengthM, result.coverageLengthM + result.transitLengthM);
     QVERIFY(result.cellCount >= 1);
 
-    int coverageRunCount = 0;
-    int transitRunCount = 0;
-    verifyRoleRunsReconstructCanonicalPath(*_item, coverageRunCount, transitRunCount);
-    QVERIFY(coverageRunCount >= 1);
-    QVERIFY(transitRunCount >= 1);
+    QVERIFY(_item->generatedPathRoleRuns().isEmpty());
 
     QList<MissionItem*> missionItems;
     _item->appendMissionItems(missionItems, this);
-    QCOMPARE(missionItems.size(), static_cast<qsizetype>(result.path.size()));
-    for (const MissionItem* missionItem : missionItems) {
-        QCOMPARE(missionItem->command(), MAV_CMD_NAV_WAYPOINT);
-    }
+    QVERIFY(missionItems.isEmpty());
 }
 
 void CoverageComplexItemTest::_testGeneratedPathRoleRuns()
 {
-    QVERIFY(_item->generatedPathRoleRuns().isEmpty());
-
     const MarineTask task = validTask();
     _marineContext->addTask(task);
-    const QString taskId = QString::fromStdString(task.id);
-    QString errorString;
-
-    const std::vector<PathLegRole> alternatingRoles = {
-        PathLegRole::Coverage, PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Transit, PathLegRole::Coverage,
+    const std::vector<std::vector<PathLegRole>> fixtures = {
+        {PathLegRole::Coverage, PathLegRole::Coverage, PathLegRole::Transit, PathLegRole::Coverage},
+        std::vector<PathLegRole>(4, PathLegRole::Coverage),
+        std::vector<PathLegRole>(4, PathLegRole::Transit),
     };
-    QVERIFY2(_item->load(roleRunArtifact(taskId, alternatingRoles), 0, errorString), qPrintable(errorString));
-    const QVariantList alternatingRuns = _item->generatedPathRoleRuns();
-    QCOMPARE(alternatingRuns.size(), 3);
-    QCOMPARE(alternatingRuns[0].toMap().value(QStringLiteral("role")).toString(), QStringLiteral("coverage"));
-    QCOMPARE(alternatingRuns[0].toMap().value(QStringLiteral("path")).toList().size(), 3);
-    QCOMPARE(alternatingRuns[1].toMap().value(QStringLiteral("role")).toString(), QStringLiteral("transit"));
-    QCOMPARE(alternatingRuns[1].toMap().value(QStringLiteral("path")).toList().size(), 3);
-    QCOMPARE(alternatingRuns[2].toMap().value(QStringLiteral("role")).toString(), QStringLiteral("coverage"));
-    QCOMPARE(alternatingRuns[2].toMap().value(QStringLiteral("path")).toList().size(), 2);
-    QCOMPARE(alternatingRuns[0].toMap().value(QStringLiteral("path")).toList().last(),
-             alternatingRuns[1].toMap().value(QStringLiteral("path")).toList().first());
-    QCOMPARE(alternatingRuns[1].toMap().value(QStringLiteral("path")).toList().last(),
-             alternatingRuns[2].toMap().value(QStringLiteral("path")).toList().first());
-    int coverageRunCount = 0;
-    int transitRunCount = 0;
-    verifyRoleRunsReconstructCanonicalPath(*_item, coverageRunCount, transitRunCount);
-    QCOMPARE(coverageRunCount, 2);
-    QCOMPARE(transitRunCount, 1);
-
-    errorString.clear();
-    QVERIFY2(_item->load(roleRunArtifact(taskId, std::vector<PathLegRole>(4, PathLegRole::Coverage)), 0, errorString),
-             qPrintable(errorString));
-    QCOMPARE(_item->generatedPathRoleRuns().size(), 1);
-    QCOMPARE(_item->generatedPathRoleRuns().first().toMap().value(QStringLiteral("role")).toString(),
-             QStringLiteral("coverage"));
-
-    errorString.clear();
-    QVERIFY2(_item->load(roleRunArtifact(taskId, std::vector<PathLegRole>(4, PathLegRole::Transit)), 0, errorString),
-             qPrintable(errorString));
-    QCOMPARE(_item->generatedPathRoleRuns().size(), 1);
-    QCOMPARE(_item->generatedPathRoleRuns().first().toMap().value(QStringLiteral("role")).toString(),
-             QStringLiteral("transit"));
+    for (const auto& roles : fixtures) {
+        QString error;
+        QVERIFY2(_item->load(roleRunArtifact(task, roles), 0, error), qPrintable(error));
+        QVERIFY(_item->planningArtifact().has_value());
+        QCOMPARE(_item->planningArtifact()->result.legRoles, roles);
+        QVERIFY(_item->generatedPathRoleRuns().isEmpty());
+        QVERIFY(_item->generatedPath().isEmpty());
+        QList<MissionItem*> mission;
+        _item->appendMissionItems(mission, this);
+        QVERIFY(mission.isEmpty());
+    }
 }
 
 void CoverageComplexItemTest::_testPlanningFailures()
@@ -399,7 +336,7 @@ void CoverageComplexItemTest::_testPlanningFailures()
     QCOMPARE(_item->planningResult().status, PlanningStatus::Failed);
     QVERIFY(!_item->planningResult().message.empty());
 
-    task.region.outerBoundary.vertices.clear();
+    task.region.coverageBoundary.vertices.clear();
     task.planner.plannerId = "marine.coverage.mock";
     _marineContext->addTask(task);
     QVERIFY(!_item->plan());
@@ -489,7 +426,8 @@ void CoverageComplexItemTest::_testQmlTaskProperties()
     MarineTask task = validTask();
     task.name = "Harbor inspection";
     task.coverage.swathWidthM = 8.5;
-    task.coverage.safetyMarginM = 2.25;
+    task.safety.hardSafetyMarginM = 2.25;
+    task.safety.preferredSafetyMarginM = 2.25;
     task.sensors.cameraEnabled = true;
     task.sensors.cameraRecord = false;
     task.sensors.sonarEnabled = false;
@@ -516,7 +454,8 @@ void CoverageComplexItemTest::_testQmlTaskProperties()
 
     QVERIFY(!_item->plan());
     QCOMPARE(_item->planningResult().status, PlanningStatus::Failed);
-    QVERIFY(_item->planningResult().message.find("selected coverage planner") != std::string::npos);
+    QVERIFY(_item->planningArtifact().has_value());
+    QVERIFY(_item->planningArtifact()->result.message.find("selected coverage planner") != std::string::npos);
     QSignalSpy taskDataSpy(_item, &CoverageInspectionComplexItem::taskDataChanged);
     _item->setTaskName(QStringLiteral("Updated inspection"));
     _item->setSwathWidthM(11.0);
@@ -530,7 +469,7 @@ void CoverageComplexItemTest::_testQmlTaskProperties()
     QVERIFY(updatedTask != nullptr);
     QCOMPARE(QString::fromStdString(updatedTask->name), QStringLiteral("Updated inspection"));
     QCOMPARE(updatedTask->coverage.swathWidthM, 11.0);
-    QCOMPARE(updatedTask->coverage.safetyMarginM, 3.0);
+    QCOMPARE(updatedTask->safety.hardSafetyMarginM, 3.0);
     QVERIFY(!updatedTask->sensors.cameraEnabled);
     QVERIFY(updatedTask->sensors.cameraRecord);
     QVERIFY(updatedTask->sensors.sonarEnabled);
@@ -544,14 +483,15 @@ void CoverageComplexItemTest::_testWorkRegionEditing()
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.lawnmower";
     task.coverage.swathWidthM = 30.0;
-    task.coverage.safetyMarginM = 1.0;
+    task.safety.hardSafetyMarginM = 1.0;
+    task.safety.preferredSafetyMarginM = 1.0;
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
 
     QGCMapPolygon* polygon = _item->workRegionPolygon();
     QVERIFY(polygon != nullptr);
     QCOMPARE(polygon->count(), 4);
-    QCOMPARE(polygon->vertexCoordinate(0).latitude(), task.region.outerBoundary.vertices[0].latitudeDeg);
+    QCOMPARE(polygon->vertexCoordinate(0).latitude(), task.region.coverageBoundary.vertices[0].latitudeDeg);
     QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
 
     QSignalSpy taskDataSpy(_item, &CoverageInspectionComplexItem::taskDataChanged);
@@ -561,13 +501,15 @@ void CoverageComplexItemTest::_testWorkRegionEditing()
     QTRY_VERIFY(taskDataSpy.count() >= 1);
     const MarineTask* editedTask = _marineContext->task(task.id);
     QVERIFY(editedTask != nullptr);
-    QCOMPARE(editedTask->region.outerBoundary.vertices[0].latitudeDeg, editedCoordinate.latitude());
-    QCOMPARE(editedTask->region.outerBoundary.vertices[0].longitudeDeg, editedCoordinate.longitude());
-    QCOMPARE(editedTask->region.outerBoundary.vertices[0].altitudeM, 0.0);
+    QCOMPARE(editedTask->region.coverageBoundary.vertices[0].latitudeDeg, editedCoordinate.latitude());
+    QCOMPARE(editedTask->region.coverageBoundary.vertices[0].longitudeDeg, editedCoordinate.longitude());
+    QCOMPARE(editedTask->region.coverageBoundary.vertices[0].altitudeM, 0.0);
+    QCOMPARE(editedTask->region.navigationBoundary.vertices[0].latitudeDeg,
+             task.region.navigationBoundary.vertices[0].latitudeDeg);
     QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
 
     MarineTask externallyUpdatedTask = *editedTask;
-    externallyUpdatedTask.region.outerBoundary.vertices.resize(3);
+    externallyUpdatedTask.region.coverageBoundary.vertices.resize(3);
     QVERIFY(_marineContext->updateTask(externallyUpdatedTask));
     QCOMPARE(polygon->count(), 3);
     QCOMPARE(_item->outerBoundary().size(), 3);
@@ -662,6 +604,23 @@ void CoverageComplexItemTest::_testNoGoRegionEditing()
     QVERIFY(_item->noGoRegionsReady());
 }
 
+void CoverageComplexItemTest::_testSafetyMarginEditPreservesTaskValidity()
+{
+    MarineTask task = validTask();
+    task.safety.hardSafetyMarginM = 1.0;
+    task.safety.preferredSafetyMarginM = 2.0;
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+
+    _item->setSafetyMarginM(3.0);
+
+    const MarineTask* updatedTask = _marineContext->task(task.id);
+    QVERIFY(updatedTask != nullptr);
+    QCOMPARE(updatedTask->safety.hardSafetyMarginM, 3.0);
+    QCOMPARE(updatedTask->safety.preferredSafetyMarginM, 3.0);
+    QVERIFY(updatedTask->schemaValid());
+}
+
 void CoverageComplexItemTest::_testSweepAngleProperties()
 {
     MarineTask task = validTask();
@@ -700,77 +659,38 @@ void CoverageComplexItemTest::_testSaveLoad()
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
     QVERIFY(_item->plan());
-    _item->setSequenceNumber(12);
-    _item->setDirty(false);
-
-    QJsonArray items;
-    _item->save(items);
-    QCOMPARE(items.size(), 1);
-    const QJsonObject object = items.first().toObject();
-    QCOMPARE(object.value(QStringLiteral("version")).toInt(), 2);
-    QVERIFY(object.contains(QStringLiteral("taskId")));
-    QCOMPARE(object.value(QStringLiteral("planningStatus")).toString(), QStringLiteral("success"));
-    QCOMPARE(object.value(QStringLiteral("legRoles")).toArray().size(),
-             static_cast<qsizetype>(_item->planningResult().legRoles.size()));
-    QVERIFY(object.contains(QStringLiteral("selectedSweepAngleDeg")));
-    QVERIFY(object.contains(QStringLiteral("turnCount")));
-    QVERIFY(!object.contains(QStringLiteral("task")));
-    QVERIFY(!object.contains(QStringLiteral("marine")));
-    QCOMPARE(object.value(QStringLiteral("coverageLengthM")).toDouble(), _item->coverageLengthM());
-    QCOMPARE(object.value(QStringLiteral("transitLengthM")).toDouble(), _item->transitLengthM());
-    QCOMPARE(object.value(QStringLiteral("cellCount")).toInt(), _item->cellCount());
-    const QStringList internalKeys = {
-        QStringLiteral("cells"),
-        QStringLiteral("slabs"),
-        QStringLiteral("adjacency"),
-        QStringLiteral("visibilityGraph"),
-        QStringLiteral("routes"),
-        QStringLiteral("boundaryComponents"),
-        QStringLiteral("coverageSegments"),
-        QStringLiteral("transitSegments"),
-        QStringLiteral("pathSegments"),
-    };
-    for (const QString& key : internalKeys) {
-        QVERIFY(!object.contains(key));
-    }
-
-    QJsonArray repeatedSave;
-    _item->save(repeatedSave);
-    QCOMPARE(repeatedSave.size(), 1);
-    QCOMPARE(repeatedSave.first().toObject(), object);
-
-    auto loadedItem = new CoverageInspectionComplexItem(planController(), false, _marineContext);
-    QString errorString;
-    QVERIFY2(loadedItem->load(object, 12, errorString), qPrintable(errorString));
-    QCOMPARE(loadedItem->taskId(), _item->taskId());
-    QCOMPARE(loadedItem->planningState(), CoverageInspectionComplexItem::Planned);
-    QCOMPARE(loadedItem->planningResult().status, PlanningStatus::Success);
-    QCOMPARE(loadedItem->planningResult().legRoles, _item->planningResult().legRoles);
-    QCOMPARE(loadedItem->generatedPathRoleRuns(), _item->generatedPathRoleRuns());
-    QCOMPARE(loadedItem->coverageLengthM(), _item->coverageLengthM());
-    QCOMPARE(loadedItem->transitLengthM(), _item->transitLengthM());
-    QCOMPARE(loadedItem->cellCount(), _item->cellCount());
-    QCOMPARE(loadedItem->selectedSweepAngleDeg(), _item->selectedSweepAngleDeg());
-    QCOMPARE(loadedItem->turnCount(), _item->turnCount());
-    QCOMPARE(loadedItem->planningMessage(), _item->planningMessage());
-    QCOMPARE(loadedItem->generatedPath(), _item->generatedPath());
-    QCOMPARE(loadedItem->complexDistance(), _item->complexDistance());
-    QCOMPARE(loadedItem->sequenceNumber(), 12);
-    QCOMPARE(loadedItem->noGoPolygons()->count(), 1);
-    QGCMapPolygon* loadedNoGo = loadedItem->noGoPolygons()->value<QGCMapPolygon*>(0);
-    QVERIFY(loadedNoGo != nullptr);
-    QCOMPARE(loadedNoGo->coordinateList(), _item->noGoPolygons()->value<QGCMapPolygon*>(0)->coordinateList());
-    QVERIFY(!loadedItem->dirty());
-
-    int coverageRunCount = 0;
-    int transitRunCount = 0;
-    verifyRoleRunsReconstructCanonicalPath(*loadedItem, coverageRunCount, transitRunCount);
-    QVERIFY(coverageRunCount >= 1);
-    QVERIFY(transitRunCount >= 1);
-
-    QList<MissionItem*> missionItems;
-    loadedItem->appendMissionItems(missionItems, this);
-    verifyMissionItems(missionItems, loadedItem->planningResult(), 12);
+    QJsonArray saved;
+    _item->save(saved);
+    QCOMPARE(saved.size(), 1);
+    const QJsonObject object = saved.first().toObject();
+    QCOMPARE(object.value("version").toInt(), 3);
+    QCOMPARE(object.value("resultContract").toString(), QStringLiteral("InfrastructureOnly"));
+    QVERIFY(object.contains("inputIdentity"));
+    QVERIFY(!object.contains("task"));
+    QVERIFY(!object.contains("marine"));
+    // An empty registry proves loading cannot require a planner.
+    MarinePlanContext loadContext(planController());
+    loadContext.addTask(task);
+    CoverageInspectionComplexItem loaded(planController(), false, &loadContext);
+    QString error;
+    QVERIFY2(loaded.load(object, 12, error), qPrintable(error));
+    QVERIFY(loaded.planningArtifact().has_value());
+    QVERIFY(!loaded.planningArtifact()->stale);
+    QCOMPARE(loaded.planningArtifact()->result.legRoles, _item->planningArtifact()->result.legRoles);
+    QCOMPARE(loaded.noGoPolygons()->count(), 1);
+    QCOMPARE(loaded.planningState(), CoverageInspectionComplexItem::Unplanned);
+    QVERIFY(loaded.planningResult().path.empty());
+    QVERIFY(loaded.generatedPath().isEmpty());
+    QVERIFY(!loaded.dirty());
+    QList<MissionItem*> mission;
+    loaded.appendMissionItems(mission, this);
+    QVERIFY(mission.isEmpty());
+    QJsonArray resaved;
+    loaded.save(resaved);
+    QCOMPARE(resaved, saved);
+    QVERIFY(loaded.load(resaved.first().toObject(), 12, error));
+    loaded.appendMissionItems(mission, this);
+    QVERIFY(mission.isEmpty());
 }
 
 void CoverageComplexItemTest::_testLawnmowerSaveLoad()
@@ -778,80 +698,41 @@ void CoverageComplexItemTest::_testLawnmowerSaveLoad()
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.lawnmower";
     task.coverage.swathWidthM = 30.0;
-    task.coverage.safetyMarginM = 1.0;
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
-    task.coverage.sweepAngleDeg = 0.0;
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
-    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
-
-    QJsonArray items;
-    _item->save(items);
-    QCOMPARE(items.size(), 1);
-    const QJsonObject object = items.first().toObject();
-    QCOMPARE(object.value(QStringLiteral("version")).toInt(), 2);
-
-    auto loadedItem = new CoverageInspectionComplexItem(planController(), false, _marineContext);
-    QString errorString;
-    QVERIFY2(loadedItem->load(object, 4, errorString), qPrintable(errorString));
-    QCOMPARE(loadedItem->planningResult().legRoles, _item->planningResult().legRoles);
-    QCOMPARE(loadedItem->coverageLengthM(), _item->coverageLengthM());
-    QCOMPARE(loadedItem->transitLengthM(), _item->transitLengthM());
-    QCOMPARE(loadedItem->complexDistance(), _item->complexDistance());
-    QCOMPARE(loadedItem->cellCount(), 1);
-
-    QList<MissionItem*> missionItems;
-    loadedItem->appendMissionItems(missionItems, this);
-    verifyMissionItems(missionItems, loadedItem->planningResult(), 4);
+    QVERIFY(_item->plan());
+    QJsonArray saved;
+    _item->save(saved);
+    QCOMPARE(saved.size(), 1);
+    CoverageInspectionComplexItem loaded(planController(), false, _marineContext);
+    QString error;
+    QVERIFY2(loaded.load(saved.first().toObject(), 4, error), qPrintable(error));
+    QVERIFY(loaded.planningArtifact().has_value());
+    QCOMPARE(loaded.planningArtifact()->result.cellCount, 1);
+    QCOMPARE(loaded.planningArtifact()->result.legRoles, _item->planningArtifact()->result.legRoles);
+    QJsonArray resaved;
+    loaded.save(resaved);
+    QCOMPARE(resaved, saved);
+    QList<MissionItem*> mission;
+    loaded.appendMissionItems(mission, this);
+    QVERIFY(mission.isEmpty());
 }
 
-void CoverageComplexItemTest::_testLegacyV1Migration()
+void CoverageComplexItemTest::_testLegacySchemasRejected()
 {
-    MarineTask task = validTask();
-    task.planner.plannerId = "marine.coverage.lawnmower";
-    task.coverage.swathWidthM = 30.0;
-    task.coverage.safetyMarginM = 1.0;
-    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
-    task.coverage.sweepAngleDeg = 0.0;
+    const MarineTask task = validTask();
     _marineContext->addTask(task);
-
-    const QJsonObject fixture = legacyV1Artifact(QString::fromStdString(task.id));
-    QString errorString;
-    QVERIFY2(_item->load(fixture, 8, errorString), qPrintable(errorString));
-    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
-    QCOMPARE(_item->planningMessage(), QStringLiteral("Legacy lawnmower artifact"));
-    QCOMPARE(_item->generatedPath().size(), 4);
-    QVERIFY(_item->planningResult().legRoles.empty());
-    QVERIFY(_item->generatedPathRoleRuns().isEmpty());
-    QCOMPARE(_item->coverageLengthM(), 0.0);
-    QCOMPARE(_item->transitLengthM(), 0.0);
-    QCOMPARE(_item->cellCount(), 0);
-    QVERIFY(!_item->dirty());
-
-    QList<MissionItem*> legacyMissionItems;
-    _item->appendMissionItems(legacyMissionItems, this);
-    verifyMissionItems(legacyMissionItems, _item->planningResult(), 8);
-
-    QJsonArray legacySave;
-    _item->save(legacySave);
-    QCOMPARE(legacySave.size(), 1);
-    const QJsonObject legacyObject = legacySave.first().toObject();
-    QCOMPARE(legacyObject.value(QStringLiteral("version")).toInt(), 1);
-    QCOMPARE(legacyObject.value(QStringLiteral("generatedPath")), fixture.value(QStringLiteral("generatedPath")));
-    QVERIFY(!legacyObject.contains(QStringLiteral("legRoles")));
-    QVERIFY(!legacyObject.contains(QStringLiteral("coverageLengthM")));
-    QVERIFY(!legacyObject.contains(QStringLiteral("transitLengthM")));
-    QVERIFY(!legacyObject.contains(QStringLiteral("cellCount")));
-
-    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
-    QJsonArray migratedSave;
-    _item->save(migratedSave);
-    QCOMPARE(migratedSave.size(), 1);
-    const QJsonObject migratedObject = migratedSave.first().toObject();
-    QCOMPARE(migratedObject.value(QStringLiteral("version")).toInt(), 2);
-    QCOMPARE(migratedObject.value(QStringLiteral("legRoles")).toArray().size(),
-             static_cast<qsizetype>(_item->planningResult().path.size() - 1));
-    QVERIFY(migratedObject.value(QStringLiteral("cellCount")).toInt() >= 1);
+    _item->setTaskId(QString::fromStdString(task.id));
+    for (const int version : {1, 2}) {
+        auto object = legacyV1Artifact(_item->taskId());
+        object.insert("version", version);
+        QString error;
+        QVERIFY(!_item->load(object, 8, error));
+        QVERIFY(error.contains("Unsupported development schema"));
+        QVERIFY(!_item->planningArtifact().has_value());
+        QVERIFY(_item->planningResult().path.empty());
+    }
 }
 
 void CoverageComplexItemTest::_testUnplannedSaveLoad()
@@ -865,7 +746,7 @@ void CoverageComplexItemTest::_testUnplannedSaveLoad()
     _item->save(items);
     QCOMPARE(items.size(), 1);
     const QJsonObject object = items.first().toObject();
-    QCOMPARE(object.value(QStringLiteral("version")).toInt(), 2);
+    QCOMPARE(object.value(QStringLiteral("version")).toInt(), 3);
     QCOMPARE(object.value(QStringLiteral("planningStatus")).toString(), QStringLiteral("failed"));
     QVERIFY(object.value(QStringLiteral("generatedPath")).toArray().isEmpty());
     QVERIFY(object.value(QStringLiteral("legRoles")).toArray().isEmpty());
@@ -988,17 +869,94 @@ void CoverageComplexItemTest::_testLoadValidation()
     invalidCoordinate.insert(QStringLiteral("generatedPath"), invalidPath);
     verifyRejected(invalidCoordinate);
 
-    QJsonObject missingV2Field = validObject;
-    missingV2Field.remove(QStringLiteral("legRoles"));
-    verifyRejected(missingV2Field);
+    QJsonObject missingRoleField = validObject;
+    missingRoleField.remove(QStringLiteral("legRoles"));
+    verifyRejected(missingRoleField);
 
     QJsonObject unsupportedVersion = validObject;
-    unsupportedVersion.insert(QStringLiteral("version"), 3);
+    unsupportedVersion.insert(QStringLiteral("version"), 4);
     verifyRejected(unsupportedVersion);
+
+    for (const QString& key : {QStringLiteral("resultContract"), QStringLiteral("inputIdentity")}) {
+        auto missing = validObject;
+        missing.remove(key);
+        verifyRejected(missing);
+    }
 
     QJsonObject brokenTaskReference = validObject;
     brokenTaskReference.insert(QStringLiteral("taskId"), QStringLiteral("missing-task"));
     verifyRejected(brokenTaskReference);
+}
+
+void CoverageComplexItemTest::_testArtifactIdentity()
+{
+    auto planner = std::make_shared<CountingPlanner>();
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(planner));
+    MarineTask task = validTask();
+    task.planner.plannerId = planner->id();
+    task.safety.hardSafetyMarginM = 1;
+    task.safety.preferredSafetyMarginM = 2;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+    QVERIFY(_item->plan());
+    QCOMPARE(planner->calls, 1);
+    QJsonArray saved;
+    _item->save(saved);
+    QCOMPARE(saved.size(), 1);
+    const auto object = saved.first().toObject();
+    QString error;
+    QVERIFY(_item->load(object, 0, error));
+    _item->setTaskName(QStringLiteral("Renamed"));
+    _item->setCameraEnabled(false);
+    _item->setSonarRecord(false);
+    QVERIFY(!_item->planningArtifact()->stale);
+    QVERIFY(_item->dirty());
+    QCOMPARE(planner->calls, 1);
+    const std::vector<std::function<void(MarineTask&)>> changes = {
+        [](auto& t) { t.region.coverageBoundary.vertices[0].latitudeDeg += 0.00001; },
+        [](auto& t) { t.region.navigationBoundary.vertices[0].longitudeDeg += 0.00001; },
+        [](auto& t) { t.region.noGoRegions.push_back(noGoRectangle()); },
+        [](auto& t) { t.coverage.swathWidthM += 1; },
+        [](auto& t) { t.safety.hardSafetyMarginM += 0.1; },
+        [](auto& t) { t.safety.preferredSafetyMarginM += 1; },
+        [](auto& t) { t.planner.executionSafety.executionMarginM += 0.1; },
+        [](auto& t) { t.coverage.coverageRequirement = CoverageRequirement::Strict; },
+        [](auto& t) { t.coverage.sweepAngleMode = SweepAngleMode::Auto; },
+        [](auto& t) { t.coverage.sweepAngleDeg += 1; },
+        [](auto& t) { t.planner.plannerId = "unknown"; },
+    };
+    for (const auto& change : changes) {
+        _marineContext->addTask(task);
+        QVERIFY(_item->load(object, 0, error));
+        auto changed = task;
+        change(changed);
+        _marineContext->addTask(changed);
+        QVERIFY(_item->planningArtifact()->stale);
+        QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+        QVERIFY(_item->planningResult().path.empty());
+        QJsonArray resaved;
+        _item->save(resaved);
+        QCOMPARE(resaved, saved);
+        QVERIFY(_item->load(object, 0, error));
+        QVERIFY(_item->planningArtifact()->stale);
+        QList<MissionItem*> mission;
+        _item->appendMissionItems(mission, this);
+        QVERIFY(mission.isEmpty());
+        QCOMPARE(planner->calls, 1);
+    }
+    _marineContext->addTask(task);
+    for (const QString& key : {QStringLiteral("planningVersion"), QStringLiteral("policyVersion"),
+                               QStringLiteral("resolvedStrategy"), QStringLiteral("strategyVersion")}) {
+        auto changed = object;
+        auto identity = changed.value("inputIdentity").toObject();
+        identity.insert(key, "unsupported-future-semantics");
+        changed.insert("inputIdentity", identity);
+        QVERIFY(_item->load(changed, 0, error));
+        QVERIFY(_item->planningArtifact()->stale);
+        QVERIFY(_item->planningResult().path.empty());
+        QCOMPARE(planner->calls, 1);
+    }
 }
 
 UT_REGISTER_TEST(CoverageComplexItemTest, TestLabel::Unit, TestLabel::MissionManager)

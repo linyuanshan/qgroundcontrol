@@ -31,7 +31,8 @@ struct GeoPolygon
 
 struct WorkRegion
 {
-    GeoPolygon outerBoundary;
+    GeoPolygon coverageBoundary;
+    GeoPolygon navigationBoundary;
     std::vector<GeoPolygon> noGoRegions;
 };
 

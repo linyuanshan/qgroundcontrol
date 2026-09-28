@@ -25,19 +25,20 @@ void CoverageInspectionPlanCreator::createPlan(const QGeoCoordinate& mapCenterCo
 
     Marine::MarineTask task;
     task.name = CoverageInspectionComplexItem::canonicalName;
-    task.planner.plannerId = "marine.coverage.bcd";
     // Frozen Rover V1 candidate from P2-13E; not a universal vehicle default.
     task.planner.executionSafety.executionMarginM = 0.25;
     const double latitude = mapCenterCoord.latitude();
     const double longitude = mapCenterCoord.longitude();
     constexpr double delta = 0.0005;
     constexpr double altitudeM = 0.0;
-    task.region.outerBoundary.vertices = {
+    task.region.coverageBoundary.vertices = {
         {.latitudeDeg = latitude - delta, .longitudeDeg = longitude - delta, .altitudeM = altitudeM},
         {.latitudeDeg = latitude - delta, .longitudeDeg = longitude + delta, .altitudeM = altitudeM},
         {.latitudeDeg = latitude + delta, .longitudeDeg = longitude + delta, .altitudeM = altitudeM},
         {.latitudeDeg = latitude + delta, .longitudeDeg = longitude - delta, .altitudeM = altitudeM},
     };
+    task.region.navigationBoundary = task.region.coverageBoundary;
+    task.safety.preferredSafetyMarginM = task.safety.hardSafetyMarginM;
     _marineContext->addTask(task);
 
     VisualMissionItem* visualItem = _missionController->insertComplexMissionItem(

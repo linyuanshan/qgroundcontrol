@@ -43,8 +43,43 @@ MarineTask::MarineTask() : id(generateUuid()) {}
 
 bool MarineTask::isValid() const
 {
-    return !id.empty() && (region.outerBoundary.vertices.size() >= 3) &&
+    return !id.empty() && (region.coverageBoundary.vertices.size() >= 3) &&
            std::isfinite(planner.executionSafety.executionMarginM) && (planner.executionSafety.executionMarginM >= 0.0);
+}
+
+bool MarineTask::schemaValid() const
+{
+    const auto validPolygon = [](const GeoPolygon& polygon) {
+        if (polygon.vertices.size() < 3) {
+            return false;
+        }
+        for (const GeoPoint& point : polygon.vertices) {
+            if (!std::isfinite(point.latitudeDeg) || !std::isfinite(point.longitudeDeg) ||
+                !std::isfinite(point.altitudeM) || (point.latitudeDeg < -90.0) || (point.latitudeDeg > 90.0) ||
+                (point.longitudeDeg < -180.0) || (point.longitudeDeg > 180.0)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (!isValid() || (type != MarineTaskType::CoverageInspection) || planner.plannerId.empty() ||
+        !validPolygon(region.coverageBoundary) || !validPolygon(region.navigationBoundary) ||
+        !std::isfinite(coverage.swathWidthM) || (coverage.swathWidthM <= 0.0) ||
+        !std::isfinite(coverage.sweepAngleDeg) ||
+        ((coverage.coverageRequirement != CoverageRequirement::Standard) &&
+         (coverage.coverageRequirement != CoverageRequirement::Strict)) ||
+        ((coverage.sweepAngleMode != SweepAngleMode::Manual) && (coverage.sweepAngleMode != SweepAngleMode::Auto)) ||
+        !std::isfinite(safety.hardSafetyMarginM) || (safety.hardSafetyMarginM < 0.0) ||
+        !std::isfinite(safety.preferredSafetyMarginM) || (safety.preferredSafetyMarginM < safety.hardSafetyMarginM)) {
+        return false;
+    }
+    for (const GeoPolygon& polygon : region.noGoRegions) {
+        if (!validPolygon(polygon)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace Marine

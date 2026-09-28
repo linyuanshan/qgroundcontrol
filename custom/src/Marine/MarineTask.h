@@ -11,6 +11,12 @@ enum class MarineTaskType
     CoverageInspection,
 };
 
+enum class CoverageRequirement
+{
+    Standard,
+    Strict,
+};
+
 struct SensorConfig
 {
     bool cameraEnabled = true;
@@ -22,10 +28,16 @@ struct SensorConfig
 struct CoverageConfig
 {
     double swathWidthM = 0.0;
-    double safetyMarginM = 0.0;
+    CoverageRequirement coverageRequirement = CoverageRequirement::Standard;
     SweepAngleMode sweepAngleMode = SweepAngleMode::Auto;
     // Navigation bearing: 0 degrees North, 90 degrees East, clockwise positive.
     double sweepAngleDeg = 0.0;
+};
+
+struct SafetyConfig
+{
+    double hardSafetyMarginM = 0.0;
+    double preferredSafetyMarginM = 0.0;
 };
 
 struct ExecutionSafetyProfile
@@ -35,7 +47,7 @@ struct ExecutionSafetyProfile
 
 struct PlannerConfig
 {
-    std::string plannerId;
+    std::string plannerId = "marine.coverage.auto";
     ExecutionSafetyProfile executionSafety;
 };
 
@@ -44,6 +56,7 @@ struct MarineTask
     MarineTask();
 
     [[nodiscard]] bool isValid() const;
+    [[nodiscard]] bool schemaValid() const;
 
     std::string id;
     std::string name;
@@ -51,6 +64,7 @@ struct MarineTask
     std::string vehicleId;
     WorkRegion region;
     CoverageConfig coverage;
+    SafetyConfig safety;
     SensorConfig sensors;
     PlannerConfig planner;
 };

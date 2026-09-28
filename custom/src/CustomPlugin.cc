@@ -25,7 +25,7 @@
 
 namespace {
 
-constexpr int MarinePlanVersion = 1;
+constexpr int MarinePlanVersion = 2;
 constexpr const char* MarineKey = "marine";
 constexpr const char* VersionKey = "version";
 constexpr const char* TasksKey = "tasks";
@@ -174,8 +174,9 @@ bool CustomPlugin::preLoadFromJson(PlanMasterController* planMasterController, Q
         if (!JsonParsing::validateKeys(marineJson, keyInfo, errorString)) {
             return false;
         }
-        if (marineJson.value(QLatin1String(VersionKey)).toInt() != MarinePlanVersion) {
-            errorString = tr("Unsupported marine plan version");
+        if (marineJson.value(QLatin1String(VersionKey)).toDouble() != MarinePlanVersion) {
+            errorString = tr("Unsupported development schema: Marine extension version %1 (expected 2)")
+                              .arg(marineJson.value(QLatin1String(VersionKey)).toVariant().toString());
             return false;
         }
 

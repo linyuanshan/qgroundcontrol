@@ -44,14 +44,14 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
         return false;
     }
 
-    std::optional<GeoReference> reference = GeoReference::create(task.region.outerBoundary);
+    std::optional<GeoReference> reference = GeoReference::create(task.region.coverageBoundary);
     if (!reference.has_value()) {
         error = CoveragePlanningError::InvalidOuterBoundary;
         return false;
     }
 
     CoveragePlanningProblem converted;
-    if (!toLocalPolygon(task.region.outerBoundary, *reference, converted.region.outerBoundary)) {
+    if (!toLocalPolygon(task.region.coverageBoundary, *reference, converted.region.outerBoundary)) {
         error = CoveragePlanningError::InvalidOuterBoundary;
         return false;
     }
@@ -67,7 +67,7 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
     }
 
     converted.swathWidthM = task.coverage.swathWidthM;
-    converted.safetyMarginM = task.coverage.safetyMarginM;
+    converted.safetyMarginM = task.safety.hardSafetyMarginM;
     converted.executionSafety = task.planner.executionSafety;
     converted.sweepAngleMode = task.coverage.sweepAngleMode;
     converted.requestedSweepAngleDeg = task.coverage.sweepAngleDeg;

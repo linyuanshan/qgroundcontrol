@@ -1195,13 +1195,15 @@ void MarineSITLValidationTest::_validateP2Scenarios()
             MarineTask task = *createdTask;
             task.name = definition.id.toStdString() + " P2 SITL validation";
             task.planner.plannerId = "marine.coverage.bcd";
-            task.region.outerBoundary = toGeoPolygon(anchoredProblem.region.outerBoundary, *anchorReference);
+            task.region.coverageBoundary = toGeoPolygon(anchoredProblem.region.outerBoundary, *anchorReference);
+            task.region.navigationBoundary = task.region.coverageBoundary;
             task.region.noGoRegions.clear();
             for (const Polygon2D& noGo : anchoredProblem.region.noGoRegions) {
                 task.region.noGoRegions.push_back(toGeoPolygon(noGo, *anchorReference));
             }
             task.coverage.swathWidthM = anchoredProblem.swathWidthM;
-            task.coverage.safetyMarginM = anchoredProblem.safetyMarginM;
+            task.safety.hardSafetyMarginM = anchoredProblem.safetyMarginM;
+            task.safety.preferredSafetyMarginM = anchoredProblem.safetyMarginM;
             task.coverage.sweepAngleMode = anchoredProblem.sweepAngleMode;
             task.coverage.sweepAngleDeg = anchoredProblem.requestedSweepAngleDeg;
             context->addTask(task);

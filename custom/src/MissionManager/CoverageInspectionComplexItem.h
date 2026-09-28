@@ -8,6 +8,7 @@
 
 #include "ComplexMissionItem.h"
 #include "MarinePlanContext.h"
+#include "PlanningArtifact.h"
 #include "PlanningResult.h"
 #include "QGCMapPolygon.h"
 
@@ -110,6 +111,8 @@ public:
     int turnCount() const { return _planningResult.turnCount; }
 
     const Marine::PlanningResult& planningResult() const { return _planningResult; }
+
+    const std::optional<Marine::InfrastructurePlanningArtifact>& planningArtifact() const { return _planningArtifact; }
 
     Q_INVOKABLE bool plan();
     Q_INVOKABLE void invalidatePlan();
@@ -218,11 +221,10 @@ private:
     bool _syncingNoGoPolygons = false;
     bool _syncingNoGoInteraction = false;
     bool _updatingTaskFromItem = false;
-    bool _legacyPlanningArtifact = false;
+    std::optional<Marine::InfrastructurePlanningArtifact> _planningArtifact;
 
     static constexpr int MaximumNoGoRegionCount = 2;
-    static constexpr int LegacyPlanningArtifactVersion = 1;
-    static constexpr int CurrentPlanningArtifactVersion = 2;
+    static constexpr int CurrentPlanningArtifactVersion = 3;
 
     static constexpr const char* _jsonTaskIdKey = "taskId";
     static constexpr const char* _jsonPlanningStatusKey = "planningStatus";

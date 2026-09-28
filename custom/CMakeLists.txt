@@ -60,6 +60,9 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTaskJsonCodec.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTaskJsonCodec.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/MarineTypes.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningInputIdentity.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningInputIdentity.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningArtifact.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeometryTypes.h
@@ -163,6 +166,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineSITLValidationTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineSITLValidationTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/PlanningInputIdentityTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/PlanningInputIdentityTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskJsonTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineTaskModelTest.h
@@ -449,6 +454,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         MarineTaskModelTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        PlanningInputIdentityTest
         LABELS
         Unit
     )

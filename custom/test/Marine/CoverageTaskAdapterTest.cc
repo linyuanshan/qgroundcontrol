@@ -18,14 +18,16 @@ MarineTask createTask()
 {
     MarineTask task;
     task.name = "Harbor inspection";
-    task.region.outerBoundary.vertices = {
+    task.region.coverageBoundary.vertices = {
         {38.0, 121.0, 0.0},
         {38.0, 121.002, 0.0},
         {38.002, 121.002, 0.0},
         {38.002, 121.0, 0.0},
     };
+    task.region.navigationBoundary = task.region.coverageBoundary;
     task.coverage.swathWidthM = 8.0;
-    task.coverage.safetyMarginM = 2.5;
+    task.safety.hardSafetyMarginM = 2.5;
+    task.safety.preferredSafetyMarginM = 2.5;
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
     task.coverage.sweepAngleDeg = 35.0;
     task.planner.plannerId = "marine.coverage.mock";
@@ -54,7 +56,7 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     QVERIFY(error == CoveragePlanningError::None);
     QVERIFY(qAbs(reference->origin().latitudeDeg - 38.001) < CoordinateToleranceDeg);
     QVERIFY(qAbs(reference->origin().longitudeDeg - 121.001) < CoordinateToleranceDeg);
-    QCOMPARE(problem.region.outerBoundary.vertices.size(), task.region.outerBoundary.vertices.size());
+    QCOMPARE(problem.region.outerBoundary.vertices.size(), task.region.coverageBoundary.vertices.size());
     QVERIFY(problem.region.noGoRegions.empty());
     QCOMPARE(problem.swathWidthM, 8.0);
     QCOMPARE(problem.safetyMarginM, 2.5);
@@ -66,7 +68,7 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     for (std::size_t index = 0; index < problem.region.outerBoundary.vertices.size(); ++index) {
         const std::optional<GeoPoint> roundTrip = reference->toGeo(problem.region.outerBoundary.vertices[index]);
         QVERIFY(roundTrip.has_value());
-        compareGeoPoint(*roundTrip, task.region.outerBoundary.vertices[index]);
+        compareGeoPoint(*roundTrip, task.region.coverageBoundary.vertices[index]);
     }
 }
 
@@ -81,17 +83,17 @@ void CoverageTaskAdapterTest::_testInvalidTaskGeometry()
     QVERIFY(!reference.has_value());
 
     MarineTask invalidOuter = createTask();
-    invalidOuter.region.outerBoundary.vertices.front().latitudeDeg = std::numeric_limits<double>::quiet_NaN();
+    invalidOuter.region.coverageBoundary.vertices.front().latitudeDeg = std::numeric_limits<double>::quiet_NaN();
     QVERIFY(!CoverageTaskAdapter::buildProblem(invalidOuter, problem, reference, error));
     QVERIFY(error == CoveragePlanningError::InvalidOuterBoundary);
 
     MarineTask invalidWgs84 = createTask();
-    invalidWgs84.region.outerBoundary.vertices.front().latitudeDeg = 91.0;
+    invalidWgs84.region.coverageBoundary.vertices.front().latitudeDeg = 91.0;
     QVERIFY(!CoverageTaskAdapter::buildProblem(invalidWgs84, problem, reference, error));
     QVERIFY(error == CoveragePlanningError::InvalidOuterBoundary);
 
     MarineTask selfIntersecting = createTask();
-    selfIntersecting.region.outerBoundary.vertices = {
+    selfIntersecting.region.coverageBoundary.vertices = {
         {38.0, 121.0, 0.0},
         {38.002, 121.002, 0.0},
         {38.002, 121.0, 0.0},
@@ -118,7 +120,8 @@ void CoverageTaskAdapterTest::_testValidationAndNormalization()
     QVERIFY(error == CoveragePlanningError::InvalidSwathWidth);
 
     task = createTask();
-    task.coverage.safetyMarginM = 4.01;
+    task.safety.hardSafetyMarginM = 4.01;
+    task.safety.preferredSafetyMarginM = 4.01;
     QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
     QCOMPARE(problem.safetyMarginM, 4.01);
 

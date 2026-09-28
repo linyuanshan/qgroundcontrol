@@ -14,6 +14,7 @@
 #include "MissionController.h"
 #include "MissionItem.h"
 #include "PlanMasterController.h"
+#include "QGCCorePlugin.h"
 #include "QGCMapPolygon.h"
 #include "QmlObjectListModel.h"
 
@@ -129,9 +130,11 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         MarineTask configuredTask = *task;
         configuredTask.name = expectedName;
         configuredTask.vehicleId = expectedVehicleId;
-        configuredTask.region.outerBoundary = expectedBoundary;
+        configuredTask.region.coverageBoundary = expectedBoundary;
+        configuredTask.region.navigationBoundary = expectedBoundary;
         configuredTask.coverage.swathWidthM = ExpectedSwathWidthM;
-        configuredTask.coverage.safetyMarginM = ExpectedSafetyMarginM;
+        configuredTask.safety.hardSafetyMarginM = ExpectedSafetyMarginM;
+        configuredTask.safety.preferredSafetyMarginM = ExpectedSafetyMarginM;
         configuredTask.coverage.sweepAngleMode = SweepAngleMode::Manual;
         configuredTask.coverage.sweepAngleDeg = ExpectedSweepAngleDeg;
         configuredTask.sensors.cameraEnabled = true;
@@ -152,15 +155,16 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         QTRY_COMPARE(context->task(expectedTaskId.toStdString())->region.noGoRegions.size(), std::size_t{1});
 
         QVERIFY2(item->plan(), item->planningResult().message.c_str());
-        expectedPlanningResult = item->planningResult();
+        QVERIFY(item->planningArtifact().has_value());
+        expectedPlanningResult = item->planningArtifact()->result;
         QCOMPARE(expectedPlanningResult.status, PlanningStatus::Success);
         QVERIFY(!expectedPlanningResult.path.empty());
         QCOMPARE(expectedPlanningResult.legRoles.size(), expectedPlanningResult.path.size() - 1);
         QVERIFY(expectedPlanningResult.cellCount >= 1);
         expectedPathRoleRuns = item->generatedPathRoleRuns();
-        QVERIFY(!expectedPathRoleRuns.isEmpty());
+        QVERIFY(expectedPathRoleRuns.isEmpty());
         item->appendMissionItems(expectedMissionItems, this);
-        QCOMPARE(expectedMissionItems.size(), static_cast<qsizetype>(expectedPlanningResult.path.size()));
+        QVERIFY(expectedMissionItems.isEmpty());
 
         QVERIFY(controller.saveToFile(planPath));
         QVERIFY(QFile::exists(planPath));
@@ -178,7 +182,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
                                           .toArray()
                                           .first()
                                           .toObject();
-        QCOMPARE(savedTask.value(QStringLiteral("version")).toInt(), 2);
+        QCOMPARE(savedTask.value(QStringLiteral("version")).toInt(), 3);
         QCOMPARE(savedTask.value(QStringLiteral("planner"))
                      .toObject()
                      .value(QStringLiteral("executionSafety"))
@@ -200,7 +204,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     auto* restoredItem = coverageItem(restoredController);
     QVERIFY(restoredItem != nullptr);
     QCOMPARE(restoredItem->taskId(), expectedTaskId);
-    QCOMPARE(restoredItem->planningState(), CoverageInspectionComplexItem::Planned);
+    QCOMPARE(restoredItem->planningState(), CoverageInspectionComplexItem::Unplanned);
 
     const MarineTask* restoredTask = restoredContext->task(expectedTaskId.toStdString());
     QVERIFY(restoredTask != nullptr);
@@ -210,16 +214,19 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     QCOMPARE(restoredTask->planner.plannerId, expectedPlannerId);
     QCOMPARE(restoredTask->planner.executionSafety.executionMarginM, ExpectedExecutionMarginM);
     QCOMPARE(restoredTask->coverage.swathWidthM, ExpectedSwathWidthM);
-    QCOMPARE(restoredTask->coverage.safetyMarginM, ExpectedSafetyMarginM);
+    QCOMPARE(restoredTask->safety.hardSafetyMarginM, ExpectedSafetyMarginM);
+    QCOMPARE(restoredTask->safety.preferredSafetyMarginM, ExpectedSafetyMarginM);
     QCOMPARE(restoredTask->coverage.sweepAngleMode, SweepAngleMode::Manual);
     QCOMPARE(restoredTask->coverage.sweepAngleDeg, ExpectedSweepAngleDeg);
     QVERIFY(restoredTask->sensors.cameraEnabled);
     QVERIFY(!restoredTask->sensors.cameraRecord);
     QVERIFY(!restoredTask->sensors.sonarEnabled);
     QVERIFY(restoredTask->sensors.sonarRecord);
-    QCOMPARE(restoredTask->region.outerBoundary.vertices.size(), expectedBoundary.vertices.size());
+    QCOMPARE(restoredTask->region.coverageBoundary.vertices.size(), expectedBoundary.vertices.size());
+    QCOMPARE(restoredTask->region.navigationBoundary.vertices.size(), expectedBoundary.vertices.size());
     for (std::size_t index = 0; index < expectedBoundary.vertices.size(); ++index) {
-        comparePoint(restoredTask->region.outerBoundary.vertices.at(index), expectedBoundary.vertices.at(index));
+        comparePoint(restoredTask->region.coverageBoundary.vertices.at(index), expectedBoundary.vertices.at(index));
+        comparePoint(restoredTask->region.navigationBoundary.vertices.at(index), expectedBoundary.vertices.at(index));
     }
     QCOMPARE(restoredTask->region.noGoRegions.size(), std::size_t{1});
     QCOMPARE(restoredTask->region.noGoRegions.front().vertices.size(), expectedNoGo.vertices.size());
@@ -236,7 +243,10 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
                      expectedNoGo.vertices.at(static_cast<std::size_t>(index)));
     }
 
-    const PlanningResult& restoredResult = restoredItem->planningResult();
+    QVERIFY(restoredItem->planningResult().path.empty());
+    QVERIFY(restoredItem->planningArtifact().has_value());
+    QVERIFY(!restoredItem->planningArtifact()->stale);
+    const PlanningResult& restoredResult = restoredItem->planningArtifact()->result;
     QCOMPARE(restoredResult.status, expectedPlanningResult.status);
     QCOMPARE(restoredResult.legRoles, expectedPlanningResult.legRoles);
     QCOMPARE(restoredItem->generatedPathRoleRuns(), expectedPathRoleRuns);
@@ -257,67 +267,26 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     restoredItem->appendMissionItems(restoredMissionItems, this);
     compareMissionItems(restoredMissionItems, expectedMissionItems);
 
-    for (const int artifactVersion : {1, 2}) {
-        QJsonObject legacyPlan = savedPlanJson;
-        QJsonObject marine = legacyPlan.value(QStringLiteral("marine")).toObject();
-        QJsonArray tasks = marine.value(QStringLiteral("tasks")).toArray();
-        QJsonObject legacyTask = tasks.first().toObject();
-        legacyTask.insert(QStringLiteral("version"), 1);
-        QJsonObject legacyPlanner = legacyTask.value(QStringLiteral("planner")).toObject();
-        legacyPlanner.remove(QStringLiteral("executionSafety"));
-        legacyTask.insert(QStringLiteral("planner"), legacyPlanner);
-        tasks.replace(0, legacyTask);
-        marine.insert(QStringLiteral("tasks"), tasks);
-        legacyPlan.insert(QStringLiteral("marine"), marine);
-
-        QJsonObject mission = legacyPlan.value(QStringLiteral("mission")).toObject();
-        QJsonArray items = mission.value(QStringLiteral("items")).toArray();
-        bool foundArtifact = false;
-        for (qsizetype index = 0; index < items.size(); ++index) {
-            QJsonObject item = items[index].toObject();
-            if (item.value(QStringLiteral("complexItemType")).toString() != QStringLiteral("coverageInspection")) {
-                continue;
-            }
-            foundArtifact = true;
-            if (artifactVersion == 1) {
-                item.insert(QStringLiteral("version"), 1);
-                for (const QString& key : {QStringLiteral("legRoles"), QStringLiteral("coverageLengthM"),
-                                           QStringLiteral("transitLengthM"), QStringLiteral("cellCount")}) {
-                    item.remove(key);
-                }
-            }
-            items.replace(index, item);
-        }
-        QVERIFY(foundArtifact);
-        mission.insert(QStringLiteral("items"), items);
-        legacyPlan.insert(QStringLiteral("mission"), mission);
-
-        const QString legacyPath =
-            temporaryDirectory.filePath(QStringLiteral("marine-v1-task-artifact-v%1.plan").arg(artifactVersion));
-        QFile legacyFile(legacyPath);
-        QVERIFY(legacyFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        const QByteArray legacyBytes = QJsonDocument(legacyPlan).toJson();
-        QCOMPARE(legacyFile.write(legacyBytes), static_cast<qint64>(legacyBytes.size()));
-        legacyFile.close();
-
-        PlanMasterController legacyController(MAV_AUTOPILOT_ARDUPILOTMEGA, MAV_TYPE_GROUND_ROVER);
-        legacyController.setFlyView(false);
-        legacyController.start();
-        legacyController.loadFromFile(legacyPath);
-        auto* legacyContext = legacyController.findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
-        QVERIFY(legacyContext != nullptr);
-        const MarineTask* loadedTask = legacyContext->task(expectedTaskId.toStdString());
-        QVERIFY(loadedTask != nullptr);
-        QCOMPARE(loadedTask->planner.executionSafety.executionMarginM, 0.0);
-        auto* loadedItem = coverageItem(legacyController);
-        QVERIFY(loadedItem != nullptr);
-        QCOMPARE(loadedItem->planningState(), CoverageInspectionComplexItem::Planned);
-        QCOMPARE(loadedItem->planningResult().path.size(), expectedPlanningResult.path.size());
-        QCOMPARE(loadedItem->planningResult().legRoles.size(),
-                 artifactVersion == 1 ? std::size_t{0} : expectedPlanningResult.legRoles.size());
-        for (std::size_t index = 0; index < expectedPlanningResult.path.size(); ++index) {
-            comparePoint(loadedItem->planningResult().path[index], expectedPlanningResult.path[index]);
-        }
+    for (const int oldVersion : {1, 2}) {
+        QJsonObject oldTaskPlan = savedPlanJson;
+        auto marine = oldTaskPlan.value("marine").toObject();
+        auto tasks = marine.value("tasks").toArray();
+        auto task = tasks.first().toObject();
+        task.insert("version", oldVersion);
+        tasks[0] = task;
+        marine.insert("tasks", tasks);
+        oldTaskPlan.insert("marine", marine);
+        QString error;
+        QVERIFY(!QGCCorePlugin::instance()->preLoadFromJson(&restoredController, oldTaskPlan, error));
+        QVERIFY(error.contains("Unsupported development schema"));
+        QJsonArray artifacts;
+        restoredItem->save(artifacts);
+        QCOMPARE(artifacts.size(), 1);
+        auto artifact = artifacts.first().toObject();
+        artifact.insert("version", oldVersion);
+        QVERIFY(!restoredItem->load(artifact, 0, error));
+        QVERIFY(error.contains("Unsupported development schema"));
+        QVERIFY(restoredItem->planningResult().path.empty());
     }
 }
 

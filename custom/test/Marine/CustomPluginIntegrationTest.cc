@@ -26,12 +26,13 @@ MarineTask validTask(const std::string& id)
     task.name = "Harbor inspection";
     task.planner.plannerId = "marine.coverage.mock";
     task.coverage.swathWidthM = 5.0;
-    task.region.outerBoundary.vertices = {
+    task.region.coverageBoundary.vertices = {
         {.latitudeDeg = 47.3977, .longitudeDeg = 8.5455, .altitudeM = 0.0},
         {.latitudeDeg = 47.3977, .longitudeDeg = 8.5465, .altitudeM = 0.0},
         {.latitudeDeg = 47.3987, .longitudeDeg = 8.5465, .altitudeM = 0.0},
         {.latitudeDeg = 47.3987, .longitudeDeg = 8.5455, .altitudeM = 0.0},
     };
+    task.region.navigationBoundary = task.region.coverageBoundary;
     return task;
 }
 
@@ -154,7 +155,7 @@ void CustomPluginIntegrationTest::_testMarinePlanSaveFiltersOrphans()
 
     const QJsonObject planJson = planController()->saveToJson().object();
     const QJsonObject marineJson = planJson.value(QStringLiteral("marine")).toObject();
-    QCOMPARE(marineJson.value(QStringLiteral("version")).toInt(), 1);
+    QCOMPARE(marineJson.value(QStringLiteral("version")).toInt(), 2);
     const QJsonArray tasksJson = marineJson.value(QStringLiteral("tasks")).toArray();
     QCOMPARE(tasksJson.size(), 1);
     QCOMPARE(tasksJson.at(0).toObject().value(QStringLiteral("id")).toString(),
@@ -175,7 +176,7 @@ void CustomPluginIntegrationTest::_testMarinePlanPreload()
     const MarineTask loadedTask = validTask("loaded-task");
     QJsonObject planJson{
         {QStringLiteral("marine"),
-         QJsonObject{{QStringLiteral("version"), 1}, {QStringLiteral("tasks"), QJsonArray{saveTask(loadedTask)}}}}};
+         QJsonObject{{QStringLiteral("version"), 2}, {QStringLiteral("tasks"), QJsonArray{saveTask(loadedTask)}}}}};
 
     QString errorString;
     QVERIFY2(QGCCorePlugin::instance()->preLoadFromJson(planController(), planJson, errorString),
@@ -246,35 +247,39 @@ void CustomPluginIntegrationTest::_testMarinePlanPreloadValidation()
     QGCCorePlugin* plugin = QGCCorePlugin::instance();
     QString errorString;
 
-    QJsonObject unsupportedVersion{{QStringLiteral("marine"), QJsonObject{{QStringLiteral("version"), 2},
+    QJsonObject unsupportedVersion{{QStringLiteral("marine"), QJsonObject{{QStringLiteral("version"), 1},
                                                                           {QStringLiteral("tasks"), QJsonArray()}}}};
     QVERIFY(!plugin->preLoadFromJson(planController(), unsupportedVersion, errorString));
-    QVERIFY(errorString.contains(QStringLiteral("version"), Qt::CaseInsensitive));
+    QVERIFY(errorString.contains(QStringLiteral("Unsupported development schema")));
+    QVERIFY(errorString.contains(QStringLiteral("Marine extension version 1")));
     QVERIFY(context->task(existingTask.id) != nullptr);
 
     const MarineTask duplicateTask = validTask("duplicate-task");
     QJsonObject duplicateIds{
         {QStringLiteral("marine"),
-         QJsonObject{{QStringLiteral("version"), 1},
+         QJsonObject{{QStringLiteral("version"), 2},
                      {QStringLiteral("tasks"), QJsonArray{saveTask(duplicateTask), saveTask(duplicateTask)}}}}};
     errorString.clear();
     QVERIFY(!plugin->preLoadFromJson(planController(), duplicateIds, errorString));
     QVERIFY(errorString.contains(QStringLiteral("duplicate"), Qt::CaseInsensitive));
     QVERIFY(context->task(existingTask.id) != nullptr);
 
-    QJsonObject marineWithoutTasks{{QStringLiteral("marine"), QJsonObject{{QStringLiteral("version"), 1},
+    QJsonObject marineWithoutTasks{{QStringLiteral("marine"), QJsonObject{{QStringLiteral("version"), 2},
                                                                           {QStringLiteral("tasks"), QJsonArray()}}}};
     QVERIFY(plugin->preLoadFromJson(planController(), marineWithoutTasks, errorString));
-    QJsonObject brokenReference{
-        {QStringLiteral("version"), 1},
-        {QStringLiteral("type"), QStringLiteral("ComplexItem")},
-        {QStringLiteral("complexItemType"), CoverageInspectionComplexItem::jsonComplexItemTypeValue},
-        {QStringLiteral("taskId"), QStringLiteral("missing-task")},
-        {QStringLiteral("planningStatus"), QStringLiteral("success")},
-        {QStringLiteral("generatedPath"), QJsonArray()},
-        {QStringLiteral("pathLengthM"), 0.0},
-        {QStringLiteral("planningMessage"), QStringLiteral("")},
-    };
+    QJsonObject ordinaryPlan;
+    QVERIFY(plugin->preLoadFromJson(planController(), ordinaryPlan, errorString));
+    QVERIFY(errorString.isEmpty());
+    QJsonObject taskJson;
+    QVERIFY(MarineTaskJsonCodec::save(existingTask, taskJson, errorString));
+    context->addTask(existingTask);
+    CoverageInspectionComplexItem source(planController(), false, context);
+    source.setTaskId(QString::fromStdString(existingTask.id));
+    QJsonArray artifacts;
+    source.save(artifacts);
+    QCOMPARE(artifacts.size(), 1);
+    QJsonObject brokenReference = artifacts.first().toObject();
+    brokenReference.insert("taskId", "missing-task");
     errorString.clear();
     auto item = std::make_unique<CoverageInspectionComplexItem>(planController(), false, context);
     QVERIFY(!item->load(brokenReference, 0, errorString));
