@@ -179,7 +179,8 @@ void CellCoverageTest::_testBackendDerivedRoundedCells()
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = {rectangle(8.0, 8.0, 12.0, 12.0)};
     problem.swathWidthM = 4.0;
-    problem.safetyMarginM = 1.0;
+    problem.safety.hardSafetyMarginM = 1.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 90.0;
 

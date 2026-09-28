@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "CoverageGeometry.h"
+#include "CoverageSafety.h"
 #include "Geometry/PolygonRegion.h"
 
 namespace Marine {
@@ -16,11 +17,9 @@ CoveragePlanningError CoverageProblemValidator::validateAndNormalize(CoveragePla
     if (!std::isfinite(problem.swathWidthM) || (problem.swathWidthM <= 0.0)) {
         return CoveragePlanningError::InvalidSwathWidth;
     }
-    if (!std::isfinite(problem.safetyMarginM) || (problem.safetyMarginM < 0.0)) {
-        return CoveragePlanningError::InvalidSafetyMargin;
-    }
-    if (!std::isfinite(problem.executionSafety.executionMarginM) || (problem.executionSafety.executionMarginM < 0.0)) {
-        return CoveragePlanningError::InvalidExecutionMargin;
+    const auto safetyError = validateSafetyMargins(problem.safety, problem.executionSafety);
+    if (safetyError != CoveragePlanningError::None) {
+        return safetyError;
     }
 
     switch (problem.sweepAngleMode) {
@@ -74,6 +73,7 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::NoGoOverlapOrTouch:
         case CoveragePlanningError::InvalidSwathWidth:
         case CoveragePlanningError::InvalidSafetyMargin:
+        case CoveragePlanningError::InvalidPreferredSafetyMargin:
         case CoveragePlanningError::InvalidExecutionMargin:
         case CoveragePlanningError::InvalidSweepAngle:
             return PlanningStatus::InvalidInput;
@@ -131,7 +131,9 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
         case CoveragePlanningError::InvalidSwathWidth:
             return "Coverage swath width must be finite and greater than zero";
         case CoveragePlanningError::InvalidSafetyMargin:
-            return "Safety margin must be finite and non-negative";
+            return "Hard safety margin must be finite and non-negative";
+        case CoveragePlanningError::InvalidPreferredSafetyMargin:
+            return "Preferred safety margin must be finite and at least the hard safety margin";
         case CoveragePlanningError::InvalidExecutionMargin:
             return "Execution margin must be finite and non-negative";
         case CoveragePlanningError::InvalidSweepAngle:
@@ -143,7 +145,7 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
         case CoveragePlanningError::UnsupportedExecutionSafetyProfile:
             return "The selected coverage planner does not support a nonzero execution margin";
         case CoveragePlanningError::ExecutionRegionNotConservative:
-            return "Execution-safe region is not contained in the nominal track-feasible region";
+            return "Safety regions do not satisfy Preferred subset-of Hard subset-of Nominal";
         case CoveragePlanningError::NoNavigableArea:
             return "Safety processing leaves no navigable centerline area";
         case CoveragePlanningError::DisconnectedFeasibleRegion:

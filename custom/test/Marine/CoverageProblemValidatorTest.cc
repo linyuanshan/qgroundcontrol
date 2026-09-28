@@ -19,7 +19,8 @@ CoveragePlanningProblem validProblem()
     };
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 6.0;
-    problem.safetyMarginM = 2.0;
+    problem.safety.hardSafetyMarginM = 2.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 45.0;
     return problem;
@@ -84,19 +85,23 @@ void CoverageProblemValidatorTest::_testNumericValidation()
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::InvalidSwathWidth);
 
     problem = validProblem();
-    problem.safetyMarginM = -0.01;
+    problem.safety.hardSafetyMarginM = -0.01;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::InvalidSafetyMargin);
 
     problem = validProblem();
-    problem.safetyMarginM = std::numeric_limits<double>::quiet_NaN();
+    problem.safety.hardSafetyMarginM = std::numeric_limits<double>::quiet_NaN();
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::InvalidSafetyMargin);
 
     problem = validProblem();
-    problem.safetyMarginM = 3.01;
+    problem.safety.hardSafetyMarginM = 3.01;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
 
     problem = validProblem();
-    problem.safetyMarginM = problem.swathWidthM / 2.0;
+    problem.safety.hardSafetyMarginM = problem.swathWidthM / 2.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
 
     problem = validProblem();

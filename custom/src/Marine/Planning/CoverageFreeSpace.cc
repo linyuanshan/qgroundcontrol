@@ -55,7 +55,7 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
     if (noGoError != CoveragePlanningError::None) {
         return failure(noGoError);
     }
-    if (normalizedProblem.safetyMarginM > (normalizedProblem.swathWidthM / 2.0)) {
+    if (normalizedProblem.safety.hardSafetyMarginM > (normalizedProblem.swathWidthM / 2.0)) {
         return failure(CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
     }
 
@@ -66,9 +66,9 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
         return failure(CoveragePlanningError::GeometryFailure);
     }
 
-    const Geometry::PolygonRegionOperationResult nominalTrackFeasible =
-        Geometry::buildTrackFeasibleRegion(normalizedProblem.region.coverageBoundary,
-                                           normalizedProblem.region.noGoRegions, normalizedProblem.safetyMarginM);
+    const Geometry::PolygonRegionOperationResult nominalTrackFeasible = Geometry::buildTrackFeasibleRegion(
+        normalizedProblem.region.coverageBoundary, normalizedProblem.region.noGoRegions,
+        normalizedProblem.safety.hardSafetyMarginM);
     if (nominalTrackFeasible.status != Geometry::PolygonRegionOperationStatus::Success) {
         return failure(CoveragePlanningError::GeometryFailure);
     }
@@ -93,7 +93,8 @@ CoverageFreeSpaceResult buildCoverageFreeSpace(const CoveragePlanningProblem& pr
         return failure(CoveragePlanningError::CoverageImpossibleWithSafetyMargin);
     }
 
-    const double totalMarginM = normalizedProblem.safetyMarginM + normalizedProblem.executionSafety.executionMarginM;
+    const double totalMarginM =
+        normalizedProblem.safety.hardSafetyMarginM + normalizedProblem.executionSafety.executionMarginM;
     if (!std::isfinite(totalMarginM)) {
         return failure(CoveragePlanningError::GeometryFailure);
     }

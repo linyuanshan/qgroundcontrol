@@ -18,7 +18,8 @@ CoveragePlanningProblem problemWithOuter(const Polygon2D& outer)
     problem.region.coverageBoundary = outer;
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 4.0;
-    problem.safetyMarginM = 1.0;
+    problem.safety.hardSafetyMarginM = 1.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 0.0;
     return problem;
@@ -115,7 +116,7 @@ void CoverageFreeSpaceTest::_testCoverageTargetAndTrackFeasibleRegion()
         Geometry::buildCoverageTarget(problem.region.coverageBoundary, problem.region.noGoRegions);
     QCOMPARE(target.status, Geometry::PolygonRegionOperationStatus::Success);
     const Geometry::PolygonRegionOperationResult track = Geometry::buildTrackFeasibleRegion(
-        problem.region.coverageBoundary, problem.region.noGoRegions, problem.safetyMarginM);
+        problem.region.coverageBoundary, problem.region.noGoRegions, problem.safety.hardSafetyMarginM);
     QCOMPARE(track.status, Geometry::PolygonRegionOperationStatus::Success);
     const Geometry::PolygonRegionOperationResult reachable =
         Geometry::bufferPolygonRegions(track.regions, problem.swathWidthM / 2.0);
@@ -145,7 +146,7 @@ void CoverageFreeSpaceTest::_testInflationMergesNoGo()
     const Geometry::PolygonRegionOperationResult target =
         Geometry::buildCoverageTarget(problem.region.coverageBoundary, problem.region.noGoRegions);
     const Geometry::PolygonRegionOperationResult track = Geometry::buildTrackFeasibleRegion(
-        problem.region.coverageBoundary, problem.region.noGoRegions, problem.safetyMarginM);
+        problem.region.coverageBoundary, problem.region.noGoRegions, problem.safety.hardSafetyMarginM);
 
     QCOMPARE(target.status, Geometry::PolygonRegionOperationStatus::Success);
     QCOMPARE(target.regions.front().holes.size(), std::size_t{2});
@@ -170,7 +171,8 @@ void CoverageFreeSpaceTest::_testNoNavigableArea()
 {
     CoveragePlanningProblem problem = problemWithOuter(rectangle(0.0, 0.0, 4.0, 4.0));
     problem.swathWidthM = 4.0;
-    problem.safetyMarginM = 2.0;
+    problem.safety.hardSafetyMarginM = 2.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
 
     const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
 
@@ -182,7 +184,8 @@ void CoverageFreeSpaceTest::_testSafetyExceedsHalfSwath()
 {
     CoveragePlanningProblem problem = problemWithOuter(rectangle(0.0, 0.0, 20.0, 20.0));
     problem.swathWidthM = 1.9;
-    problem.safetyMarginM = 1.0;
+    problem.safety.hardSafetyMarginM = 1.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
 
     const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
 
@@ -198,7 +201,8 @@ void CoverageFreeSpaceTest::_testUnreachableCoverage()
     };
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 2.0;
-    problem.safetyMarginM = 1.0;
+    problem.safety.hardSafetyMarginM = 1.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
 
     const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
@@ -246,7 +250,8 @@ void CoverageFreeSpaceTest::_testMiterPolygonShapes()
     for (const std::vector<Polygon2D>& noGo : cases) {
         CoveragePlanningProblem problem = problemWithOuter(outer);
         problem.swathWidthM = 5.0;
-        problem.safetyMarginM = 0.5;
+        problem.safety.hardSafetyMarginM = 0.5;
+        problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
         problem.executionSafety.executionMarginM = 0.25;
         problem.region.noGoRegions = noGo;
         const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
@@ -264,7 +269,8 @@ void CoverageFreeSpaceTest::_testExecutionMarginFailure()
 {
     CoveragePlanningProblem problem = problemWithOuter(rectangle(0.0, 0.0, 20.0, 20.0));
     problem.swathWidthM = 2.0;
-    problem.safetyMarginM = 0.5;
+    problem.safety.hardSafetyMarginM = 0.5;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.executionSafety.executionMarginM = 0.75;
     const CoverageFreeSpaceResult result = buildCoverageFreeSpace(problem);
     QCOMPARE(result.status, PlanningStatus::Failed);
@@ -276,15 +282,16 @@ void CoverageFreeSpaceTest::_testSharpAngleConservativenessGate()
 {
     CoveragePlanningProblem problem = problemWithOuter(rectangle(0.0, 0.0, 50.0, 50.0));
     problem.swathWidthM = 5.0;
-    problem.safetyMarginM = 0.5;
+    problem.safety.hardSafetyMarginM = 0.5;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.region.noGoRegions = {{{{10.0, 10.0}, {40.0, 10.0}, {25.0, 10.5}}}};
     for (const double executionMarginM : {0.0, 0.25}) {
         problem.executionSafety.executionMarginM = executionMarginM;
         const Geometry::PolygonRegionOperationResult nominal = Geometry::buildTrackFeasibleRegion(
-            problem.region.coverageBoundary, problem.region.noGoRegions, problem.safetyMarginM);
+            problem.region.coverageBoundary, problem.region.noGoRegions, problem.safety.hardSafetyMarginM);
         const Geometry::PolygonRegionOperationResult execution = Geometry::buildTrackFeasibleRegionConservativeMiter(
             problem.region.coverageBoundary, problem.region.noGoRegions,
-            problem.safetyMarginM + problem.executionSafety.executionMarginM);
+            problem.safety.hardSafetyMarginM + problem.executionSafety.executionMarginM);
         QCOMPARE(nominal.status, Geometry::PolygonRegionOperationStatus::Success);
         QCOMPARE(execution.status, Geometry::PolygonRegionOperationStatus::Success);
         const Geometry::PolygonRegionContainmentResult contained =

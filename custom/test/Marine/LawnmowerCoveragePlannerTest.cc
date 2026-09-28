@@ -22,7 +22,8 @@ CoveragePlanningProblem rectangleProblem(double widthM, double heightM, double s
     };
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = swathWidthM;
-    problem.safetyMarginM = safetyMarginM;
+    problem.safety.hardSafetyMarginM = safetyMarginM;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = angleDeg;
     return problem;
@@ -261,7 +262,7 @@ void LawnmowerCoveragePlannerTest::_testSuccessfulPathInvariants()
     const LawnmowerCoveragePlanner planner;
     const CoveragePlanningSolution solution = planner.plan(problem);
     const Geometry::PolygonInsetResult inset =
-        Geometry::insetPolygon(problem.region.coverageBoundary, problem.safetyMarginM);
+        Geometry::insetPolygon(problem.region.coverageBoundary, problem.safety.hardSafetyMarginM);
 
     QCOMPARE(solution.status, PlanningStatus::Success);
     QCOMPARE(inset.status, Geometry::PolygonInsetStatus::Success);

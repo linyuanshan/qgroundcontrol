@@ -28,7 +28,7 @@ MarineTask createTask()
     task.region.navigationBoundary = task.region.coverageBoundary;
     task.coverage.swathWidthM = 8.0;
     task.safety.hardSafetyMarginM = 2.5;
-    task.safety.preferredSafetyMarginM = 2.5;
+    task.safety.preferredSafetyMarginM = 3.5;
     task.coverage.sweepAngleMode = SweepAngleMode::Manual;
     task.coverage.sweepAngleDeg = 35.0;
     task.planner.plannerId = "marine.coverage.mock";
@@ -60,7 +60,8 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     QCOMPARE(problem.region.coverageBoundary.vertices.size(), task.region.coverageBoundary.vertices.size());
     QVERIFY(problem.region.noGoRegions.empty());
     QCOMPARE(problem.swathWidthM, 8.0);
-    QCOMPARE(problem.safetyMarginM, 2.5);
+    QCOMPARE(problem.safety.hardSafetyMarginM, 2.5);
+    QCOMPARE(problem.safety.preferredSafetyMarginM, 3.5);
     QCOMPARE(problem.executionSafety.executionMarginM, 0.25);
     QVERIFY(problem.sweepAngleMode == SweepAngleMode::Manual);
     QCOMPARE(problem.requestedSweepAngleDeg, 35.0);
@@ -148,7 +149,14 @@ void CoverageTaskAdapterTest::_testValidationAndNormalization()
     task.safety.hardSafetyMarginM = 4.01;
     task.safety.preferredSafetyMarginM = 4.01;
     QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
-    QCOMPARE(problem.safetyMarginM, 4.01);
+    QCOMPARE(problem.safety.hardSafetyMarginM, 4.01);
+
+    task = createTask();
+    task.safety.preferredSafetyMarginM = task.safety.hardSafetyMarginM - 0.1;
+    QVERIFY(!CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(error, CoveragePlanningError::InvalidPreferredSafetyMargin);
+    QVERIFY(!reference.has_value());
+    QVERIFY(problem.region.navigationBoundary.vertices.empty());
 
     task = createTask();
     task.planner.executionSafety.executionMarginM = -0.1;

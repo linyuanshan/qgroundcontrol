@@ -387,7 +387,8 @@ void BoustrophedonDecompositionTest::_testRoundedHoleEndToEnd()
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = {rectangle(12, 7, 18, 13)};
     problem.swathWidthM = 4.0;
-    problem.safetyMarginM = 1.0;
+    problem.safety.hardSafetyMarginM = 1.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 90.0;
     const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(problem);

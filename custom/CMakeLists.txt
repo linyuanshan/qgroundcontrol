@@ -96,6 +96,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoveragePlanningProblem.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageGeometry.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageGeometry.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageSafety.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageSafety.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageProblemValidator.cc
@@ -125,6 +127,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageGeometryTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageGeometryTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageSafetyTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageSafetyTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageFreeSpaceTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageFreeSpaceTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.cc
@@ -184,6 +188,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         CoverageGeometryTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageSafetyTest
         LABELS
         Unit
     )

@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "CoverageProblemValidator.h"
+#include "CoverageSafety.h"
 
 namespace {
 
@@ -34,9 +35,8 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
     problem = {};
     geoReference.reset();
     error = CoveragePlanningError::None;
-    if (!std::isfinite(task.planner.executionSafety.executionMarginM) ||
-        (task.planner.executionSafety.executionMarginM < 0.0)) {
-        error = CoveragePlanningError::InvalidExecutionMargin;
+    error = validateSafetyMargins(task.safety, task.planner.executionSafety);
+    if (error != CoveragePlanningError::None) {
         return false;
     }
     if (!task.isValid()) {
@@ -71,7 +71,7 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
     }
 
     converted.swathWidthM = task.coverage.swathWidthM;
-    converted.safetyMarginM = task.safety.hardSafetyMarginM;
+    converted.safety = task.safety;
     converted.executionSafety = task.planner.executionSafety;
     converted.sweepAngleMode = task.coverage.sweepAngleMode;
     converted.requestedSweepAngleDeg = task.coverage.sweepAngleDeg;

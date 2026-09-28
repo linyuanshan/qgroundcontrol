@@ -21,6 +21,7 @@ enum class CoveragePlanningError
     UnsupportedSeparateBoundaries,
     InvalidSwathWidth,
     InvalidSafetyMargin,
+    InvalidPreferredSafetyMargin,
     InvalidExecutionMargin,
     InvalidSweepAngle,
     CoverageImpossibleWithSafetyMargin,
@@ -51,7 +52,7 @@ struct CoveragePlanningProblem
 {
     Region2D region;
     double swathWidthM = 0.0;
-    double safetyMarginM = 0.0;
+    SafetyConfig safety;
     ExecutionSafetyProfile executionSafety;
     SweepAngleMode sweepAngleMode = SweepAngleMode::Auto;
     // Navigation bearing: 0 degrees North, 90 degrees East, clockwise positive.

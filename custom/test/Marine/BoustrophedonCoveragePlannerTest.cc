@@ -54,7 +54,8 @@ CoveragePlanningProblem anchoredS04Problem()
     problemValue.region.navigationBoundary = problemValue.region.coverageBoundary;
     problemValue.region.noGoRegions = {rectangle(22.0, 4.0, 26.0, 8.0)};
     problemValue.swathWidthM = 4.0;
-    problemValue.safetyMarginM = 1.0;
+    problemValue.safety.hardSafetyMarginM = 1.0;
+    problemValue.safety.preferredSafetyMarginM = problemValue.safety.hardSafetyMarginM;
     problemValue.sweepAngleMode = SweepAngleMode::Auto;
 
     const BoustrophedonCoveragePlanner planner;
@@ -94,7 +95,8 @@ CoveragePlanningProblem problem(Polygon2D outer, std::vector<Polygon2D> noGoRegi
     result.region.navigationBoundary = result.region.coverageBoundary;
     result.region.noGoRegions = std::move(noGoRegions);
     result.swathWidthM = swathWidthM;
-    result.safetyMarginM = safetyMarginM;
+    result.safety.hardSafetyMarginM = safetyMarginM;
+    result.safety.preferredSafetyMarginM = result.safety.hardSafetyMarginM;
     result.sweepAngleMode = SweepAngleMode::Manual;
     result.requestedSweepAngleDeg = angleDeg;
     return result;
@@ -369,8 +371,8 @@ void BoustrophedonCoveragePlannerTest::_testGeoRoundTripS04Regression()
     task.planner.plannerId = "marine.coverage.bcd";
     task.planner.executionSafety.executionMarginM = localProblem.executionSafety.executionMarginM;
     task.coverage.swathWidthM = localProblem.swathWidthM;
-    task.safety.hardSafetyMarginM = localProblem.safetyMarginM;
-    task.safety.preferredSafetyMarginM = localProblem.safetyMarginM;
+    task.safety.hardSafetyMarginM = localProblem.safety.hardSafetyMarginM;
+    task.safety.preferredSafetyMarginM = localProblem.safety.hardSafetyMarginM;
     task.coverage.sweepAngleMode = localProblem.sweepAngleMode;
     task.coverage.sweepAngleDeg = localProblem.requestedSweepAngleDeg;
     task.region.coverageBoundary = toGeoPolygon(localProblem.region.coverageBoundary, *reference);

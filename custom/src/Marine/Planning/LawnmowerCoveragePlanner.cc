@@ -178,7 +178,7 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
     }
 
     Geometry::PolygonInsetResult inset =
-        Geometry::insetPolygon(normalizedProblem.region.coverageBoundary, normalizedProblem.safetyMarginM);
+        Geometry::insetPolygon(normalizedProblem.region.coverageBoundary, normalizedProblem.safety.hardSafetyMarginM);
     const CoveragePlanningError insetError = errorForInsetStatus(inset.status);
     if (insetError != CoveragePlanningError::None) {
         return failureSolution(insetError);

@@ -22,7 +22,8 @@ CoveragePlanningProblem createValidProblem()
     };
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 5.0;
-    problem.safetyMarginM = 1.0;
+    problem.safety.hardSafetyMarginM = 1.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = SweepAngleMode::Manual;
     problem.requestedSweepAngleDeg = 90.0;
     return problem;

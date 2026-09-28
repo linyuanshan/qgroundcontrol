@@ -158,7 +158,8 @@ void CoverageGeometryTest::_testHistoricalPlannerBoundary()
     CoveragePlanningProblem problem;
     problem.region = nestedRegion();
     problem.swathWidthM = 4.0;
-    problem.safetyMarginM = 100.0;
+    problem.safety.hardSafetyMarginM = 100.0;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.executionSafety.executionMarginM = 100.0;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
     QCOMPARE(buildCoverageGeometry(problem.region).error, CoveragePlanningError::None);

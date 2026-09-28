@@ -171,7 +171,8 @@ CoveragePlanningProblem problemFor(const ScenarioDefinition& definition)
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = definition.noGoRegions;
     problem.swathWidthM = definition.swathWidthM;
-    problem.safetyMarginM = definition.safetyMarginM;
+    problem.safety.hardSafetyMarginM = definition.safetyMarginM;
+    problem.safety.preferredSafetyMarginM = problem.safety.hardSafetyMarginM;
     problem.sweepAngleMode = definition.sweepAngleMode;
     problem.requestedSweepAngleDeg = definition.sweepAngleDeg;
     return problem;
@@ -918,7 +919,8 @@ QJsonObject analyzeExecutionCandidate(const ScenarioDefinition& definition, doub
     Geometry::PolygonRegionOperationStatus geometryStatus = Geometry::PolygonRegionOperationStatus::GeometryFailure;
 
     if (!miterNoGo) {
-        planningProblem.safetyMarginM = totalMarginM;
+        planningProblem.safety.hardSafetyMarginM = totalMarginM;
+        planningProblem.safety.preferredSafetyMarginM = planningProblem.safety.hardSafetyMarginM;
         const Geometry::PolygonRegionOperationResult trackFeasible =
             Geometry::buildTrackFeasibleRegion(definition.outer, definition.noGoRegions, totalMarginM);
         geometryStatus = trackFeasible.status;
@@ -947,7 +949,8 @@ QJsonObject analyzeExecutionCandidate(const ScenarioDefinition& definition, doub
                     planningProblem.region.coverageBoundary = insetOuter.regions.front().outerBoundary;
                     planningProblem.region.navigationBoundary = planningProblem.region.coverageBoundary;
                     planningProblem.region.noGoRegions = std::move(inflatedNoGo);
-                    planningProblem.safetyMarginM = 0.0;
+                    planningProblem.safety.hardSafetyMarginM = 0.0;
+                    planningProblem.safety.preferredSafetyMarginM = planningProblem.safety.hardSafetyMarginM;
                 }
             }
         }
@@ -1205,8 +1208,8 @@ void MarineSITLValidationTest::_validateP2Scenarios()
                 task.region.noGoRegions.push_back(toGeoPolygon(noGo, *anchorReference));
             }
             task.coverage.swathWidthM = anchoredProblem.swathWidthM;
-            task.safety.hardSafetyMarginM = anchoredProblem.safetyMarginM;
-            task.safety.preferredSafetyMarginM = anchoredProblem.safetyMarginM;
+            task.safety.hardSafetyMarginM = anchoredProblem.safety.hardSafetyMarginM;
+            task.safety.preferredSafetyMarginM = anchoredProblem.safety.hardSafetyMarginM;
             task.coverage.sweepAngleMode = anchoredProblem.sweepAngleMode;
             task.coverage.sweepAngleDeg = anchoredProblem.requestedSweepAngleDeg;
             context->addTask(task);
