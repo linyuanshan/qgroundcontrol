@@ -46,7 +46,7 @@ V05 governance state:
 | Complete | V05-00C AGENTS.md Authority Reconciliation |
 | Complete | V05-00C-OPT AGENTS.md Context Optimization |
 | Complete | Pre-V05-01 working-tree and baseline reconciliation |
-| Current / Authorized | V05-01 production implementation |
+| Complete | V05-01 production implementation |
 | Not authorized | V05-02 production implementation |
 
 V05-01 must not begin until the pre-V05-01 gate is completed and the project owner explicitly

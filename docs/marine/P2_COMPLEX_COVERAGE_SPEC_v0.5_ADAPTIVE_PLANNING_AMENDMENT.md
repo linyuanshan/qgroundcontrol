@@ -2,7 +2,7 @@
 
 状态：**P2 v0.5 架构设计冻结（Architecture Design Freeze）已完成；V05-00B 规范编写及独立审查已完成；V05-00C AGENTS.md 权威协调已完成；V05-00C-OPT AGENTS.md 上下文优化已完成。**
 
-基线协调：**Pre-V05-01 工作区/基线协调已完成；V05-01 生产实现已获项目所有者明确授权，现为当前工作包（Current / Authorized）；V05-02 仍未获授权（NOT AUTHORIZED）。**
+基线协调：**Pre-V05-01 工作区/基线协调已完成；V05-01 生产实现及独立审查已完成（PASS / CLOSED）；V05-02 仍未获授权（NOT AUTHORIZED）。**
 
 决策依据：经批准的 **V05-00B 规范编写决策记录**及其**权威基线补充说明**，以及 V05-00A 证据审计和
 V05-00A-2 架构决策。历史仓库基线：分支 `feature/marine-p2-complex-coverage`，提交
