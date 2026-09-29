@@ -48,7 +48,7 @@ V05 governance state:
 | Complete | Pre-V05-01 working-tree and baseline reconciliation |
 | Complete | V05-01 production implementation |
 | Complete | V05-02 production implementation |
-| Current / Authorized | V05-03 production implementation |
+| Complete | V05-03 production implementation |
 | Not authorized | V05-04 production implementation |
 
 V05-01 must not begin until the pre-V05-01 gate is completed and the project owner explicitly
