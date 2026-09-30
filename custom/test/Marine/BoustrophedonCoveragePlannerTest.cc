@@ -50,6 +50,7 @@ Polygon2D s04Outer()
 CoveragePlanningProblem anchoredS04Problem()
 {
     CoveragePlanningProblem problemValue;
+    problemValue.executionSafety.executionMarginM = 0.0;
     problemValue.region.coverageBoundary = s04Outer();
     problemValue.region.navigationBoundary = problemValue.region.coverageBoundary;
     problemValue.region.noGoRegions = {rectangle(22.0, 4.0, 26.0, 8.0)};
@@ -91,6 +92,7 @@ CoveragePlanningProblem problem(Polygon2D outer, std::vector<Polygon2D> noGoRegi
                                 double safetyMarginM = 1.0, double angleDeg = 90.0)
 {
     CoveragePlanningProblem result;
+    result.executionSafety.executionMarginM = 0.0;
     result.region.coverageBoundary = std::move(outer);
     result.region.navigationBoundary = result.region.coverageBoundary;
     result.region.noGoRegions = std::move(noGoRegions);
@@ -382,6 +384,7 @@ void BoustrophedonCoveragePlannerTest::_testGeoRoundTripS04Regression()
     }
 
     CoveragePlanningProblem roundTripProblem;
+    roundTripProblem.executionSafety.executionMarginM = 0.0;
     std::optional<GeoReference> roundTripReference;
     CoveragePlanningError adapterError = CoveragePlanningError::None;
     QVERIFY2(CoverageTaskAdapter::buildProblem(task, roundTripProblem, roundTripReference, adapterError),

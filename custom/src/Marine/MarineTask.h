@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <string>
 
 #include "MarineTypes.h"
@@ -36,13 +37,15 @@ struct CoverageConfig
 
 struct SafetyConfig
 {
-    double hardSafetyMarginM = 0.0;
-    double preferredSafetyMarginM = 0.0;
+    // H/P are explicit Task v3 inputs; an intentional zero must still be assigned by the caller or codec.
+    double hardSafetyMarginM = std::numeric_limits<double>::quiet_NaN();
+    double preferredSafetyMarginM = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct ExecutionSafetyProfile
 {
-    double executionMarginM = 0.0;
+    // A caller or the Task v3 codec must explicitly configure E, including an intentional zero.
+    double executionMarginM = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct PlannerConfig

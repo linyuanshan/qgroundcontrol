@@ -156,6 +156,7 @@ void CoverageGeometryTest::_testNavigationOutsideCoverage()
 void CoverageGeometryTest::_testHistoricalPlannerBoundary()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     problem.region = nestedRegion();
     problem.swathWidthM = 4.0;
     problem.safety.hardSafetyMarginM = 100.0;

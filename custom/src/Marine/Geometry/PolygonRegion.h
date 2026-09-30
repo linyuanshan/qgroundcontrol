@@ -55,7 +55,12 @@ struct LineSegment2D
 [[nodiscard]] PolygonRegionOperationResult buildTrackFeasibleRegion(const Polygon2D& outerBoundary,
                                                                     const std::vector<Polygon2D>& noGoRegions,
                                                                     double safetyMarginM);
+/// V05-03 safety certification uses conservative lattice offsets; legacy planning keeps its original geometry.
+[[nodiscard]] PolygonRegionOperationResult buildSafetyTrackFeasibleRegionRound(
+    const Polygon2D& outerBoundary, const std::vector<Polygon2D>& noGoRegions, double safetyMarginM);
 [[nodiscard]] PolygonRegionOperationResult buildTrackFeasibleRegionConservativeMiter(
+    const Polygon2D& outerBoundary, const std::vector<Polygon2D>& noGoRegions, double marginM);
+[[nodiscard]] PolygonRegionOperationResult buildSafetyTrackFeasibleRegionMiter(
     const Polygon2D& outerBoundary, const std::vector<Polygon2D>& noGoRegions, double marginM);
 [[nodiscard]] PolygonRegionOperationResult bufferPolygonRegions(const PolygonRegionSet2D& regions, double distanceM);
 [[nodiscard]] PolygonRegionOperationResult bufferLineSegments(std::span<const LineSegment2D> segments, double radiusM);

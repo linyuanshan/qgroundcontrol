@@ -54,7 +54,8 @@ struct SafetyCandidateSelection
 /// Geometric D0/D1 certification only. Does not imply coverage quality, readiness or upload permission.
 [[nodiscard]] SafetyCandidateAssessment evaluateSafetyCandidate(const SafetyTrackRegionsResult& regions,
                                                                 std::span<const Point2D> path);
-/// Selects supplied candidates when preferred geometry is unavailable; does not generate or rank coverage plans.
+/// V05-03 safety-only fallback between supplied paths. Not the §24 final candidate comparator:
+/// coverage certification and quality must be ranked before preferred safety.
 [[nodiscard]] SafetyCandidateSelection selectPreferredOrHardCandidate(const SafetyTrackRegionsResult& regions,
                                                                       std::span<const Point2D> preferredCandidate,
                                                                       std::span<const Point2D> hardCandidate);

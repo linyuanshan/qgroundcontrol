@@ -24,6 +24,7 @@ private slots:
     void _testBoustrophedonNoGoPlanning();
     void _testGeneratedPathRoleRuns();
     void _testPlanningFailures();
+    void _testInvalidPlannerSuccess();
     void _testInvalidation();
     void _testQmlRegistration();
     void _testQmlTaskProperties();
@@ -37,6 +38,8 @@ private slots:
     void _testUnplannedSaveLoad();
     void _testLoadValidation();
     void _testArtifactIdentity();
+    void _testStaleArtifactReferenceChange();
+    void _testClosingVertexIdentityAndPlan();
 
 private:
     Marine::MarinePlanContext* _marineContext = nullptr;

@@ -14,6 +14,9 @@ CoveragePlanningProblem rectangleProblem(double widthM, double heightM, double s
                                          double safetyMarginM = 0.0)
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {0.0, 0.0},
         {widthM, 0.0},
@@ -183,6 +186,9 @@ void LawnmowerCoveragePlannerTest::_testExecutionProfileCapabilityGate()
 void LawnmowerCoveragePlannerTest::_testGeneralConvexDeterminism()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {-2.0, 4.0}, {0.0, 0.0}, {12.0, -1.0}, {18.0, 5.0}, {13.0, 10.0}, {2.0, 9.0},
     };
@@ -221,6 +227,9 @@ void LawnmowerCoveragePlannerTest::_testSafetyInsetFailure()
 void LawnmowerCoveragePlannerTest::_testNonMonotoneSweepFailure()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {0.0, 0.0}, {10.0, 0.0}, {10.0, 3.0}, {3.0, 3.0}, {3.0, 7.0}, {10.0, 7.0}, {10.0, 10.0}, {0.0, 10.0},
     };
@@ -240,6 +249,9 @@ void LawnmowerCoveragePlannerTest::_testNonMonotoneSweepFailure()
 void LawnmowerCoveragePlannerTest::_testUnsafeConnectorFailure()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {0.0, 0.0}, {10.0, 0.0}, {10.0, 1.5}, {3.0, 3.0}, {10.0, 4.5}, {10.0, 10.0}, {0.0, 10.0},
     };
@@ -352,6 +364,9 @@ void LawnmowerCoveragePlannerTest::_testAutoAngleTieBreak()
 void LawnmowerCoveragePlannerTest::_testAutoRotatedRectangle()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {0.0, 0.0},
         {17.3205080757, 10.0},
@@ -373,6 +388,9 @@ void LawnmowerCoveragePlannerTest::_testAutoRotatedRectangle()
 void LawnmowerCoveragePlannerTest::_testAutoFiltersNonMonotoneCandidates()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {0.0, 0.0}, {10.0, 0.0}, {10.0, 3.0}, {3.0, 3.0}, {3.0, 7.0}, {10.0, 7.0}, {10.0, 10.0}, {0.0, 10.0},
     };
@@ -391,6 +409,9 @@ void LawnmowerCoveragePlannerTest::_testAutoFiltersNonMonotoneCandidates()
 void LawnmowerCoveragePlannerTest::_testAutoIrregularPolygonDeterminism()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {-2.0, 4.0}, {0.0, 0.0}, {12.0, -1.0}, {18.0, 5.0}, {13.0, 10.0}, {2.0, 9.0},
     };

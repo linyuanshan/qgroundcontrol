@@ -29,6 +29,17 @@ struct GeoPolygon
     std::vector<GeoPoint> vertices;
 };
 
+/// A single repeated first 2D vertex is an optional ring terminator, not another edge.
+[[nodiscard]] inline std::size_t openRingVertexCount(const GeoPolygon& polygon)
+{
+    const auto& vertices = polygon.vertices;
+    if (vertices.size() > 1 && vertices.front().latitudeDeg == vertices.back().latitudeDeg &&
+        vertices.front().longitudeDeg == vertices.back().longitudeDeg) {
+        return vertices.size() - 1;
+    }
+    return vertices.size();
+}
+
 struct WorkRegion
 {
     GeoPolygon coverageBoundary;

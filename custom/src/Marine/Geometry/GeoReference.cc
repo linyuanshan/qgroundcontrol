@@ -37,7 +37,8 @@ std::optional<GeoReference> GeoReference::create(const GeoPolygon& region)
     double meanLatitudeDeg = 0.0;
     double meanLongitudeDeg = 0.0;
     std::size_t pointCount = 0;
-    for (const GeoPoint& point : region.vertices) {
+    for (std::size_t index = 0; index < openRingVertexCount(region); ++index) {
+        const GeoPoint& point = region.vertices[index];
         if (!isValidGeoPoint(point)) {
             return std::nullopt;
         }

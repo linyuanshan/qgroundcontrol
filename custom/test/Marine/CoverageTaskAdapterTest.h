@@ -14,4 +14,7 @@ private slots:
     void _testSeparateNavigationConversion();
     void _testSolutionMapping();
     void _testTaskPlannerRoundTrip();
+    void _testOptionalClosingVertex();
+    void _testRejectInvalidSuccessPath();
+    void _testPathMetricsConsistencyTolerance();
 };

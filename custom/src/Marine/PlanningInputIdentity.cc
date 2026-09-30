@@ -36,14 +36,12 @@ void appendString(std::string& bytes, const std::string& value)
 std::string canonicalPolygon(const Marine::GeoPolygon& polygon)
 {
     std::vector<std::string> points;
-    for (const auto& point : polygon.vertices) {
+    for (std::size_t index = 0; index < Marine::openRingVertexCount(polygon); ++index) {
+        const auto& point = polygon.vertices[index];
         std::string bytes;
         appendNumber(bytes, point.latitudeDeg);
         appendNumber(bytes, point.longitudeDeg);
         points.push_back(std::move(bytes));
-    }
-    if (points.size() > 1 && points.front() == points.back()) {
-        points.pop_back();
     }
     std::string best;
     for (std::size_t start = 0; start < points.size(); ++start) {

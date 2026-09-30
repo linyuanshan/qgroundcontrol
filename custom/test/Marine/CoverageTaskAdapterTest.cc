@@ -6,8 +6,11 @@
 
 #include "CoverageGeometry.h"
 #include "CoverageTaskAdapter.h"
+#include "Geometry/MarineGeometry.h"
 #include "MockCoveragePlanner.h"
 #include "PlannerRegistry.h"
+#include "PlanningInputIdentity.h"
+#include "PlanningPathMetrics.h"
 
 using namespace Marine;
 
@@ -104,8 +107,10 @@ void CoverageTaskAdapterTest::_testInvalidTaskGeometry()
     std::optional<GeoReference> reference;
     CoveragePlanningError error = CoveragePlanningError::None;
 
-    QVERIFY(!CoverageTaskAdapter::buildProblem(MarineTask{}, problem, reference, error));
-    QVERIFY(error == CoveragePlanningError::InvalidOuterBoundary);
+    MarineTask missingOuter;
+    missingOuter.planner.executionSafety.executionMarginM = 0.0;
+    QVERIFY(!CoverageTaskAdapter::buildProblem(missingOuter, problem, reference, error));
+    QVERIFY(error == CoveragePlanningError::InvalidSafetyMargin);
     QVERIFY(!reference.has_value());
 
     MarineTask invalidOuter = createTask();
@@ -271,6 +276,112 @@ void CoverageTaskAdapterTest::_testTaskPlannerRoundTrip()
     QCOMPARE(result.cellCount, 1);
     QCOMPARE(result.selectedSweepAngleDeg, 35.0);
     QCOMPARE(result.turnCount, 1);
+}
+
+void CoverageTaskAdapterTest::_testOptionalClosingVertex()
+{
+    MarineTask task = createTask();
+    task.region.noGoRegions.push_back({{{38.0005, 121.0005, 0.0}, {38.0005, 121.0008, 0.0}, {38.0008, 121.0005, 0.0}}});
+    const auto baseline = PlanningInputIdentity::fromTask(task);
+    QVERIFY(baseline.has_value());
+    CoveragePlanningProblem openProblem;
+    std::optional<GeoReference> openReference;
+    CoveragePlanningError error;
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, openProblem, openReference, error));
+
+    for (GeoPolygon* polygon :
+         {&task.region.coverageBoundary, &task.region.navigationBoundary, &task.region.noGoRegions.front()}) {
+        polygon->vertices.push_back(polygon->vertices.front());
+    }
+    QVERIFY(task.schemaValid());
+    QVERIFY(baseline->matches(task));
+    CoveragePlanningProblem closedProblem;
+    std::optional<GeoReference> closedReference;
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, closedProblem, closedReference, error));
+    QCOMPARE(closedReference->origin().latitudeDeg, openReference->origin().latitudeDeg);
+    QCOMPARE(closedReference->origin().longitudeDeg, openReference->origin().longitudeDeg);
+    QCOMPARE(closedProblem.region.coverageBoundary.vertices.size(),
+             openProblem.region.coverageBoundary.vertices.size());
+    QCOMPARE(closedProblem.region.navigationBoundary.vertices.size(),
+             openProblem.region.navigationBoundary.vertices.size());
+    QCOMPARE(closedProblem.region.noGoRegions.front().vertices.size(),
+             openProblem.region.noGoRegions.front().vertices.size());
+    for (std::size_t index = 0; index < openProblem.region.coverageBoundary.vertices.size(); ++index) {
+        QCOMPARE(closedProblem.region.coverageBoundary.vertices[index].xM,
+                 openProblem.region.coverageBoundary.vertices[index].xM);
+        QCOMPARE(closedProblem.region.coverageBoundary.vertices[index].yM,
+                 openProblem.region.coverageBoundary.vertices[index].yM);
+    }
+    QCOMPARE(buildCoverageGeometry(closedProblem.region).error, CoveragePlanningError::None);
+
+    task.region.coverageBoundary.vertices.push_back(task.region.coverageBoundary.vertices.front());
+    QVERIFY(!task.schemaValid());
+    QVERIFY(!PlanningInputIdentity::fromTask(task).has_value());
+}
+
+void CoverageTaskAdapterTest::_testRejectInvalidSuccessPath()
+{
+    const auto reference = GeoReference::create(GeoPoint{38.0, 121.0, 0.0});
+    QVERIFY(reference.has_value());
+    CoveragePlanningSolution valid;
+    valid.status = PlanningStatus::Success;
+    valid.path = {{0, 0}, {10, 0}, {10, 5}};
+    valid.legRoles = {PathLegRole::Coverage, PathLegRole::Transit};
+    valid.coverageLengthM = 10;
+    valid.transitLengthM = 5;
+    valid.pathLengthM = 15;
+    QCOMPARE(CoverageTaskAdapter::toPlanningResult(valid, *reference).status, PlanningStatus::Success);
+    const auto reject = [&](const CoveragePlanningSolution& solution) {
+        const auto result = CoverageTaskAdapter::toPlanningResult(solution, *reference);
+        QCOMPARE(result.status, PlanningStatus::Failed);
+        QVERIFY(result.path.empty());
+        QVERIFY(result.legRoles.empty());
+    };
+    auto bad = valid;
+    bad.path.resize(1);
+    bad.legRoles.clear();
+    reject(bad);
+    bad = valid;
+    bad.path[1] = bad.path[0];
+    reject(bad);
+    bad = valid;
+    bad.legRoles.pop_back();
+    reject(bad);
+    bad = valid;
+    bad.legRoles[0] = static_cast<PathLegRole>(999);
+    reject(bad);
+    bad = valid;
+    bad.path[1].xM = std::numeric_limits<double>::infinity();
+    reject(bad);
+    bad = valid;
+    bad.coverageLengthM += 2 * PathMetricsConsistencyToleranceM;
+    bad.transitLengthM -= 2 * PathMetricsConsistencyToleranceM;
+    reject(bad);
+    bad = valid;
+    bad.path[1].xM += 1;
+    reject(bad);
+    bad = valid;
+    bad.coverageLengthM += PathMetricsConsistencyToleranceM / 2;
+    QCOMPARE(CoverageTaskAdapter::toPlanningResult(bad, *reference).status, PlanningStatus::Success);
+}
+
+void CoverageTaskAdapterTest::_testPathMetricsConsistencyTolerance()
+{
+    // This centimeter-scale threshold checks bookkeeping consistency, not safe path clearance.
+    QVERIFY(PathMetricsConsistencyToleranceM >= 0.01);
+    const PlanningPathMetrics actual{};
+    const double inside = std::nextafter(PathMetricsConsistencyToleranceM, 0.0);
+    const double outside = std::nextafter(PathMetricsConsistencyToleranceM, std::numeric_limits<double>::infinity());
+    for (int metric = 0; metric < 3; ++metric) {
+        for (const double accepted : {inside, PathMetricsConsistencyToleranceM}) {
+            double reported[3]{};
+            reported[metric] = accepted;
+            QVERIFY(planningPathMetricsMatch(actual, reported[0], reported[1], reported[2]));
+        }
+        double reported[3]{};
+        reported[metric] = outside;
+        QVERIFY(!planningPathMetricsMatch(actual, reported[0], reported[1], reported[2]));
+    }
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(CoverageTaskAdapterTest, TestLabel::Unit)

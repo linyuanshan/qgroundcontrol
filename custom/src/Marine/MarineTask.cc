@@ -43,14 +43,20 @@ MarineTask::MarineTask() : id(generateUuid()) {}
 
 bool MarineTask::isValid() const
 {
-    return !id.empty() && (region.coverageBoundary.vertices.size() >= 3) &&
+    return !id.empty() && (openRingVertexCount(region.coverageBoundary) >= 3) &&
+           std::isfinite(safety.hardSafetyMarginM) && (safety.hardSafetyMarginM >= 0.0) &&
+           std::isfinite(safety.preferredSafetyMarginM) &&
+           (safety.preferredSafetyMarginM >= safety.hardSafetyMarginM) &&
            std::isfinite(planner.executionSafety.executionMarginM) && (planner.executionSafety.executionMarginM >= 0.0);
 }
 
 bool MarineTask::schemaValid() const
 {
     const auto validPolygon = [](const GeoPolygon& polygon) {
-        if (polygon.vertices.size() < 3) {
+        const auto count = openRingVertexCount(polygon);
+        if (count < 3 || (count < polygon.vertices.size() && count > 0 &&
+                          polygon.vertices[count - 1].latitudeDeg == polygon.vertices.front().latitudeDeg &&
+                          polygon.vertices[count - 1].longitudeDeg == polygon.vertices.front().longitudeDeg)) {
             return false;
         }
         for (const GeoPoint& point : polygon.vertices) {

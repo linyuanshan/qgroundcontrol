@@ -17,4 +17,5 @@ private slots:
     void _testFallback();
     void _testEmptyAndFailure();
     void _testHierarchyFailure();
+    void _testSubMillimeterClearance();
 };

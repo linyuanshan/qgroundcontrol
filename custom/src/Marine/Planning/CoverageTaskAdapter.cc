@@ -5,6 +5,7 @@
 
 #include "CoverageProblemValidator.h"
 #include "CoverageSafety.h"
+#include "PlanningPathMetrics.h"
 
 namespace {
 
@@ -12,8 +13,10 @@ bool toLocalPolygon(const Marine::GeoPolygon& geoPolygon, const Marine::GeoRefer
                     Marine::Polygon2D& localPolygon)
 {
     Marine::Polygon2D converted;
-    converted.vertices.reserve(geoPolygon.vertices.size());
-    for (const Marine::GeoPoint& point : geoPolygon.vertices) {
+    const auto vertexCount = Marine::openRingVertexCount(geoPolygon);
+    converted.vertices.reserve(vertexCount);
+    for (std::size_t index = 0; index < vertexCount; ++index) {
+        const Marine::GeoPoint& point = geoPolygon.vertices[index];
         const std::optional<Marine::Point2D> localPoint = geoReference.toLocal(point);
         if (!localPoint.has_value()) {
             return false;
@@ -94,10 +97,11 @@ PlanningResult CoverageTaskAdapter::toPlanningResult(const CoveragePlanningSolut
     if (solution.status != PlanningStatus::Success) {
         return result;
     }
-    if ((solution.path.empty() && !solution.legRoles.empty()) ||
-        (!solution.path.empty() && (solution.legRoles.size() != (solution.path.size() - 1)))) {
+    const auto metrics = calculatePlanningPathMetrics(solution.path, solution.legRoles);
+    if (!metrics ||
+        !planningPathMetricsMatch(*metrics, solution.coverageLengthM, solution.transitLengthM, solution.pathLengthM)) {
         result = {};
-        result.message = "Coverage solution contains invalid path leg roles";
+        result.message = "Coverage solution contains an invalid path or inconsistent path metrics";
         return result;
     }
 

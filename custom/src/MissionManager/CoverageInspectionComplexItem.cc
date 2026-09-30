@@ -16,9 +16,11 @@
 #include "CoverageProblemValidator.h"
 #include "CoverageTaskAdapter.h"
 #include "GeoJsonHelper.h"
+#include "Geometry/GeoReference.h"
 #include "Geometry/MarineGeometry.h"
 #include "JsonParsing.h"
 #include "MarinePlanContext.h"
+#include "PlanningPathMetrics.h"
 
 using namespace Marine;
 
@@ -114,7 +116,7 @@ bool validGeoPoint(const GeoPoint& point)
            (point.longitudeDeg <= 180.0);
 }
 
-bool validateInfrastructureResult(const PlanningResult& result, QString& errorString)
+bool validateInfrastructureResult(const PlanningResult& result, const MarineTask* matchingTask, QString& errorString)
 {
     if (!std::isfinite(result.selectedSweepAngleDeg) || (result.selectedSweepAngleDeg < 0.0) ||
         (result.selectedSweepAngleDeg >= 180.0) || (result.turnCount < 0)) {
@@ -133,12 +135,11 @@ bool validateInfrastructureResult(const PlanningResult& result, QString& errorSt
         return true;
     }
 
-    if (result.path.empty()) {
-        errorString = QStringLiteral("A successful coverage inspection must contain a generated path");
+    if (result.path.size() < 2) {
+        errorString = QStringLiteral("A successful coverage inspection must contain at least two path points");
         return false;
     }
-    if ((result.path.size() == 1 && !result.legRoles.empty()) ||
-        (result.path.size() >= 2 && result.legRoles.size() != (result.path.size() - 1))) {
+    if (result.legRoles.size() != result.path.size() - 1) {
         errorString = QStringLiteral("Coverage inspection path leg roles do not match the generated path");
         return false;
     }
@@ -146,11 +147,47 @@ bool validateInfrastructureResult(const PlanningResult& result, QString& errorSt
         errorString = QStringLiteral("Coverage inspection generated path contains an invalid coordinate");
         return false;
     }
-    const double classifiedLengthM = result.coverageLengthM + result.transitLengthM;
-    if (!std::isfinite(result.coverageLengthM) || (result.coverageLengthM < 0.0) ||
-        !std::isfinite(result.transitLengthM) || (result.transitLengthM < 0.0) || !std::isfinite(result.pathLengthM) ||
-        (result.pathLengthM < 0.0) || !std::isfinite(classifiedLengthM) ||
-        (std::abs(classifiedLengthM - result.pathLengthM) > Geometry::LengthEpsilonM) || (result.cellCount < 1)) {
+    for (std::size_t index = 1; index < result.path.size(); ++index) {
+        const auto& first = result.path[index - 1];
+        const auto& second = result.path[index];
+        const auto role = result.legRoles[index - 1];
+        if ((first.latitudeDeg == second.latitudeDeg && first.longitudeDeg == second.longitudeDeg) ||
+            (role != PathLegRole::Coverage && role != PathLegRole::Transit)) {
+            errorString = QStringLiteral("Coverage inspection contains an invalid path leg");
+            return false;
+        }
+    }
+    if (!std::isfinite(result.coverageLengthM) || result.coverageLengthM < 0.0 ||
+        !std::isfinite(result.transitLengthM) || result.transitLengthM < 0.0 || !std::isfinite(result.pathLengthM) ||
+        result.pathLengthM <= 0.0 || result.cellCount < 1 ||
+        std::abs(result.coverageLengthM + result.transitLengthM - result.pathLengthM) >
+            PathMetricsConsistencyToleranceM) {
+        errorString = QStringLiteral("Coverage inspection planning metrics are inconsistent");
+        return false;
+    }
+    // Stale artifacts retain structural validity; the current task cannot certify their old coordinate frame.
+    if (!matchingTask) {
+        return true;
+    }
+    const auto reference = GeoReference::create(matchingTask->region.coverageBoundary);
+    if (!reference) {
+        errorString = QStringLiteral("Coverage inspection task has no valid coordinate reference");
+        return false;
+    }
+    std::vector<Point2D> localPath;
+    localPath.reserve(result.path.size());
+    for (const GeoPoint& point : result.path) {
+        const auto local = reference->toLocal(point);
+        if (!local) {
+            errorString = QStringLiteral("Coverage inspection path cannot be converted to local coordinates");
+            return false;
+        }
+        localPath.push_back(*local);
+    }
+    const auto actual = calculatePlanningPathMetrics(localPath, result.legRoles);
+    if (!actual ||
+        !planningPathMetricsMatch(*actual, result.coverageLengthM, result.transitLengthM, result.pathLengthM) ||
+        result.cellCount < 1) {
         errorString = QStringLiteral("Coverage inspection planning metrics are inconsistent");
         return false;
     }
@@ -206,6 +243,7 @@ void CoverageInspectionComplexItem::setTaskId(const QString& taskId)
     }
 
     _planningArtifact.reset();
+    _loadedArtifactObject.reset();
     _taskId = newTaskId;
     _syncWorkRegionPolygonFromTask();
     _syncNoGoPolygonsFromTask();
@@ -459,6 +497,7 @@ QVariantList CoverageInspectionComplexItem::generatedPathRoleRuns() const
 bool CoverageInspectionComplexItem::plan()
 {
     _planningArtifact.reset();
+    _loadedArtifactObject.reset();
     PlanningResult result;
     if (!noGoRegionsReady()) {
         result.status = PlanningStatus::InvalidInput;
@@ -507,10 +546,10 @@ bool CoverageInspectionComplexItem::plan()
 
     const CoveragePlanningSolution solution = planner->plan(problem);
     result = CoverageTaskAdapter::toPlanningResult(solution, *geoReference);
-    if ((result.status == PlanningStatus::Success) &&
-        (result.path.empty() || !std::isfinite(result.pathLengthM) || (result.pathLengthM < 0.0))) {
+    QString resultError;
+    if ((result.status == PlanningStatus::Success) && !validateInfrastructureResult(result, task, resultError)) {
         result.status = PlanningStatus::Failed;
-        result.message = "Coverage planner returned an invalid result";
+        result.message = "Coverage planner returned an invalid result: " + resultError.toStdString();
     }
     if (result.status != PlanningStatus::Success) {
         result.path.clear();
@@ -712,13 +751,18 @@ void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
 {
     const MarineTask* task = _task();
     const auto currentIdentity = task ? PlanningInputIdentity::fromTask(*task) : std::nullopt;
-    if (!currentIdentity) {
+    if (!task || (!_planningArtifact && !currentIdentity)) {
         return;
     }
     const PlanningResult& result = _planningArtifact ? _planningArtifact->result : _planningResult;
     const PlanningInputIdentity& identity = _planningArtifact ? _planningArtifact->identity : *currentIdentity;
     QString errorString;
-    if (!validateInfrastructureResult(result, errorString)) {
+    const bool matching = identity.matches(*task);
+    if (!validateInfrastructureResult(result, matching ? task : nullptr, errorString)) {
+        return;
+    }
+    if (!matching && _loadedArtifactObject) {
+        missionItems.append(*_loadedArtifactObject);
         return;
     }
     QJsonObject object;
@@ -803,6 +847,13 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         return false;
     }
 
+    PlanningInputIdentity identity;
+    if (!PlanningInputIdentity::fromJson(object.value("inputIdentity").toObject(), identity, errorString)) {
+        return false;
+    }
+    const MarineTask* task = _marineContext->task(loadedTaskId);
+    const bool stale = !identity.matches(*task);
+
     PlanningStatus status;
     if (!planningStatusFromString(object.value(_jsonPlanningStatusKey).toString(), status)) {
         errorString = tr("Coverage inspection planning status is invalid");
@@ -851,21 +902,17 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
             errorString = tr("Coverage inspection cell count is invalid");
             return false;
         }
-        if (!validateInfrastructureResult(result, errorString)) {
+        if (!validateInfrastructureResult(result, stale ? nullptr : task, errorString)) {
             return false;
         }
     }
 
-    PlanningInputIdentity identity;
-    if (!PlanningInputIdentity::fromJson(object.value("inputIdentity").toObject(), identity, errorString)) {
-        return false;
-    }
-    const bool stale = !identity.matches(*_marineContext->task(loadedTaskId));
     _taskId = loadedTaskId;
     _sequenceNumber = sequenceNumber;
     _syncWorkRegionPolygonFromTask();
     _syncNoGoPolygonsFromTask();
     _planningArtifact = InfrastructurePlanningArtifact{std::move(result), std::move(identity), stale};
+    _loadedArtifactObject = object;
     _applyPlanningResult({});
     setDirty(false);
     return true;

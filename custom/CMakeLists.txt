@@ -98,6 +98,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageGeometry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageSafety.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageSafety.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlanningPathMetrics.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlanningPathMetrics.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageFreeSpace.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageProblemValidator.cc

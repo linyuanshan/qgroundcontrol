@@ -389,18 +389,20 @@ PolygonRegionOperationResult buildCoverageTarget(const Polygon2D& outerBoundary,
     return executeBoolean(Clipper2Lib::ClipType::Difference, {outerPath}, noGoPaths);
 }
 
-PolygonRegionOperationResult buildTrackFeasibleRegion(const Polygon2D& outerBoundary,
-                                                      const std::vector<Polygon2D>& noGoRegions, double safetyMarginM)
+static PolygonRegionOperationResult buildTrackFeasibleRegionRoundImpl(const Polygon2D& outerBoundary,
+                                                                      const std::vector<Polygon2D>& noGoRegions,
+                                                                      double safetyMarginM, bool conservative)
 {
     if ((validateNoGoRegions(outerBoundary, noGoRegions) != NoGoValidationStatus::Success) ||
         !std::isfinite(safetyMarginM) || (safetyMarginM < 0.0)) {
         return {PolygonRegionOperationStatus::InvalidInput, {}};
     }
-    if (safetyMarginM == 0.0) {
+    if (safetyMarginM == 0.0 && !conservative) {
         return buildCoverageTarget(outerBoundary, noGoRegions);
     }
 
-    const double scaledMargin = safetyMarginM * CoordinateScalePerM;
+    const double scaledMargin =
+        conservative ? conservativeSafetyOffsetUnits(safetyMarginM) : safetyMarginM * CoordinateScalePerM;
     if (!std::isfinite(scaledMargin) || (scaledMargin > 1e15)) {
         return {PolygonRegionOperationStatus::GeometryFailure, {}};
     }
@@ -426,19 +428,32 @@ PolygonRegionOperationResult buildTrackFeasibleRegion(const Polygon2D& outerBoun
     return executeBoolean(Clipper2Lib::ClipType::Difference, insetOuter, inflatedNoGo);
 }
 
-PolygonRegionOperationResult buildTrackFeasibleRegionConservativeMiter(const Polygon2D& outerBoundary,
-                                                                       const std::vector<Polygon2D>& noGoRegions,
-                                                                       double marginM)
+PolygonRegionOperationResult buildTrackFeasibleRegion(const Polygon2D& outerBoundary,
+                                                      const std::vector<Polygon2D>& noGoRegions, double safetyMarginM)
+{
+    return buildTrackFeasibleRegionRoundImpl(outerBoundary, noGoRegions, safetyMarginM, false);
+}
+
+PolygonRegionOperationResult buildSafetyTrackFeasibleRegionRound(const Polygon2D& outerBoundary,
+                                                                 const std::vector<Polygon2D>& noGoRegions,
+                                                                 double safetyMarginM)
+{
+    return buildTrackFeasibleRegionRoundImpl(outerBoundary, noGoRegions, safetyMarginM, true);
+}
+
+static PolygonRegionOperationResult buildTrackFeasibleRegionMiterImpl(const Polygon2D& outerBoundary,
+                                                                      const std::vector<Polygon2D>& noGoRegions,
+                                                                      double marginM, bool conservative)
 {
     if ((validateNoGoRegions(outerBoundary, noGoRegions) != NoGoValidationStatus::Success) || !std::isfinite(marginM) ||
         (marginM < 0.0)) {
         return {PolygonRegionOperationStatus::InvalidInput, {}};
     }
-    if (marginM == 0.0) {
+    if (marginM == 0.0 && !conservative) {
         return buildCoverageTarget(outerBoundary, noGoRegions);
     }
 
-    const double scaledMargin = marginM * CoordinateScalePerM;
+    const double scaledMargin = conservative ? conservativeSafetyOffsetUnits(marginM) : marginM * CoordinateScalePerM;
     if (!std::isfinite(scaledMargin) || (scaledMargin > 1e15)) {
         return {PolygonRegionOperationStatus::GeometryFailure, {}};
     }
@@ -462,6 +477,20 @@ PolygonRegionOperationResult buildTrackFeasibleRegionConservativeMiter(const Pol
         return {PolygonRegionOperationStatus::GeometryFailure, {}};
     }
     return executeBoolean(Clipper2Lib::ClipType::Difference, insetOuter, inflatedNoGo);
+}
+
+PolygonRegionOperationResult buildTrackFeasibleRegionConservativeMiter(const Polygon2D& outerBoundary,
+                                                                       const std::vector<Polygon2D>& noGoRegions,
+                                                                       double marginM)
+{
+    return buildTrackFeasibleRegionMiterImpl(outerBoundary, noGoRegions, marginM, false);
+}
+
+PolygonRegionOperationResult buildSafetyTrackFeasibleRegionMiter(const Polygon2D& outerBoundary,
+                                                                 const std::vector<Polygon2D>& noGoRegions,
+                                                                 double marginM)
+{
+    return buildTrackFeasibleRegionMiterImpl(outerBoundary, noGoRegions, marginM, true);
 }
 
 PolygonRegionOperationResult bufferPolygonRegions(const PolygonRegionSet2D& regions, double distanceM)

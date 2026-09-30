@@ -15,6 +15,7 @@ Polygon2D rectangle(double minimumX, double minimumY, double maximumX, double ma
 CoveragePlanningProblem problemWithOuter(const Polygon2D& outer)
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     problem.region.coverageBoundary = outer;
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.swathWidthM = 4.0;
@@ -196,6 +197,7 @@ void CoverageFreeSpaceTest::_testSafetyExceedsHalfSwath()
 void CoverageFreeSpaceTest::_testUnreachableCoverage()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {0.0, 0.0}, {20.0, 0.0}, {20.0, 9.25}, {30.0, 9.25}, {30.0, 10.75}, {20.0, 10.75}, {20.0, 20.0}, {0.0, 20.0},
     };

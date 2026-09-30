@@ -2,7 +2,12 @@
 
 #include <QtCore/QRegularExpression>
 
+#include <cmath>
+#include <limits>
+#include <tuple>
+
 #include "MarineTask.h"
+#include "MarineTaskJsonCodec.h"
 
 using namespace Marine;
 
@@ -10,14 +15,16 @@ void MarineTaskModelTest::_testDefaults()
 {
     const MarineTask task;
 
+    QVERIFY(std::isnan(task.planner.executionSafety.executionMarginM));
+
     QVERIFY(task.type == MarineTaskType::CoverageInspection);
     QVERIFY(task.name.empty());
     QVERIFY(task.vehicleId.empty());
     QCOMPARE(task.planner.plannerId, std::string("marine.coverage.auto"));
     QCOMPARE(task.coverage.swathWidthM, 0.0);
     QVERIFY(task.coverage.coverageRequirement == CoverageRequirement::Standard);
-    QCOMPARE(task.safety.hardSafetyMarginM, 0.0);
-    QCOMPARE(task.safety.preferredSafetyMarginM, 0.0);
+    QVERIFY(std::isnan(task.safety.hardSafetyMarginM));
+    QVERIFY(std::isnan(task.safety.preferredSafetyMarginM));
     QVERIFY(task.coverage.sweepAngleMode == SweepAngleMode::Auto);
     QCOMPARE(task.coverage.sweepAngleDeg, 0.0);
     QVERIFY(task.sensors.cameraEnabled);
@@ -104,6 +111,10 @@ void MarineTaskModelTest::_testValidity()
     task.region.coverageBoundary.vertices.push_back({47.0, 8.1, 0.0});
     QVERIFY(!task.isValid());
     task.region.coverageBoundary.vertices.push_back({47.1, 8.1, 0.0});
+    QVERIFY(!task.isValid());
+    task.safety.hardSafetyMarginM = 0.0;
+    task.safety.preferredSafetyMarginM = 0.0;
+    task.planner.executionSafety.executionMarginM = 0.0;
     QVERIFY(task.isValid());
     QVERIFY(!task.schemaValid());
     task.region.navigationBoundary = task.region.coverageBoundary;
@@ -112,6 +123,66 @@ void MarineTaskModelTest::_testValidity()
 
     task.id.clear();
     QVERIFY(!task.isValid());
+}
+
+void MarineTaskModelTest::_testExecutionMarginMustBeConfigured()
+{
+    MarineTask task;
+    task.region.coverageBoundary.vertices = {{47, 8, 0}, {47, 8.1, 0}, {47.1, 8.1, 0}};
+    task.region.navigationBoundary = task.region.coverageBoundary;
+    task.coverage.swathWidthM = 5;
+    QVERIFY(std::isnan(task.safety.hardSafetyMarginM));
+    QVERIFY(std::isnan(task.safety.preferredSafetyMarginM));
+    QVERIFY(std::isnan(task.planner.executionSafety.executionMarginM));
+    QVERIFY(!task.isValid());
+    QVERIFY(!task.schemaValid());
+    QJsonObject object;
+    QString error;
+    QVERIFY(!MarineTaskJsonCodec::save(task, object, error));
+    task.planner.executionSafety.executionMarginM = 0.0;
+    QVERIFY(!task.schemaValid());
+    QVERIFY(!MarineTaskJsonCodec::save(task, object, error));
+    for (const auto [explicitH, explicitP, explicitE] : {
+             std::tuple{0.0, 0.0, 0.0},
+             std::tuple{1.0, 1.0, 0.0},
+             std::tuple{1.0, 2.0, 0.25},
+         }) {
+        task.safety.hardSafetyMarginM = explicitH;
+        task.safety.preferredSafetyMarginM = explicitP;
+        task.planner.executionSafety.executionMarginM = explicitE;
+        QVERIFY(task.isValid());
+        QVERIFY(task.schemaValid());
+        QVERIFY2(MarineTaskJsonCodec::save(task, object, error), qPrintable(error));
+        QCOMPARE(
+            object.value("planner").toObject().value("executionSafety").toObject().value("executionMarginM").toDouble(),
+            explicitE);
+        MarineTask restored;
+        QVERIFY(std::isnan(restored.safety.hardSafetyMarginM));
+        QVERIFY(std::isnan(restored.safety.preferredSafetyMarginM));
+        QVERIFY(std::isnan(restored.planner.executionSafety.executionMarginM));
+        QVERIFY2(MarineTaskJsonCodec::load(object, restored, error), qPrintable(error));
+        QCOMPARE(restored.safety.hardSafetyMarginM, explicitH);
+        QCOMPARE(restored.safety.preferredSafetyMarginM, explicitP);
+        QCOMPARE(restored.planner.executionSafety.executionMarginM, explicitE);
+        QVERIFY(restored.schemaValid());
+    }
+
+    const auto rejected = [&task](double h, double p, double e) {
+        task.safety.hardSafetyMarginM = h;
+        task.safety.preferredSafetyMarginM = p;
+        task.planner.executionSafety.executionMarginM = e;
+        return !task.isValid() && !task.schemaValid();
+    };
+    QVERIFY(rejected(2.0, 1.0, 0.0));
+    QVERIFY(rejected(std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0));
+    QVERIFY(rejected(0.0, std::numeric_limits<double>::quiet_NaN(), 0.0));
+    QVERIFY(rejected(0.0, 0.0, std::numeric_limits<double>::quiet_NaN()));
+    QVERIFY(rejected(std::numeric_limits<double>::infinity(), 0.0, 0.0));
+    QVERIFY(rejected(0.0, std::numeric_limits<double>::infinity(), 0.0));
+    QVERIFY(rejected(0.0, 0.0, std::numeric_limits<double>::infinity()));
+    QVERIFY(rejected(-1.0, 0.0, 0.0));
+    QVERIFY(rejected(0.0, -1.0, 0.0));
+    QVERIFY(rejected(0.0, 0.0, -1.0));
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(MarineTaskModelTest, TestLabel::Unit)

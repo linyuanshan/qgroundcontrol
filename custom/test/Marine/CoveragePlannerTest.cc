@@ -14,6 +14,7 @@ namespace {
 CoveragePlanningProblem createValidProblem()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     problem.region.coverageBoundary.vertices = {
         {0.0, 0.0},
         {20.0, 0.0},

@@ -7,6 +7,10 @@ namespace Marine::Geometry {
 inline constexpr double LengthEpsilonM = 1e-3;
 inline constexpr double CoordinateScalePerM = 1000.0;
 
+/// Nonnegative safety offsets round outward on the 1 mm lattice with room for input/output
+/// coordinate rounding and the existing 1 mm closed-region predicate tolerance.
+[[nodiscard]] double conservativeSafetyOffsetUnits(double marginM);
+
 enum class PolygonInsetStatus
 {
     Success,

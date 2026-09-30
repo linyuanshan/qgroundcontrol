@@ -383,6 +383,7 @@ void BoustrophedonDecompositionTest::_testOutputInvariants()
 void BoustrophedonDecompositionTest::_testRoundedHoleEndToEnd()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     problem.region.coverageBoundary = rectangle(0, 0, 30, 20);
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = {rectangle(12, 7, 18, 13)};

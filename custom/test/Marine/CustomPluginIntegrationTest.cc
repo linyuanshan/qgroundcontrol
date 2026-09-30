@@ -22,6 +22,9 @@ namespace {
 MarineTask validTask(const std::string& id)
 {
     MarineTask task;
+    task.safety.hardSafetyMarginM = 0.0;
+    task.safety.preferredSafetyMarginM = 0.0;
+    task.planner.executionSafety.executionMarginM = 0.0;
     task.id = id;
     task.name = "Harbor inspection";
     task.planner.plannerId = "marine.coverage.mock";

@@ -175,6 +175,7 @@ void CellCoverageTest::_testNoGoDecompositionCoversEveryCell()
 void CellCoverageTest::_testBackendDerivedRoundedCells()
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     problem.region.coverageBoundary = rectangle(0.0, 0.0, 20.0, 20.0);
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = {rectangle(8.0, 8.0, 12.0, 12.0)};

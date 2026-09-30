@@ -8,6 +8,7 @@ class MarineTaskModelTest : public UnitTest
 
 private slots:
     void _testDefaults();
+    void _testExecutionMarginMustBeConfigured();
     void _testTaskId();
     void _testWorkRegion();
     void _testConfiguration();

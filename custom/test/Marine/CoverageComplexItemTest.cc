@@ -17,11 +17,13 @@
 #include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageProblemValidator.h"
+#include "Geometry/GeoReference.h"
 #include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
 #include "MissionItem.h"
 #include "MockCoveragePlanner.h"
 #include "PlanningInputIdentity.h"
+#include "PlanningPathMetrics.h"
 #include "QGCMapPolygon.h"
 
 using namespace Marine;
@@ -31,6 +33,9 @@ namespace {
 MarineTask validTask()
 {
     MarineTask task;
+    task.safety.hardSafetyMarginM = 0.0;
+    task.safety.preferredSafetyMarginM = 0.0;
+    task.planner.executionSafety.executionMarginM = 0.0;
     task.planner.plannerId = "marine.coverage.mock";
     task.coverage.swathWidthM = 5.0;
     task.region.coverageBoundary.vertices = {
@@ -83,16 +88,29 @@ QJsonObject roleRunArtifact(const MarineTask& task, const std::vector<PathLegRol
     }
 
     QJsonArray roleNames;
-    int coverageLegCount = 0;
+    std::vector<Point2D> localPath;
+    const auto reference = GeoReference::create(task.region.coverageBoundary);
+    if (!reference) {
+        return {};
+    }
+    for (std::size_t pointIndex = 0; pointIndex <= roles.size(); ++pointIndex) {
+        const auto local = reference->toLocal({47.3978 + (static_cast<double>(pointIndex) * 0.00001), 8.5456, 0.0});
+        if (!local) {
+            return {};
+        }
+        localPath.push_back(*local);
+    }
+    const auto metrics = calculatePlanningPathMetrics(localPath, roles);
+    if (!metrics) {
+        return {};
+    }
     for (const PathLegRole role : roles) {
         if (role == PathLegRole::Coverage) {
             roleNames.append(QStringLiteral("coverage"));
-            ++coverageLegCount;
         } else {
             roleNames.append(QStringLiteral("transit"));
         }
     }
-    const int transitLegCount = static_cast<int>(roles.size()) - coverageLegCount;
 
     return {
         {QStringLiteral("version"), 3},
@@ -105,9 +123,9 @@ QJsonObject roleRunArtifact(const MarineTask& task, const std::vector<PathLegRol
         {QStringLiteral("planningMessage"), QStringLiteral("Role run fixture")},
         {QStringLiteral("generatedPath"), path},
         {QStringLiteral("legRoles"), roleNames},
-        {QStringLiteral("coverageLengthM"), static_cast<double>(coverageLegCount)},
-        {QStringLiteral("transitLengthM"), static_cast<double>(transitLegCount)},
-        {QStringLiteral("pathLengthM"), static_cast<double>(roles.size())},
+        {QStringLiteral("coverageLengthM"), metrics->coverageLengthM},
+        {QStringLiteral("transitLengthM"), metrics->transitLengthM},
+        {QStringLiteral("pathLengthM"), metrics->pathLengthM},
         {QStringLiteral("selectedSweepAngleDeg"), 0.0},
         {QStringLiteral("cellCount"), 1},
         {QStringLiteral("turnCount"), 0},
@@ -127,6 +145,41 @@ public:
     {
         ++calls;
         return MockCoveragePlanner{}.plan(problem);
+    }
+};
+
+class InvalidSuccessPlanner final : public ICoveragePlanner
+{
+public:
+    int defect = 0;
+
+    std::string id() const final { return "marine.coverage.invalid-success-test"; }
+
+    std::string displayName() const final { return "Invalid success test planner"; }
+
+    CoveragePlanningSolution plan(const CoveragePlanningProblem& problem) const final
+    {
+        auto result = MockCoveragePlanner{}.plan(problem);
+        switch (defect) {
+            case 0:
+                result.path.resize(1);
+                result.legRoles.clear();
+                break;
+            case 1:
+                result.path[1] = result.path[0];
+                break;
+            case 2:
+                result.legRoles.pop_back();
+                break;
+            case 3:
+                result.coverageLengthM += 0.1;
+                result.transitLengthM -= 0.1;
+                break;
+            case 4:
+                result.path[1].xM = std::numeric_limits<double>::infinity();
+                break;
+        }
+        return result;
     }
 };
 
@@ -341,6 +394,27 @@ void CoverageComplexItemTest::_testPlanningFailures()
     _marineContext->addTask(task);
     QVERIFY(!_item->plan());
     QCOMPARE(_item->planningResult().status, PlanningStatus::InvalidInput);
+}
+
+void CoverageComplexItemTest::_testInvalidPlannerSuccess()
+{
+    auto planner = std::make_shared<InvalidSuccessPlanner>();
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(planner));
+    MarineTask task = validTask();
+    task.planner.plannerId = planner->id();
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+    for (int defect = 0; defect < 5; ++defect) {
+        planner->defect = defect;
+        QVERIFY(!_item->plan());
+        QVERIFY(_item->planningArtifact().has_value());
+        QCOMPARE(_item->planningArtifact()->result.status, PlanningStatus::Failed);
+        QVERIFY(_item->planningArtifact()->result.path.empty());
+        QJsonArray saved;
+        _item->save(saved);
+        QCOMPARE(saved.size(), 1);
+        QCOMPARE(saved.first().toObject().value(QStringLiteral("planningStatus")).toString(), QStringLiteral("failed"));
+    }
 }
 
 void CoverageComplexItemTest::_testInvalidation()
@@ -797,6 +871,37 @@ void CoverageComplexItemTest::_testLoadValidation()
     emptySuccessfulPath.insert(QStringLiteral("legRoles"), QJsonArray());
     verifyRejected(emptySuccessfulPath);
 
+    QJsonObject singlePoint = validObject;
+    QJsonArray singlePath = singlePoint.value(QStringLiteral("generatedPath")).toArray();
+    singlePath.removeAt(1);
+    singlePath.removeAt(1);
+    singlePoint.insert(QStringLiteral("generatedPath"), singlePath);
+    singlePoint.insert(QStringLiteral("legRoles"), QJsonArray());
+    verifyRejected(singlePoint);
+
+    QJsonObject zeroLengthLeg = validObject;
+    QJsonArray repeatedPath = zeroLengthLeg.value(QStringLiteral("generatedPath")).toArray();
+    repeatedPath[1] = repeatedPath[0];
+    zeroLengthLeg.insert(QStringLiteral("generatedPath"), repeatedPath);
+    verifyRejected(zeroLengthLeg);
+
+    QJsonObject changedPath = validObject;
+    QJsonArray changedCoordinates = changedPath.value(QStringLiteral("generatedPath")).toArray();
+    QJsonArray changedPoint = changedCoordinates[1].toArray();
+    changedPoint[0] = changedPoint[0].toDouble() + 0.00001;
+    changedCoordinates[1] = changedPoint;
+    changedPath.insert(QStringLiteral("generatedPath"), changedCoordinates);
+    verifyRejected(changedPath);
+
+    QJsonObject reclassifiedLength = validObject;
+    reclassifiedLength.insert(
+        QStringLiteral("coverageLengthM"),
+        validObject.value(QStringLiteral("coverageLengthM")).toDouble() + 2 * PathMetricsConsistencyToleranceM);
+    reclassifiedLength.insert(
+        QStringLiteral("transitLengthM"),
+        validObject.value(QStringLiteral("transitLengthM")).toDouble() - 2 * PathMetricsConsistencyToleranceM);
+    verifyRejected(reclassifiedLength);
+
     QJsonObject unknownStatus = validObject;
     unknownStatus.insert(QStringLiteral("planningStatus"), QStringLiteral("futureStatus"));
     verifyRejected(unknownStatus);
@@ -957,6 +1062,101 @@ void CoverageComplexItemTest::_testArtifactIdentity()
         QVERIFY(_item->planningResult().path.empty());
         QCOMPARE(planner->calls, 1);
     }
+}
+
+void CoverageComplexItemTest::_testStaleArtifactReferenceChange()
+{
+    auto planner = std::make_shared<CountingPlanner>();
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(planner));
+    MarineTask task = validTask();
+    task.planner.plannerId = planner->id();
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+    QVERIFY(_item->plan());
+    QJsonArray saved;
+    _item->save(saved);
+    QCOMPARE(saved.size(), 1);
+    const auto object = saved.first().toObject();
+    const auto oldReference = GeoReference::create(task.region.coverageBoundary);
+    QVERIFY(oldReference.has_value());
+
+    // Move the task across continents and change its scale: the old path has a different ENU reference.
+    MarineTask moved = task;
+    moved.region.coverageBoundary.vertices = {
+        {-33.9, 151.2, 0}, {-33.9, 151.22, 0}, {-33.88, 151.22, 0}, {-33.88, 151.2, 0}};
+    moved.region.navigationBoundary = moved.region.coverageBoundary;
+    QVERIFY(moved.schemaValid());
+    const auto newReference = GeoReference::create(moved.region.coverageBoundary);
+    QVERIFY(newReference.has_value());
+    QVERIFY(std::abs(oldReference->origin().latitudeDeg - newReference->origin().latitudeDeg) > 80);
+    std::vector<Point2D> wronglyReferencedPath;
+    for (const auto& point : _item->planningArtifact()->result.path) {
+        const auto local = newReference->toLocal(point);
+        QVERIFY(local.has_value());
+        wronglyReferencedPath.push_back(*local);
+    }
+    const auto wrongMetrics =
+        calculatePlanningPathMetrics(wronglyReferencedPath, _item->planningArtifact()->result.legRoles);
+    QVERIFY(wrongMetrics.has_value());
+    const auto& original = _item->planningArtifact()->result;
+    QVERIFY(!planningPathMetricsMatch(*wrongMetrics, original.coverageLengthM, original.transitLengthM,
+                                      original.pathLengthM));
+    _marineContext->addTask(moved);
+
+    QJsonArray savedAfterEdit;
+    _item->save(savedAfterEdit);
+    QCOMPARE(savedAfterEdit, saved);
+    QString error;
+    QVERIFY2(_item->load(object, 0, error), qPrintable(error));
+    QVERIFY(_item->planningArtifact()->stale);
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+    QVERIFY(_item->planningResult().path.empty());
+    QVERIFY(_item->generatedPath().empty());
+    QList<MissionItem*> mission;
+    _item->appendMissionItems(mission, this);
+    QVERIFY(mission.isEmpty());
+    QCOMPARE(planner->calls, 1);
+    QJsonArray resaved;
+    _item->save(resaved);
+    QCOMPARE(resaved, saved);
+
+    // A missing current E also makes the identity stale; retaining the old artifact needs no current frame.
+    moved.planner.executionSafety.executionMarginM = std::numeric_limits<double>::quiet_NaN();
+    _marineContext->addTask(moved);
+    QVERIFY2(_item->load(object, 0, error), qPrintable(error));
+    resaved = {};
+    _item->save(resaved);
+    QCOMPARE(resaved, saved);
+    QVERIFY(_item->planningArtifact()->stale);
+
+    _marineContext->addTask(task);
+    QVERIFY2(_item->load(object, 0, error), qPrintable(error));
+    QVERIFY(!_item->planningArtifact()->stale);
+    QCOMPARE(planner->calls, 1);
+}
+
+void CoverageComplexItemTest::_testClosingVertexIdentityAndPlan()
+{
+    MarineTask task = validTask();
+    _marineContext->addTask(task);
+    _item->setTaskId(QString::fromStdString(task.id));
+    QVERIFY(_item->plan());
+    QJsonArray saved;
+    _item->save(saved);
+    QCOMPARE(saved.size(), 1);
+
+    const auto identity = PlanningInputIdentity::fromTask(task);
+    task.region.coverageBoundary.vertices.push_back(task.region.coverageBoundary.vertices.front());
+    task.region.navigationBoundary.vertices.push_back(task.region.navigationBoundary.vertices.front());
+    QVERIFY(task.schemaValid());
+    QVERIFY(identity->matches(task));
+    _marineContext->addTask(task);
+    QVERIFY(_item->planningArtifact().has_value());
+    QVERIFY(!_item->planningArtifact()->stale);
+    QVERIFY(_item->plan());
+    QString error;
+    QVERIFY2(_item->load(saved.first().toObject(), 0, error), qPrintable(error));
+    QVERIFY(!_item->planningArtifact()->stale);
 }
 
 UT_REGISTER_TEST(CoverageComplexItemTest, TestLabel::Unit, TestLabel::MissionManager)

@@ -167,6 +167,7 @@ std::vector<ScenarioDefinition> scenarios()
 CoveragePlanningProblem problemFor(const ScenarioDefinition& definition)
 {
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     problem.region.coverageBoundary = definition.outer;
     problem.region.navigationBoundary = problem.region.coverageBoundary;
     problem.region.noGoRegions = definition.noGoRegions;
@@ -1210,6 +1211,7 @@ void MarineSITLValidationTest::_validateP2Scenarios()
             task.coverage.swathWidthM = anchoredProblem.swathWidthM;
             task.safety.hardSafetyMarginM = anchoredProblem.safety.hardSafetyMarginM;
             task.safety.preferredSafetyMarginM = anchoredProblem.safety.hardSafetyMarginM;
+            task.planner.executionSafety = anchoredProblem.executionSafety;
             task.coverage.sweepAngleMode = anchoredProblem.sweepAngleMode;
             task.coverage.sweepAngleDeg = anchoredProblem.requestedSweepAngleDeg;
             context->addTask(task);
@@ -1235,6 +1237,7 @@ void MarineSITLValidationTest::_validateP2Scenarios()
                              expectedResult.pathLengthM) <= MetricToleranceM);
 
             CoveragePlanningProblem adapterProblem;
+            adapterProblem.executionSafety.executionMarginM = 0.0;
             std::optional<GeoReference> adapterReference;
             CoveragePlanningError adapterError = CoveragePlanningError::None;
             QVERIFY(CoverageTaskAdapter::buildProblem(task, adapterProblem, adapterReference, adapterError));
@@ -1515,6 +1518,7 @@ void MarineSITLValidationTest::_diagnoseS04Execution()
     const MarineTask* task = context->task(item->taskId().toStdString());
     QVERIFY(task != nullptr);
     CoveragePlanningProblem problem;
+    problem.executionSafety.executionMarginM = 0.0;
     std::optional<GeoReference> reference;
     CoveragePlanningError adapterError = CoveragePlanningError::None;
     QVERIFY(CoverageTaskAdapter::buildProblem(*task, problem, reference, adapterError));

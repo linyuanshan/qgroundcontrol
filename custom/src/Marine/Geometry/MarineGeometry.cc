@@ -438,6 +438,13 @@ Marine::Geometry::ScanlineResult intersectValidatedScanlineCore(const Marine::Po
 
 namespace Marine::Geometry {
 
+double conservativeSafetyOffsetUnits(double marginM)
+{
+    // Two lattice conversions can each move a boundary by sqrt(2)/2 mm;
+    // the closed-region predicate may admit a further 1 mm. Three units exceed that bound.
+    return std::ceil(marginM * CoordinateScalePerM) + 3.0;
+}
+
 bool isSimpleNonDegeneratePolygon(const Polygon2D& polygon)
 {
     const std::vector<Point2D>& vertices = polygon.vertices;

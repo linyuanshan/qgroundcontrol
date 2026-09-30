@@ -67,13 +67,16 @@ void CoverageSafetyTest::_testMargins()
     const auto result = buildSafetyTrackRegions(region(), safety, {e});
     QCOMPARE(result.error, CoveragePlanningError::None);
     verifyHierarchy(result.regions);
-    const auto expectedArea = [](double margin) { return std::pow(std::max(0.0, 20.0 - 2.0 * margin), 2); };
+    const auto expectedArea = [](double margin) {
+        const double effective = Geometry::conservativeSafetyOffsetUnits(margin) / 1000.0;
+        return std::pow(std::max(0.0, 20.0 - 2.0 * effective), 2);
+    };
     const auto nominal = Geometry::polygonRegionArea(result.regions.nominalHardTrackRegion);
     const auto hard = Geometry::polygonRegionArea(result.regions.hardExecutionTrackRegion);
     const auto preferred = Geometry::polygonRegionArea(result.regions.preferredExecutionTrackRegion);
-    QCOMPARE(nominal.areaM2, expectedArea(h));
-    QCOMPARE(hard.areaM2, expectedArea(h + e));
-    QCOMPARE(preferred.areaM2, expectedArea(p + e));
+    QVERIFY(std::abs(nominal.areaM2 - expectedArea(h)) < 0.005);
+    QVERIFY(std::abs(hard.areaM2 - expectedArea(h + e)) < 0.005);
+    QVERIFY(std::abs(preferred.areaM2 - expectedArea(p + e)) < 0.005);
     QCOMPARE(safety.hardSafetyMarginM, h);
     QCOMPARE(safety.preferredSafetyMarginM, p);
 }
@@ -165,7 +168,7 @@ void CoverageSafetyTest::_testEntirePath_data()
         << TestPath{{5, 10}, {15, 10}} << CoveragePlanningError::UnsafeConnector << false;
     QTest::newRow("later-leg-unsafe") << TestPath{{5, 5}, {5, 10}, {15, 10}} << CoveragePlanningError::UnsafeConnector
                                       << false;
-    QTest::newRow("closed-hard-boundary") << TestPath{{1.5, 3}, {1.5, 5}} << CoveragePlanningError::None << false;
+    QTest::newRow("closed-hard-boundary") << TestPath{{1.503, 3}, {1.503, 5}} << CoveragePlanningError::None << false;
     QTest::newRow("violates-e") << TestPath{{1.25, 3}, {1.25, 5}} << CoveragePlanningError::UnsafeConnector << false;
     QTest::newRow("empty") << TestPath{} << CoveragePlanningError::InvalidGeneratedPath << false;
     QTest::newRow("single") << TestPath{{3, 3}} << CoveragePlanningError::InvalidGeneratedPath << false;
@@ -235,7 +238,7 @@ void CoverageSafetyTest::_testFallback()
 void CoverageSafetyTest::_testEmptyAndFailure()
 {
     const TestPath path{{3, 3}, {5, 3}};
-    const auto empty = buildSafetyTrackRegions(region(), {10, 12}, {});
+    const auto empty = buildSafetyTrackRegions(region(), {10, 12}, {0.0});
     QCOMPARE(empty.error, CoveragePlanningError::None);
     QCOMPARE(evaluateSafetyCandidate(empty, path).error, CoveragePlanningError::NoNavigableArea);
     const double huge = std::numeric_limits<double>::max();
@@ -249,7 +252,7 @@ void CoverageSafetyTest::_testEmptyAndFailure()
         QVERIFY(!selected.assessment.tier.has_value());
     }
     // A preferred offset outside the backend range must not be treated as an empty preferred set.
-    const auto failedPreferred = buildSafetyTrackRegions(region(), {1, 1e13}, {});
+    const auto failedPreferred = buildSafetyTrackRegions(region(), {1, 1e13}, {0.0});
     QCOMPARE(failedPreferred.error, CoveragePlanningError::GeometryFailure);
     QVERIFY(selectPreferredOrHardCandidate(failedPreferred, {}, path).path.empty());
 }
@@ -267,6 +270,35 @@ void CoverageSafetyTest::_testHierarchyFailure()
     regions = buildSafetyTrackRegions(region(), {1, 2}, {0.5});
     regions.regions.hardExecutionTrackRegion.front().outerBoundary.vertices.clear();
     QCOMPARE(evaluateSafetyCandidate(regions, path).error, CoveragePlanningError::GeometryFailure);
+}
+
+void CoverageSafetyTest::_testSubMillimeterClearance()
+{
+    for (const double shift : {-0.0005, 0.0005}) {
+        Region2D input = region(true);
+        input.coverageBoundary = rectangle(2 + shift, 2 + shift, 6 + shift, 6 + shift);
+        input.navigationBoundary = rectangle(shift, shift, 20 + shift, 20 + shift);
+        input.noGoRegions = {rectangle(8 + shift, 8 + shift, 12 + shift, 12 + shift)};
+        for (const double h : {0.0, 0.0001, 0.00049, 0.0005, 0.00051, 0.0009}) {
+            for (const double e : {0.0, 0.0001, 0.0005}) {
+                const double clearance = h + e;
+                const auto regions = buildSafetyTrackRegions(input, {h, h}, {e});
+                QCOMPARE(regions.error, CoveragePlanningError::None);
+                verifyHierarchy(regions.regions);
+                const auto& nominal = regions.regions.nominalHardTrackRegion;
+                const auto& hard = regions.regions.hardExecutionTrackRegion;
+                // The predicate's 1 mm boundary tolerance must still reject physically under-clear points.
+                QVERIFY(!Geometry::pointInsidePolygonRegion(nominal, {shift + h - 0.0001, 5 + shift}));
+                QVERIFY(!Geometry::pointInsidePolygonRegion(nominal, {8 + shift - h + 0.0001, 10 + shift}));
+                QVERIFY(!Geometry::pointInsidePolygonRegion(hard, {shift + clearance - 0.0001, 5 + shift}));
+                QVERIFY(!Geometry::pointInsidePolygonRegion(hard, {8 + shift - clearance + 0.0001, 10 + shift}));
+                QVERIFY(Geometry::pointInsidePolygonRegion(hard, {shift + clearance + 0.01, 5 + shift}));
+                QVERIFY(Geometry::pointInsidePolygonRegion(hard, {8 + shift - clearance - 0.01, 10 + shift}));
+                const TestPath unsafe{{shift + clearance - 0.0001, 4 + shift}, {shift + clearance - 0.0001, 6 + shift}};
+                QCOMPARE(evaluateSafetyCandidate(regions, unsafe).error, CoveragePlanningError::UnsafeConnector);
+            }
+        }
+    }
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(CoverageSafetyTest, TestLabel::Unit)

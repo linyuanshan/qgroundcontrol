@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
 #include <QtCore/QVariantList>
 
@@ -222,6 +223,7 @@ private:
     bool _syncingNoGoInteraction = false;
     bool _updatingTaskFromItem = false;
     std::optional<Marine::InfrastructurePlanningArtifact> _planningArtifact;
+    std::optional<QJsonObject> _loadedArtifactObject;
 
     static constexpr int MaximumNoGoRegionCount = 2;
     static constexpr int CurrentPlanningArtifactVersion = 3;

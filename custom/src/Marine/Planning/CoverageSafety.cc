@@ -58,12 +58,12 @@ SafetyTrackRegionsResult buildSafetyTrackRegions(const Region2D& region, const S
     if (!std::isfinite(hardMarginM) || !std::isfinite(preferredMarginM)) {
         return {.error = CoveragePlanningError::GeometryFailure};
     }
-    auto nominal =
-        Geometry::buildTrackFeasibleRegion(region.navigationBoundary, region.noGoRegions, safety.hardSafetyMarginM);
+    auto nominal = Geometry::buildSafetyTrackFeasibleRegionRound(region.navigationBoundary, region.noGoRegions,
+                                                                 safety.hardSafetyMarginM);
     auto hard =
-        Geometry::buildTrackFeasibleRegionConservativeMiter(region.navigationBoundary, region.noGoRegions, hardMarginM);
-    auto preferred = Geometry::buildTrackFeasibleRegionConservativeMiter(region.navigationBoundary, region.noGoRegions,
-                                                                         preferredMarginM);
+        Geometry::buildSafetyTrackFeasibleRegionMiter(region.navigationBoundary, region.noGoRegions, hardMarginM);
+    auto preferred =
+        Geometry::buildSafetyTrackFeasibleRegionMiter(region.navigationBoundary, region.noGoRegions, preferredMarginM);
     if (nominal.status != Geometry::PolygonRegionOperationStatus::Success ||
         hard.status != Geometry::PolygonRegionOperationStatus::Success ||
         preferred.status != Geometry::PolygonRegionOperationStatus::Success) {

@@ -73,12 +73,20 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlan()
     QCOMPARE(task->type, MarineTaskType::CoverageInspection);
     QCOMPARE(task->name, std::string("Coverage Inspection"));
     QCOMPARE(task->planner.plannerId, std::string("marine.coverage.auto"));
-    QCOMPARE(task->planner.executionSafety.executionMarginM, 0.25);
+    QVERIFY(std::isnan(task->safety.hardSafetyMarginM));
+    QVERIFY(std::isnan(task->safety.preferredSafetyMarginM));
+    QVERIFY(std::isnan(task->planner.executionSafety.executionMarginM));
+    QVERIFY(!task->schemaValid());
+    MarineTask configured = *task;
+    configured.coverage.swathWidthM = 5.0;
+    configured.safety.hardSafetyMarginM = 0.0;
+    configured.safety.preferredSafetyMarginM = 0.0;
+    configured.planner.executionSafety.executionMarginM = 0.0;
+    QVERIFY(configured.schemaValid());
     QCOMPARE(task->region.coverageBoundary.vertices.size(), std::size_t(4));
     QCOMPARE(task->region.navigationBoundary.vertices.size(), std::size_t(4));
     QCOMPARE(task->region.navigationBoundary.vertices.front().latitudeDeg,
              task->region.coverageBoundary.vertices.front().latitudeDeg);
-    QCOMPARE(task->safety.preferredSafetyMarginM, task->safety.hardSafetyMarginM);
     QVERIFY(task->region.coverageBoundary.vertices.front().latitudeDeg != mapCenter.latitude());
     QVERIFY(task->region.coverageBoundary.vertices.front().longitudeDeg != mapCenter.longitude());
 }
@@ -122,6 +130,9 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
     // Explicit historical planner exercises 2D creation without implementing Auto resolution.
     MarineTask task = *_marineContext->task(coverageItem->taskId().toStdString());
     task.planner.plannerId = "marine.coverage.bcd";
+    task.safety.hardSafetyMarginM = 0.0;
+    task.safety.preferredSafetyMarginM = 0.0;
+    task.planner.executionSafety.executionMarginM = 0.0;
     QVERIFY(_marineContext->updateTask(task));
     QVERIFY2(coverageItem->plan(), coverageItem->planningResult().message.c_str());
     QVERIFY(coverageItem->planningArtifact().has_value());
