@@ -23,4 +23,8 @@ private slots:
     void _testSegmentContainment();
     void _testPolygonRegionSegmentContainment();
     void _testLineBufferDifferenceAndArea();
+    void _testPolygonRegionIntersection();
+    void _testPolygonRegionInset();
+    void _testPolygonRegionInsetCollapseAndZero();
+    void _testPolygonRegionInsetInvalidInput();
 };

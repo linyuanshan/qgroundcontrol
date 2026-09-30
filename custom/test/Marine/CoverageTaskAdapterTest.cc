@@ -66,6 +66,7 @@ void CoverageTaskAdapterTest::_testBuildProblem()
     QCOMPARE(problem.safety.hardSafetyMarginM, 2.5);
     QCOMPARE(problem.safety.preferredSafetyMarginM, 3.5);
     QCOMPARE(problem.executionSafety.executionMarginM, 0.25);
+    QCOMPARE(problem.coverageRequirement, CoverageRequirement::Standard);
     QVERIFY(problem.sweepAngleMode == SweepAngleMode::Manual);
     QCOMPARE(problem.requestedSweepAngleDeg, 35.0);
     QVERIFY(problem.region.isFinite());
@@ -75,6 +76,17 @@ void CoverageTaskAdapterTest::_testBuildProblem()
         QVERIFY(roundTrip.has_value());
         compareGeoPoint(*roundTrip, task.region.coverageBoundary.vertices[index]);
     }
+}
+
+void CoverageTaskAdapterTest::_testCoverageRequirementCopy()
+{
+    MarineTask task = createTask();
+    task.coverage.coverageRequirement = CoverageRequirement::Strict;
+    CoveragePlanningProblem problem;
+    std::optional<GeoReference> reference;
+    CoveragePlanningError error = CoveragePlanningError::GeometryFailure;
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, problem, reference, error));
+    QCOMPARE(problem.coverageRequirement, CoverageRequirement::Strict);
 }
 
 void CoverageTaskAdapterTest::_testSeparateNavigationConversion()

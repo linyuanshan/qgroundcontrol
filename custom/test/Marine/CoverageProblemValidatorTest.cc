@@ -38,6 +38,11 @@ void CoverageProblemValidatorTest::_testPolygonValidation()
 {
     CoveragePlanningProblem problem = validProblem();
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
+    problem.coverageRequirement = CoverageRequirement::Strict;
+    QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
+    problem.coverageRequirement = static_cast<CoverageRequirement>(99);
+    QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem),
+             CoveragePlanningError::InvalidCoverageRequirement);
 
     problem = validProblem();
     problem.region.coverageBoundary.vertices = {{0.0, 0.0}, {10.0, 0.0}};
@@ -179,6 +184,8 @@ void CoverageProblemValidatorTest::_testErrorMapping()
              PlanningStatus::InvalidInput);
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::InvalidSweepAngle),
              PlanningStatus::InvalidInput);
+    QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::InvalidCoverageRequirement),
+             PlanningStatus::InvalidInput);
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::UnsupportedNoGoRegion),
              PlanningStatus::Failed);
     QCOMPARE(CoverageProblemValidator::statusForError(CoveragePlanningError::CoverageImpossibleWithSafetyMargin),
@@ -194,6 +201,8 @@ void CoverageProblemValidatorTest::_testErrorMapping()
              PlanningStatus::Failed);
 
     QVERIFY(!CoverageProblemValidator::messageForError(CoveragePlanningError::InvalidOuterBoundary).empty());
+    QCOMPARE(CoverageProblemValidator::messageForError(CoveragePlanningError::InvalidCoverageRequirement),
+             std::string("Coverage requirement must be Standard or Strict"));
     QVERIFY(CoverageProblemValidator::messageForError(CoveragePlanningError::UnsupportedNoGoRegion)
                 .find("selected coverage planner") != std::string::npos);
     QVERIFY(CoverageProblemValidator::messageForError(CoveragePlanningError::CoverageImpossibleWithSafetyMargin)

@@ -94,6 +94,9 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonDecomposition.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PathLegRole.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoveragePlanningProblem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageQualityPolicy.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageQualityEvaluator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageQualityEvaluator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageGeometry.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageGeometry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageSafety.cc
@@ -135,6 +138,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageFreeSpaceTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageProblemValidatorTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageQualityEvaluatorTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageQualityEvaluatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeoReferenceTest.cc
@@ -381,6 +386,17 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         CoverageProblemValidatorTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageQualityEvaluatorTest
         LABELS
         Unit
     )

@@ -6,13 +6,14 @@
 #include <optional>
 
 #include "MarineTask.h"
+#include "Planning/CoverageQualityPolicy.h"
 
 namespace Marine {
 
 struct PlanningSemantics
 {
     QString planningVersion = QStringLiteral("p2.v0.5.infrastructure.1");
-    QString policyVersion = QStringLiteral("unresolved");
+    QString policyVersion = QString::fromLatin1(CoverageQualityPolicySemanticVersion);
     QString resolvedStrategy = QStringLiteral("unresolved");
     QString strategyVersion = QStringLiteral("unresolved");
 

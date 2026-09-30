@@ -8,6 +8,7 @@ class CoverageTaskAdapterTest : public UnitTest
 
 private slots:
     void _testBuildProblem();
+    void _testCoverageRequirementCopy();
     void _testInvalidTaskGeometry();
     void _testValidationAndNormalization();
     void _testNoGoConversion();

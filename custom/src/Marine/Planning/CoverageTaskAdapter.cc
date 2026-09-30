@@ -76,6 +76,7 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
     converted.swathWidthM = task.coverage.swathWidthM;
     converted.safety = task.safety;
     converted.executionSafety = task.planner.executionSafety;
+    converted.coverageRequirement = task.coverage.coverageRequirement;
     converted.sweepAngleMode = task.coverage.sweepAngleMode;
     converted.requestedSweepAngleDeg = task.coverage.sweepAngleDeg;
 
@@ -91,6 +92,7 @@ bool CoverageTaskAdapter::buildProblem(const MarineTask& task, CoveragePlanningP
 PlanningResult CoverageTaskAdapter::toPlanningResult(const CoveragePlanningSolution& solution,
                                                      const GeoReference& geoReference)
 {
+    // V05-08 owns integrated coverage-quality persistence/readiness mapping.
     PlanningResult result;
     result.status = solution.status;
     result.message = solution.message;

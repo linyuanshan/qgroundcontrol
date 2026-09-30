@@ -126,6 +126,11 @@ void verifySuccess(const CoveragePlanningProblem& input, const CoveragePlanningS
     QVERIFY(solution.turnCount >= 0);
     QVERIFY(solution.selectedSweepAngleDeg >= 0.0);
     QVERIFY(solution.selectedSweepAngleDeg < 180.0);
+    QVERIFY(solution.coverageQuality.has_value());
+    QVERIFY((solution.coverageQuality->status == CoverageQualityStatus::Complete) ||
+            (solution.coverageQuality->status == CoverageQualityStatus::Acceptable));
+    QVERIFY(solution.coverageQuality->passesRequirement);
+    QCOMPARE(solution.coverageQuality->requirement, input.coverageRequirement);
 
     double coverageLengthM = 0.0;
     double transitLengthM = 0.0;
@@ -257,7 +262,12 @@ void BoustrophedonCoveragePlannerTest::_testManualNormalizationAndDeterminism()
     compareSolutions(ninety, twoSeventy);
     compareSolutions(ninety, negativeNinety);
     for (int repetition = 0; repetition < 3; ++repetition) {
-        compareSolutions(ninety, planner.plan(input));
+        const CoveragePlanningSolution repeated = planner.plan(input);
+        compareSolutions(ninety, repeated);
+        QVERIFY(repeated.coverageQuality.has_value());
+        QCOMPARE(repeated.coverageQuality->status, ninety.coverageQuality->status);
+        QCOMPARE(repeated.coverageQuality->coverageRatio, ninety.coverageQuality->coverageRatio);
+        QCOMPARE(repeated.coverageQuality->criticalUncoveredAreaM2, ninety.coverageQuality->criticalUncoveredAreaM2);
     }
 }
 

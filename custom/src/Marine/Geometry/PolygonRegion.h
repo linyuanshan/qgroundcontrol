@@ -66,6 +66,9 @@ struct LineSegment2D
 [[nodiscard]] PolygonRegionOperationResult bufferLineSegments(std::span<const LineSegment2D> segments, double radiusM);
 [[nodiscard]] PolygonRegionOperationResult differencePolygonRegions(const PolygonRegionSet2D& subjects,
                                                                     const PolygonRegionSet2D& clips);
+[[nodiscard]] PolygonRegionOperationResult intersectPolygonRegions(const PolygonRegionSet2D& subjects,
+                                                                   const PolygonRegionSet2D& clips);
+[[nodiscard]] PolygonRegionOperationResult insetPolygonRegions(const PolygonRegionSet2D& regions, double distanceM);
 [[nodiscard]] PolygonRegionAreaResult polygonRegionArea(const PolygonRegionSet2D& regions);
 [[nodiscard]] PolygonRegionContainmentResult isRegionSetContained(const PolygonRegionSet2D& target,
                                                                   const PolygonRegionSet2D& container);

@@ -9,10 +9,10 @@
 #include "ComplexCoverageAssembly.h"
 #include "CoverageFreeSpace.h"
 #include "CoverageProblemValidator.h"
+#include "CoverageQualityEvaluator.h"
 #include "Geometry/MarineGeometry.h"
 #include "GlobalSweepSelector.h"
 #include "GreedyCellOrdering.h"
-#include "NominalCoverageValidator.h"
 
 namespace {
 
@@ -107,13 +107,6 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
         }
     }
 
-    const PolygonRegionSet2D coverageTarget{freeSpace.freeSpace.coverageTarget};
-    const CoverageCompletenessResult completeness =
-        validateNominalCoverage(coverageTarget, assembly.path, assembly.legRoles, normalizedProblem.swathWidthM);
-    if (completeness.status != PlanningStatus::Success) {
-        return failure(completeness.status, completeness.error, completeness.message);
-    }
-
     const bool validMetrics = std::isfinite(assembly.coverageLengthM) && std::isfinite(assembly.transitLengthM) &&
                               std::isfinite(assembly.pathLengthM) && (assembly.coverageLengthM >= 0.0) &&
                               (assembly.transitLengthM >= 0.0) &&
@@ -124,6 +117,21 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
         std::cmp_not_equal(assembly.cellCount, decomposition.cells.size())) {
         return failure(CoveragePlanningError::InvalidGeneratedPath,
                        "Boustrophedon coverage pipeline produced inconsistent output");
+    }
+
+    const PolygonRegionSet2D coverageTarget{freeSpace.freeSpace.coverageTarget};
+    CoverageQualityEvaluation quality =
+        evaluateCoverageQuality(coverageTarget, assembly.path, assembly.legRoles, normalizedProblem.swathWidthM,
+                                normalizedProblem.coverageRequirement);
+    if (quality.status == CoverageQualityStatus::Insufficient) {
+        CoveragePlanningSolution failed = failure(CoveragePlanningError::CoverageIncomplete, quality.message);
+        failed.coverageQuality = std::move(quality);
+        return failed;
+    }
+    if (quality.status == CoverageQualityStatus::AssessmentError) {
+        CoveragePlanningSolution failed = failure(CoveragePlanningError::GeometryFailure, quality.message);
+        failed.coverageQuality = std::move(quality);
+        return failed;
     }
 
     CoveragePlanningSolution solution;
@@ -137,7 +145,8 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
     solution.cellCount = assembly.cellCount;
     solution.turnCount = assembly.turnCount;
     solution.error = CoveragePlanningError::None;
-    solution.message = "Boustrophedon coverage path generated and nominally complete";
+    solution.coverageQuality = std::move(quality);
+    solution.message = "Boustrophedon coverage path generated and quality assessed";
     return solution;
 }
 

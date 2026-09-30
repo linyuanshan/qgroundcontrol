@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "CoverageQualityEvaluator.h"
 #include "Geometry/GeometryTypes.h"
 #include "MarineTask.h"
 #include "MarineTypes.h"
@@ -24,6 +26,7 @@ enum class CoveragePlanningError
     InvalidPreferredSafetyMargin,
     InvalidExecutionMargin,
     InvalidSweepAngle,
+    InvalidCoverageRequirement,
     CoverageImpossibleWithSafetyMargin,
     CoverageImpossibleWithExecutionMargin,
     UnsupportedExecutionSafetyProfile,
@@ -54,6 +57,7 @@ struct CoveragePlanningProblem
     double swathWidthM = 0.0;
     SafetyConfig safety;
     ExecutionSafetyProfile executionSafety;
+    CoverageRequirement coverageRequirement = CoverageRequirement::Standard;
     SweepAngleMode sweepAngleMode = SweepAngleMode::Auto;
     // Navigation bearing: 0 degrees North, 90 degrees East, clockwise positive.
     double requestedSweepAngleDeg = 0.0;
@@ -72,6 +76,7 @@ struct CoveragePlanningSolution
     int cellCount = 0;
     int turnCount = 0;
     CoveragePlanningError error = CoveragePlanningError::None;
+    std::optional<CoverageQualityEvaluation> coverageQuality;
     std::string message;
 };
 

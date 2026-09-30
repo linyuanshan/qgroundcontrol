@@ -33,7 +33,7 @@ void PlanningInputIdentityTest::_testPlanningFields()
     const auto task = input();
     const auto identity = PlanningInputIdentity::fromTask(task);
     QVERIFY(identity.has_value());
-    QCOMPARE(identity->fingerprint, QStringLiteral("fb252e4970c5616c4a9bd8d1d6a564350673372b1662c08b16d4cf470b77cd66"));
+    QCOMPARE(identity->fingerprint, QStringLiteral("af1f2fef58fc5e2ad31cfc2c8d926752fa57631adc7cb56a13e31ce1b5e0941e"));
     QCOMPARE(PlanningInputIdentity::fromTask(task)->fingerprint, identity->fingerprint);
     const std::vector<std::function<void(MarineTask&)>> changes = {
         [](auto& t) { t.region.coverageBoundary.vertices[0].latitudeDeg += 0.01; },
@@ -99,6 +99,7 @@ void PlanningInputIdentityTest::_testSemanticIdentity()
 {
     const auto task = input();
     const auto baseline = PlanningInputIdentity::fromTask(task);
+    QCOMPARE(baseline->semantics.policyVersion, QStringLiteral("coverage-quality.v1"));
     const std::vector<std::function<void(PlanningSemantics&)>> changes = {
         [](auto& s) { s.planningVersion = "p2.v0.5.final"; },
         [](auto& s) { s.policyVersion = "approved-calibration"; },

@@ -10,6 +10,10 @@ namespace Marine {
 
 CoveragePlanningError CoverageProblemValidator::validateAndNormalize(CoveragePlanningProblem& problem)
 {
+    if ((problem.coverageRequirement != CoverageRequirement::Standard) &&
+        (problem.coverageRequirement != CoverageRequirement::Strict)) {
+        return CoveragePlanningError::InvalidCoverageRequirement;
+    }
     const auto geometry = buildCoverageGeometry(problem.region);
     if (geometry.error != CoveragePlanningError::None) {
         return geometry.error;
@@ -76,6 +80,7 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::InvalidPreferredSafetyMargin:
         case CoveragePlanningError::InvalidExecutionMargin:
         case CoveragePlanningError::InvalidSweepAngle:
+        case CoveragePlanningError::InvalidCoverageRequirement:
             return PlanningStatus::InvalidInput;
         case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
         case CoveragePlanningError::CoverageImpossibleWithExecutionMargin:
@@ -138,6 +143,8 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
             return "Execution margin must be finite and non-negative";
         case CoveragePlanningError::InvalidSweepAngle:
             return "Manual sweep angle must be finite";
+        case CoveragePlanningError::InvalidCoverageRequirement:
+            return "Coverage requirement must be Standard or Strict";
         case CoveragePlanningError::CoverageImpossibleWithSafetyMargin:
             return "The nominal work region cannot be fully covered while keeping centerlines inside the safety inset";
         case CoveragePlanningError::CoverageImpossibleWithExecutionMargin:

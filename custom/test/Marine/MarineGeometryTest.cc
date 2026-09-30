@@ -37,6 +37,12 @@ void compareWithinTolerance(double actual, double expected)
     QVERIFY2(std::abs(actual - expected) <= Geometry::LengthEpsilonM, "Coordinate exceeded geometry tolerance");
 }
 
+double area(const PolygonRegionSet2D& regions)
+{
+    const Geometry::PolygonRegionAreaResult result = Geometry::polygonRegionArea(regions);
+    return result.areaM2;
+}
+
 Polygon2D rectangle()
 {
     return {{{0.0, 0.0}, {20.0, 0.0}, {20.0, 10.0}, {0.0, 10.0}}};
@@ -356,6 +362,60 @@ void MarineGeometryTest::_testLineBufferDifferenceAndArea()
     QCOMPARE(differenceArea.status, Geometry::PolygonRegionOperationStatus::Success);
     QVERIFY(differenceArea.areaM2 < targetArea.areaM2);
     QVERIFY(differenceArea.areaM2 > 0.0);
+}
+
+void MarineGeometryTest::_testPolygonRegionIntersection()
+{
+    const PolygonRegionSet2D first{{.outerBoundary = {{{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}}}}};
+    const PolygonRegionSet2D second{{.outerBoundary = {{{5.0, 0.0}, {15.0, 0.0}, {15.0, 10.0}, {5.0, 10.0}}}}};
+    const auto intersection = Geometry::intersectPolygonRegions(first, second);
+    QCOMPARE(intersection.status, Geometry::PolygonRegionOperationStatus::Success);
+    QCOMPARE(area(intersection.regions), 50.0);
+    QCOMPARE(Geometry::intersectPolygonRegions({}, second).status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(Geometry::intersectPolygonRegions({}, second).regions.empty());
+}
+
+void MarineGeometryTest::_testPolygonRegionInset()
+{
+    const PolygonRegionSet2D target = {
+        {.outerBoundary = rectangle(), .holes = {{{{8.0, 3.0}, {8.0, 7.0}, {12.0, 7.0}, {12.0, 3.0}}}}},
+    };
+    const auto inset = Geometry::insetPolygonRegions(target, 1.0);
+    QCOMPARE(inset.status, Geometry::PolygonRegionOperationStatus::Success);
+    QCOMPARE(inset.regions.size(), std::size_t{1});
+    QVERIFY(!inset.regions.front().holes.empty());
+    const Bounds outerBounds = boundsFor(inset.regions.front().outerBoundary);
+    compareWithinTolerance(outerBounds.minimumX, 1.0);
+    compareWithinTolerance(outerBounds.maximumX, 19.0);
+    double minimumHoleX = std::numeric_limits<double>::infinity();
+    for (const Point2D& point : inset.regions.front().holes.front().vertices) {
+        minimumHoleX = std::min(minimumHoleX, point.xM);
+    }
+    QVERIFY(minimumHoleX <= 7.001);
+    const auto insetArea = Geometry::polygonRegionArea(inset.regions);
+    QCOMPARE(insetArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(insetArea.areaM2 < 184.0);
+}
+
+void MarineGeometryTest::_testPolygonRegionInsetCollapseAndZero()
+{
+    const PolygonRegionSet2D target{{.outerBoundary = rectangle()}};
+    const auto zero = Geometry::insetPolygonRegions(target, 0.0);
+    QCOMPARE(zero.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(std::abs(Geometry::polygonRegionArea(zero.regions).areaM2 - 200.0) <= 0.01);
+    const auto collapsed = Geometry::insetPolygonRegions(target, 6.0);
+    QCOMPARE(collapsed.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(collapsed.regions.empty());
+}
+
+void MarineGeometryTest::_testPolygonRegionInsetInvalidInput()
+{
+    const PolygonRegionSet2D target{{.outerBoundary = rectangle()}};
+    QCOMPARE(Geometry::insetPolygonRegions(target, -1.0).status, Geometry::PolygonRegionOperationStatus::InvalidInput);
+    QCOMPARE(Geometry::insetPolygonRegions(target, std::numeric_limits<double>::infinity()).status,
+             Geometry::PolygonRegionOperationStatus::InvalidInput);
+    const PolygonRegionSet2D invalid{{.outerBoundary = {{{0.0, 0.0}, {1.0, 1.0}}}}};
+    QCOMPARE(Geometry::insetPolygonRegions(invalid, 1.0).status, Geometry::PolygonRegionOperationStatus::InvalidInput);
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(MarineGeometryTest, TestLabel::Unit)

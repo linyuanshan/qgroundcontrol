@@ -7,6 +7,7 @@
 
 namespace Marine {
 
+/// Historical P1/P2 completeness validator; V05 production strategies use CoverageQualityEvaluator.
 struct CoverageCompletenessResult
 {
     PlanningStatus status = PlanningStatus::Failed;

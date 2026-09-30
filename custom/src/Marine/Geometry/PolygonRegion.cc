@@ -573,6 +573,74 @@ PolygonRegionOperationResult differencePolygonRegions(const PolygonRegionSet2D& 
     return executeBoolean(Clipper2Lib::ClipType::Difference, subjectPaths, clipPaths);
 }
 
+PolygonRegionOperationResult intersectPolygonRegions(const PolygonRegionSet2D& subjects,
+                                                     const PolygonRegionSet2D& clips)
+{
+    if (!allRegionsValid(subjects) || !allRegionsValid(clips)) {
+        return {.status = PolygonRegionOperationStatus::InvalidInput};
+    }
+    if (subjects.empty() || clips.empty()) {
+        return {.status = PolygonRegionOperationStatus::Success};
+    }
+    Clipper2Lib::Paths64 subjectPaths;
+    Clipper2Lib::Paths64 clipPaths;
+    if (!regionSetToPaths(subjects, subjectPaths) || !regionSetToPaths(clips, clipPaths)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+    return executeBoolean(Clipper2Lib::ClipType::Intersection, subjectPaths, clipPaths);
+}
+
+PolygonRegionOperationResult insetPolygonRegions(const PolygonRegionSet2D& regions, double distanceM)
+{
+    if (!std::isfinite(distanceM) || (distanceM < 0.0) ||
+        !std::ranges::all_of(regions, [](const PolygonRegion2D& region) { return isValidPolygonRegion(region); })) {
+        return {.status = PolygonRegionOperationStatus::InvalidInput};
+    }
+    if (regions.empty()) {
+        return {.status = PolygonRegionOperationStatus::Success};
+    }
+    if (distanceM == 0.0) {
+        return unionPolygonRegions(regions);
+    }
+
+    const double scaledDistance = distanceM * CoordinateScalePerM;
+    if (!std::isfinite(scaledDistance) || (scaledDistance > MaximumScaledCoordinate)) {
+        return {.status = PolygonRegionOperationStatus::GeometryFailure};
+    }
+
+    PolygonRegionSet2D insetComponents;
+    for (const PolygonRegion2D& region : regions) {
+        Clipper2Lib::Path64 outerPath;
+        if (!toClipperPath(region.outerBoundary, true, outerPath)) {
+            return {.status = PolygonRegionOperationStatus::GeometryFailure};
+        }
+        const Clipper2Lib::Paths64 insetOuter = Clipper2Lib::InflatePaths(
+            {outerPath}, -scaledDistance, Clipper2Lib::JoinType::Miter, Clipper2Lib::EndType::Polygon);
+        if (insetOuter.empty()) {
+            continue;
+        }
+
+        Clipper2Lib::Paths64 inflatedHoles;
+        for (const Polygon2D& hole : region.holes) {
+            Clipper2Lib::Path64 holePath;
+            if (!toClipperPath(hole, true, holePath)) {
+                return {.status = PolygonRegionOperationStatus::GeometryFailure};
+            }
+            Clipper2Lib::Paths64 inflated = Clipper2Lib::InflatePaths(
+                {holePath}, scaledDistance, Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Polygon);
+            inflatedHoles.insert(inflatedHoles.end(), std::make_move_iterator(inflated.begin()),
+                                 std::make_move_iterator(inflated.end()));
+        }
+        const PolygonRegionOperationResult component =
+            executeBoolean(Clipper2Lib::ClipType::Difference, insetOuter, inflatedHoles);
+        if (component.status != PolygonRegionOperationStatus::Success) {
+            return component;
+        }
+        insetComponents.insert(insetComponents.end(), component.regions.begin(), component.regions.end());
+    }
+    return unionPolygonRegions(insetComponents);
+}
+
 PolygonRegionAreaResult polygonRegionArea(const PolygonRegionSet2D& regions)
 {
     if (!allRegionsValid(regions)) {
