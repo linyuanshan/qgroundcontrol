@@ -50,6 +50,10 @@ V05 governance state:
 | Complete | V05-02 production implementation |
 | Complete | V05-03 production implementation |
 | Complete | V05-04 production implementation |
+| Authorized | V05-05 production implementation |
+
+V05-05 implementation is explicitly authorized by the project owner.
+After implementation, stop for independent review. V05-06 and later packages remain unauthorized.
 
 V05-01 must not begin until the pre-V05-01 gate is completed and the project owner explicitly
 authorizes
@@ -183,14 +187,14 @@ centralized in
 | V05-09 | QML/editor/result visualization |
 | V05-10 | M00–M09, regressions, persistence, Mission integration, SITL, manual acceptance, freeze audit |
 
-Two calibration decisions await project-owner approval; do not guess values:
+V05-04 calibration decisions are approved and frozen for `coverage-quality.v1`:
 
-- CAL-01 — `StandardCoveragePolicy.minimumCoverageRatio`
-- CAL-02 — `StandardCoveragePolicy.boundaryToleranceM`
+- CAL-01 - `StandardCoveragePolicy.minimumCoverageRatio = 0.99`
+- CAL-02 - `StandardCoveragePolicy.boundaryToleranceM = 0.50 m`
+- Coverage policy semantic identity - `coverage-quality.v1`
 
-V05-04 Standard numerical threshold implementation is blocked until both are approved. The
-architecture
-remains frozen.
+The V05-04 calibration gate is closed. Do not change these values without a new project-owner
+decision and corresponding semantic-version change. The architecture remains frozen.
 
 Before V05-01, classify the tracked and untracked working-tree changes, preserve or commit
 approved
