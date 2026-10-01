@@ -9,6 +9,7 @@
 #include "MarineTask.h"
 #include "MarineTypes.h"
 #include "PathLegRole.h"
+#include "PlannerSource.h"
 
 namespace Marine {
 
@@ -49,6 +50,8 @@ enum class CoveragePlanningError
     CellCoverageFailed,
     SafeTransitNotFound,
     CoverageIncomplete,
+    UnsupportedStrategyCapability,
+    ResolvedStrategyUnavailable,
 };
 
 struct CoveragePlanningProblem
@@ -77,6 +80,7 @@ struct CoveragePlanningSolution
     int turnCount = 0;
     CoveragePlanningError error = CoveragePlanningError::None;
     std::optional<CoverageQualityEvaluation> coverageQuality;
+    std::optional<PlannerSourceInfo> plannerSource;
     std::string message;
 };
 

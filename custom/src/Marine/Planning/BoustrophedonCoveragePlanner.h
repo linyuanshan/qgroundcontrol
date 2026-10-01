@@ -8,6 +8,7 @@ class BoustrophedonCoveragePlanner final : public ICoveragePlanner
 {
 public:
     std::string id() const final;
+    std::string semanticVersion() const final;
     std::string displayName() const final;
     CoveragePlanningSolution plan(const CoveragePlanningProblem& problem) const final;
 };

@@ -76,6 +76,12 @@ void CustomPluginIntegrationTest::_testPlanContextAndCreatorRegistration()
     QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.mock") != nullptr);
     QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.lawnmower") != nullptr);
     QVERIFY(contexts.first()->plannerRegistry().planner("marine.coverage.bcd") != nullptr);
+    const auto simple = contexts.first()->plannerRegistry().planner("marine.coverage.simple-monotone");
+    const auto automatic = contexts.first()->plannerRegistry().planner("marine.coverage.auto");
+    QVERIFY(simple != nullptr);
+    QVERIFY(automatic != nullptr);
+    QCOMPARE(simple->semanticVersion(), std::string("simple-monotone.v1"));
+    QCOMPARE(automatic->semanticVersion(), std::string("auto.v1"));
 
     QmlObjectListModel* creators = planController()->planCreators();
     QVERIFY(creators != nullptr);

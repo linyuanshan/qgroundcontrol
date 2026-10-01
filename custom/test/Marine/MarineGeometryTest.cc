@@ -251,8 +251,7 @@ void MarineGeometryTest::_testScanlineVertexAndBoundaryCases()
 void MarineGeometryTest::_testValidatedScanlineDegeneracies()
 {
     const Polygon2D rectanglePolygon = rectangle();
-    const Geometry::ScanlineResult ordinary =
-        Geometry::intersectScanlineForValidatedGeometry(rectanglePolygon, 5.0);
+    const Geometry::ScanlineResult ordinary = Geometry::intersectScanlineForValidatedGeometry(rectanglePolygon, 5.0);
     QCOMPARE(ordinary.status, Geometry::ScanlineStatus::Success);
     QCOMPARE(ordinary.intervals.size(), 1);
 
@@ -263,8 +262,7 @@ void MarineGeometryTest::_testValidatedScanlineDegeneracies()
     compareWithinTolerance(vertex.intervals.front().minimumXM, 0.0);
     compareWithinTolerance(vertex.intervals.front().maximumXM, 10.0);
 
-    const Geometry::ScanlineResult horizontal =
-        Geometry::intersectScanlineForValidatedGeometry(rectanglePolygon, 0.0);
+    const Geometry::ScanlineResult horizontal = Geometry::intersectScanlineForValidatedGeometry(rectanglePolygon, 0.0);
     QCOMPARE(horizontal.status, Geometry::ScanlineStatus::Success);
     QCOMPARE(horizontal.intervals.size(), 1);
     compareWithinTolerance(horizontal.intervals.front().minimumXM, 0.0);
@@ -286,10 +284,42 @@ void MarineGeometryTest::_testValidatedScanlineDegeneracies()
     }
 
     const Polygon2D tangent{{{0.0, 0.0}, {5.0, 5.0}, {10.0, 0.0}, {10.0, -5.0}, {0.0, -5.0}}};
-    const Geometry::ScanlineResult tangentResult =
-        Geometry::intersectScanlineForValidatedGeometry(tangent, 5.0);
+    const Geometry::ScanlineResult tangentResult = Geometry::intersectScanlineForValidatedGeometry(tangent, 5.0);
     QCOMPARE(tangentResult.status, Geometry::ScanlineStatus::NoIntersection);
     QVERIFY(tangentResult.intervals.empty());
+}
+
+void MarineGeometryTest::_testPolygonRegionSetScanlineUnionAndHoles()
+{
+    const PolygonRegionSet2D regions{
+        {.outerBoundary = {{{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}}},
+         .holes = {{{{2.0, 4.0}, {2.0, 6.0}, {4.0, 6.0}, {4.0, 4.0}}}}},
+        {.outerBoundary = {{{10.0, 0.0}, {15.0, 0.0}, {15.0, 10.0}, {10.0, 10.0}}}},
+        {.outerBoundary = {{{15.0005, 0.0}, {20.0, 0.0}, {20.0, 10.0}, {15.0005, 10.0}}}},
+    };
+    const auto result = Geometry::intersectScanlineForValidatedGeometry(regions, 5.0);
+    QCOMPARE(result.status, Geometry::ScanlineStatus::Success);
+    QCOMPARE(result.intervals.size(), std::size_t{3});
+    QCOMPARE(result.intervals[0].minimumXM, 0.0);
+    QCOMPARE(result.intervals[0].maximumXM, 2.0);
+    QCOMPARE(result.intervals[1].minimumXM, 4.0);
+    QCOMPARE(result.intervals[1].maximumXM, 15.0);
+    QCOMPARE(result.intervals[2].minimumXM, 15.0005);
+    QCOMPARE(result.intervals[2].maximumXM, 20.0);
+}
+
+void MarineGeometryTest::_testPolygonRegionSetScanlineValidation()
+{
+    QCOMPARE(Geometry::intersectScanlineForValidatedGeometry(PolygonRegionSet2D{}, 1.0).status,
+             Geometry::ScanlineStatus::InvalidInput);
+    const PolygonRegionSet2D valid{{.outerBoundary = rectangle()}};
+    QCOMPARE(Geometry::intersectScanlineForValidatedGeometry(valid, std::numeric_limits<double>::infinity()).status,
+             Geometry::ScanlineStatus::InvalidInput);
+    const PolygonRegionSet2D malformed{{.outerBoundary = {{{0.0, 0.0}, {1.0, 1.0}}}}};
+    QCOMPARE(Geometry::intersectScanlineForValidatedGeometry(malformed, 0.5).status,
+             Geometry::ScanlineStatus::InvalidInput);
+    QCOMPARE(Geometry::intersectScanlineForValidatedGeometry(valid, 20.0).status,
+             Geometry::ScanlineStatus::NoIntersection);
 }
 
 void MarineGeometryTest::_testPointContainment()

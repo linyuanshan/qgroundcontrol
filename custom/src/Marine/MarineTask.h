@@ -4,6 +4,7 @@
 #include <string>
 
 #include "MarineTypes.h"
+#include "Planning/CoverageStrategySemantics.h"
 
 namespace Marine {
 
@@ -50,7 +51,7 @@ struct ExecutionSafetyProfile
 
 struct PlannerConfig
 {
-    std::string plannerId = "marine.coverage.auto";
+    std::string plannerId = CoverageStrategySemantics::AutoPlannerId;
     ExecutionSafetyProfile executionSafety;
 };
 

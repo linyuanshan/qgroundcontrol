@@ -4,7 +4,7 @@
 
 namespace Marine {
 
-class MockCoveragePlanner final : public ICoveragePlanner
+class AutoCoveragePlanner final : public ICoveragePlanner
 {
 public:
     std::string id() const final;

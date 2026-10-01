@@ -1,6 +1,9 @@
 #include "PlanningPathMetrics.h"
 
 #include <cmath>
+#include <limits>
+
+#include "Geometry/MarineGeometry.h"
 
 namespace Marine {
 
@@ -11,6 +14,9 @@ std::optional<PlanningPathMetrics> calculatePlanningPathMetrics(std::span<const 
         return std::nullopt;
     }
     PlanningPathMetrics metrics;
+    double previousDirectionX = 0.0;
+    double previousDirectionY = 0.0;
+    bool hasPreviousDirection = false;
     for (std::size_t index = 1; index < path.size(); ++index) {
         const Point2D& first = path[index - 1];
         const Point2D& second = path[index];
@@ -21,6 +27,21 @@ std::optional<PlanningPathMetrics> calculatePlanningPathMetrics(std::span<const 
         if (!std::isfinite(lengthM) || lengthM <= 0.0) {
             return std::nullopt;
         }
+        const double directionX = (second.xM - first.xM) / lengthM;
+        const double directionY = (second.yM - first.yM) / lengthM;
+        if (hasPreviousDirection) {
+            const double cross = std::abs((previousDirectionX * directionY) - (previousDirectionY * directionX));
+            const double dot = (previousDirectionX * directionX) + (previousDirectionY * directionY);
+            if ((cross > Geometry::LengthEpsilonM) || (dot < 0.0)) {
+                if (metrics.turnCount == std::numeric_limits<int>::max()) {
+                    return std::nullopt;
+                }
+                ++metrics.turnCount;
+            }
+        }
+        previousDirectionX = directionX;
+        previousDirectionY = directionY;
+        hasPreviousDirection = true;
         switch (roles[index - 1]) {
             case PathLegRole::Coverage:
                 metrics.coverageLengthM += lengthM;

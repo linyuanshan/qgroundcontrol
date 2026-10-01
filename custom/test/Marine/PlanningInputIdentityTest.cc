@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <utility>
 
+#include "Planning/CoverageStrategySemantics.h"
 #include "PlanningInputIdentity.h"
 
 using namespace Marine;
@@ -33,7 +35,7 @@ void PlanningInputIdentityTest::_testPlanningFields()
     const auto task = input();
     const auto identity = PlanningInputIdentity::fromTask(task);
     QVERIFY(identity.has_value());
-    QCOMPARE(identity->fingerprint, QStringLiteral("af1f2fef58fc5e2ad31cfc2c8d926752fa57631adc7cb56a13e31ce1b5e0941e"));
+    QCOMPARE(identity->fingerprint, QStringLiteral("1ca08ed4daef1c9b516266caf053ed7369f8909e12a4338675115bfd201ed4a8"));
     QCOMPARE(PlanningInputIdentity::fromTask(task)->fingerprint, identity->fingerprint);
     const std::vector<std::function<void(MarineTask&)>> changes = {
         [](auto& t) { t.region.coverageBoundary.vertices[0].latitudeDeg += 0.01; },
@@ -51,7 +53,7 @@ void PlanningInputIdentityTest::_testPlanningFields()
         [](auto& t) { t.planner.plannerId = "another.planner"; },
     };
     for (const auto& change : changes) {
-        auto changed = task;
+        auto changed = input();
         change(changed);
         const auto other = PlanningInputIdentity::fromTask(changed);
         QVERIFY(other.has_value());
@@ -119,6 +121,62 @@ void PlanningInputIdentityTest::_testSemanticIdentity()
         QVERIFY(PlanningInputIdentity::fromJson(identity->toJson(), loaded, error));
         QVERIFY(loaded == *identity);
     }
+}
+
+void PlanningInputIdentityTest::_testPlanningAndResolvedSemanticFingerprints()
+{
+    const MarineTask task = input();
+    const auto unresolved = PlanningInputIdentity::fromTask(task);
+    QVERIFY(unresolved.has_value());
+    QCOMPARE(unresolved->semantics.planningVersion,
+             QString::fromLatin1(CoverageStrategySemantics::PlanningSemanticsVersion));
+    QCOMPARE(unresolved->semantics.resolvedStrategy, QStringLiteral("unresolved"));
+    QCOMPARE(unresolved->semantics.strategyVersion, QStringLiteral("unresolved"));
+
+    PlanningSemantics semantics;
+    semantics.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId);
+    semantics.strategyVersion = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion);
+    const auto resolved = PlanningInputIdentity::fromTask(task, semantics);
+    QVERIFY(resolved.has_value());
+    QCOMPARE(resolved->fingerprint, QStringLiteral("ccaeefbca3d7fac593dfa4a686c7f0a1f10a00bec1927941290e3ce0f884f53b"));
+}
+
+void PlanningInputIdentityTest::_testSupportedSemanticMatching()
+{
+    const MarineTask task = input();
+    for (const auto [strategyId, version] :
+         {std::pair{QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId),
+                    QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion)},
+          std::pair{QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId),
+                    QString::fromLatin1(CoverageStrategySemantics::LegacyBoustrophedonVersion)},
+          std::pair{QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId),
+                    QString::fromLatin1(CoverageStrategySemantics::BoustrophedonPendingVersion)},
+          std::pair{QString::fromLatin1(CoverageStrategySemantics::LawnmowerId),
+                    QString::fromLatin1(CoverageStrategySemantics::LawnMowerVersion)},
+          std::pair{QString::fromLatin1(CoverageStrategySemantics::MockPlannerId),
+                    QString::fromLatin1(CoverageStrategySemantics::MockVersion)}}) {
+        PlanningSemantics semantics;
+        semantics.resolvedStrategy = strategyId;
+        semantics.strategyVersion = version;
+        const auto identity = PlanningInputIdentity::fromTask(task, semantics);
+        QVERIFY(identity.has_value());
+        QVERIFY(identity->matchesSupported(task));
+    }
+
+    PlanningSemantics unsupported;
+    unsupported.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId);
+    unsupported.strategyVersion = QStringLiteral("simple-monotone.future");
+    auto identity = PlanningInputIdentity::fromTask(task, unsupported);
+    QVERIFY(identity.has_value());
+    QVERIFY(!identity->matchesSupported(task));
+
+    PlanningSemantics oldPlanning;
+    oldPlanning.planningVersion = QStringLiteral("p2.v0.5.infrastructure.1");
+    oldPlanning.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId);
+    oldPlanning.strategyVersion = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion);
+    identity = PlanningInputIdentity::fromTask(task, oldPlanning);
+    QVERIFY(identity.has_value());
+    QVERIFY(!identity->matchesSupported(task));
 }
 
 void PlanningInputIdentityTest::_testInvalidIdentity()

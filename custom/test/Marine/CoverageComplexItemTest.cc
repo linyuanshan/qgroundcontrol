@@ -14,6 +14,7 @@
 #include <limits>
 #include <memory>
 
+#include "AutoCoveragePlanner.h"
 #include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageProblemValidator.h"
@@ -22,9 +23,11 @@
 #include "MarinePlanContext.h"
 #include "MissionItem.h"
 #include "MockCoveragePlanner.h"
+#include "Planning/CoverageStrategySemantics.h"
 #include "PlanningInputIdentity.h"
 #include "PlanningPathMetrics.h"
 #include "QGCMapPolygon.h"
+#include "SimpleMonotoneCoveragePlanner.h"
 
 using namespace Marine;
 
@@ -115,7 +118,11 @@ QJsonObject roleRunArtifact(const MarineTask& task, const std::vector<PathLegRol
     return {
         {QStringLiteral("version"), 3},
         {QStringLiteral("resultContract"), QStringLiteral("InfrastructureOnly")},
-        {QStringLiteral("inputIdentity"), PlanningInputIdentity::fromTask(task)->toJson()},
+        {QStringLiteral("inputIdentity"),
+         PlanningInputIdentity::fromTask(
+             task, PlanningSemantics{.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::MockPlannerId),
+                                     .strategyVersion = QString::fromLatin1(CoverageStrategySemantics::MockVersion)})
+             ->toJson()},
         {QStringLiteral("type"), QStringLiteral("ComplexItem")},
         {QStringLiteral("complexItemType"), QStringLiteral("coverageInspection")},
         {QStringLiteral("taskId"), QString::fromStdString(task.id)},
@@ -139,6 +146,8 @@ public:
 
     std::string id() const final { return "marine.coverage.counting"; }
 
+    std::string semanticVersion() const final { return "test.counting.v1"; }
+
     std::string displayName() const final { return "Counting test planner"; }
 
     CoveragePlanningSolution plan(const CoveragePlanningProblem& problem) const final
@@ -154,6 +163,8 @@ public:
     int defect = 0;
 
     std::string id() const final { return "marine.coverage.invalid-success-test"; }
+
+    std::string semanticVersion() const final { return "test.invalid-success.v1"; }
 
     std::string displayName() const final { return "Invalid success test planner"; }
 
@@ -192,6 +203,8 @@ void CoverageComplexItemTest::init()
     QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<MockCoveragePlanner>()));
     QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<LawnmowerCoveragePlanner>()));
     QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<BoustrophedonCoveragePlanner>()));
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<SimpleMonotoneCoveragePlanner>()));
+    QVERIFY(_marineContext->plannerRegistry().registerPlanner(std::make_shared<AutoCoveragePlanner>()));
     _item = new CoverageInspectionComplexItem(planController(), false, _marineContext);
 }
 
@@ -1133,6 +1146,84 @@ void CoverageComplexItemTest::_testStaleArtifactReferenceChange()
     QVERIFY2(_item->load(object, 0, error), qPrintable(error));
     QVERIFY(!_item->planningArtifact()->stale);
     QCOMPARE(planner->calls, 1);
+}
+
+void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndPendingBcd()
+{
+    MarineTask simpleTask = validTask();
+    simpleTask.planner.plannerId = CoverageStrategySemantics::AutoPlannerId;
+    _marineContext->addTask(simpleTask);
+    _item->setTaskId(QString::fromStdString(simpleTask.id));
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+    QVERIFY(_item->planningArtifact().has_value());
+    QCOMPARE(_item->planningArtifact()->result.status, PlanningStatus::Success);
+    QVERIFY(_item->planningArtifact()->result.plannerSource.has_value());
+    QCOMPARE(_item->planningArtifact()->result.plannerSource->requestedPlannerId,
+             std::string(CoverageStrategySemantics::AutoPlannerId));
+    QCOMPARE(_item->planningArtifact()->result.plannerSource->resolvedStrategy.strategyId,
+             std::string(CoverageStrategySemantics::SimpleMonotoneId));
+    const QJsonArray simpleSaved = [&] {
+        QJsonArray saved;
+        _item->save(saved);
+        return saved;
+    }();
+    QCOMPARE(simpleSaved.size(), 1);
+    const QJsonObject simpleObject = simpleSaved.first().toObject();
+    const QJsonObject simpleIdentity = simpleObject.value(QStringLiteral("inputIdentity")).toObject();
+    QCOMPARE(simpleIdentity.value(QStringLiteral("resolvedStrategy")).toString(),
+             QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId));
+    QCOMPARE(simpleIdentity.value(QStringLiteral("strategyVersion")).toString(),
+             QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion));
+    QCOMPARE(simpleObject.value(QStringLiteral("resultContract")).toString(), QStringLiteral("InfrastructureOnly"));
+    QVERIFY(!simpleObject.contains(QStringLiteral("plannerSource")));
+
+    CoverageInspectionComplexItem loadedSimple(planController(), false, _marineContext);
+    QString error;
+    QVERIFY2(loadedSimple.load(simpleObject, 0, error), qPrintable(error));
+    QVERIFY(loadedSimple.planningArtifact().has_value());
+    QVERIFY(!loadedSimple.planningArtifact()->stale);
+    QCOMPARE(loadedSimple.planningArtifact()->identity.semantics.resolvedStrategy,
+             QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId));
+    QList<MissionItem*> mission;
+    loadedSimple.appendMissionItems(mission, this);
+    QVERIFY(mission.isEmpty());
+
+    MarineTask pendingTask = validTask();
+    pendingTask.planner.plannerId = CoverageStrategySemantics::AutoPlannerId;
+    pendingTask.region.noGoRegions.push_back(noGoRectangle());
+    _marineContext->addTask(pendingTask);
+    _item->setTaskId(QString::fromStdString(pendingTask.id));
+    QVERIFY(!_item->plan());
+    QVERIFY(_item->planningArtifact().has_value());
+    const PlanningResult& pending = _item->planningArtifact()->result;
+    QCOMPARE(pending.status, PlanningStatus::Failed);
+    QCOMPARE(pending.path.size(), std::size_t{0});
+    QVERIFY(pending.plannerSource.has_value());
+    QCOMPARE(pending.plannerSource->resolvedStrategy.strategyId,
+             std::string(CoverageStrategySemantics::BoustrophedonId));
+    QCOMPARE(pending.plannerSource->resolvedStrategy.semanticVersion,
+             std::string(CoverageStrategySemantics::BoustrophedonPendingVersion));
+
+    QJsonArray pendingSaved;
+    _item->save(pendingSaved);
+    QCOMPARE(pendingSaved.size(), 1);
+    const QJsonObject pendingObject = pendingSaved.first().toObject();
+    const QJsonObject pendingIdentity = pendingObject.value(QStringLiteral("inputIdentity")).toObject();
+    QCOMPARE(pendingIdentity.value(QStringLiteral("resolvedStrategy")).toString(),
+             QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId));
+    QCOMPARE(pendingIdentity.value(QStringLiteral("strategyVersion")).toString(),
+             QString::fromLatin1(CoverageStrategySemantics::BoustrophedonPendingVersion));
+    QVERIFY(!pendingObject.contains(QStringLiteral("plannerSource")));
+
+    CoverageInspectionComplexItem loadedPending(planController(), false, _marineContext);
+    QVERIFY2(loadedPending.load(pendingObject, 0, error), qPrintable(error));
+    QVERIFY(loadedPending.planningArtifact().has_value());
+    QVERIFY(!loadedPending.planningArtifact()->stale);
+    QCOMPARE(loadedPending.planningState(), CoverageInspectionComplexItem::Unplanned);
+    QVERIFY(loadedPending.planningResult().path.empty());
+    mission.clear();
+    loadedPending.appendMissionItems(mission, this);
+    QVERIFY(mission.isEmpty());
 }
 
 void CoverageComplexItemTest::_testClosingVertexIdentityAndPlan()

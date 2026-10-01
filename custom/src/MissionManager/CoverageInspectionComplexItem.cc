@@ -212,7 +212,7 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
                 emit taskDataChanged();
                 setDirty(true);
                 emit readyForSaveStateChanged();
-                if (_planningArtifact && (!_task() || !_planningArtifact->identity.matches(*_task()))) {
+                if (_planningArtifact && (!_task() || !_planningArtifact->identity.matchesSupported(*_task()))) {
                     invalidatePlan();
                 }
             }
@@ -561,7 +561,13 @@ bool CoverageInspectionComplexItem::plan()
         result.turnCount = 0;
     }
     const bool success = result.status == PlanningStatus::Success;
-    const auto identity = PlanningInputIdentity::fromTask(*task);
+    PlanningSemantics semantics;
+    if (result.plannerSource && !result.plannerSource->resolvedStrategy.strategyId.empty() &&
+        !result.plannerSource->resolvedStrategy.semanticVersion.empty()) {
+        semantics.resolvedStrategy = QString::fromStdString(result.plannerSource->resolvedStrategy.strategyId);
+        semantics.strategyVersion = QString::fromStdString(result.plannerSource->resolvedStrategy.semanticVersion);
+    }
+    const auto identity = PlanningInputIdentity::fromTask(*task, semantics);
     if (!identity) {
         result = {};
         result.message = "Task v3 planning inputs are incomplete or invalid";
@@ -757,7 +763,7 @@ void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
     const PlanningResult& result = _planningArtifact ? _planningArtifact->result : _planningResult;
     const PlanningInputIdentity& identity = _planningArtifact ? _planningArtifact->identity : *currentIdentity;
     QString errorString;
-    const bool matching = identity.matches(*task);
+    const bool matching = identity.matchesSupported(*task);
     if (!validateInfrastructureResult(result, matching ? task : nullptr, errorString)) {
         return;
     }
@@ -852,7 +858,7 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         return false;
     }
     const MarineTask* task = _marineContext->task(loadedTaskId);
-    const bool stale = !identity.matches(*task);
+    const bool stale = !identity.matchesSupported(*task);
 
     PlanningStatus status;
     if (!planningStatusFromString(object.value(_jsonPlanningStatusKey).toString(), status)) {

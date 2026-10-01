@@ -62,10 +62,12 @@ long double quantize(double value, double tolerance)
 CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& coverageTarget,
                                                   std::span<const Point2D> path, std::span<const PathLegRole> legRoles,
                                                   double swathWidthM, CoverageRequirement requirement,
+                                                  const PlannerStrategyIdentity& strategy,
                                                   std::string_view policySemanticVersion)
 {
     CoverageQualityEvaluation result;
     result.requirement = requirement;
+    result.strategy = strategy;
     result.policySemanticVersion = policySemanticVersion;
 
     if (coverageTarget.empty() || !std::ranges::all_of(coverageTarget, [](const PolygonRegion2D& region) {
@@ -96,6 +98,10 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
     if (policySemanticVersion != CoverageQualityPolicySemanticVersion) {
         return assessmentError(std::move(result), CoverageQualityError::UnsupportedPolicySemantics,
                                "Coverage quality policy semantics are unsupported");
+    }
+    if (strategy.strategyId.empty() || strategy.semanticVersion.empty()) {
+        return assessmentError(std::move(result), CoverageQualityError::InvalidStrategy,
+                               "Planner strategy identity must be non-empty");
     }
     if (!calculatePlanningPathMetrics(path, legRoles).has_value()) {
         return assessmentError(std::move(result), CoverageQualityError::InvalidPath,

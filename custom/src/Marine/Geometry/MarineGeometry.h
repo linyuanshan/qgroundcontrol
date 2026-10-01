@@ -57,6 +57,8 @@ struct ScanlineResult
 [[nodiscard]] ScanlineResult intersectScanline(const Polygon2D& sweepAlignedPolygon, double yM);
 /// Intersects geometry already validated by the polygon backend and aligned with the sweep frame.
 [[nodiscard]] ScanlineResult intersectScanlineForValidatedGeometry(const Polygon2D& sweepAlignedPolygon, double yM);
+[[nodiscard]] ScanlineResult intersectScanlineForValidatedGeometry(const PolygonRegionSet2D& sweepAlignedRegions,
+                                                                   double yM);
 [[nodiscard]] bool containsPoint(const Polygon2D& polygon, const Point2D& point);
 [[nodiscard]] bool containsSegment(const Polygon2D& polygon, const Point2D& first, const Point2D& second);
 /// Closed-set predicates for polygon regions: outer and hole boundaries are navigable, hole interiors are not.

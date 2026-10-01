@@ -10,9 +10,11 @@
 #include <utility>
 #include <vector>
 
+#include "AutoCoveragePlanner.h"
 #include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
+#include "CoverageStrategySemantics.h"
 #include "JsonParsing.h"
 #include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
@@ -21,6 +23,7 @@
 #include "MockCoveragePlanner.h"
 #include "PlanMasterController.h"
 #include "QmlObjectListModel.h"
+#include "SimpleMonotoneCoveragePlanner.h"
 #include "Vehicle.h"
 
 namespace {
@@ -40,14 +43,20 @@ Marine::MarinePlanContext* marinePlanContextFor(PlanMasterController* controller
     if (context == nullptr) {
         context = new Marine::MarinePlanContext(controller);
     }
-    if (context->plannerRegistry().planner("marine.coverage.mock") == nullptr) {
+    if (context->plannerRegistry().planner(Marine::CoverageStrategySemantics::MockPlannerId) == nullptr) {
         (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::MockCoveragePlanner>());
     }
-    if (context->plannerRegistry().planner("marine.coverage.lawnmower") == nullptr) {
+    if (context->plannerRegistry().planner(Marine::CoverageStrategySemantics::LawnmowerId) == nullptr) {
         (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::LawnmowerCoveragePlanner>());
     }
-    if (context->plannerRegistry().planner("marine.coverage.bcd") == nullptr) {
+    if (context->plannerRegistry().planner(Marine::CoverageStrategySemantics::BoustrophedonId) == nullptr) {
         (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::BoustrophedonCoveragePlanner>());
+    }
+    if (context->plannerRegistry().planner(Marine::CoverageStrategySemantics::SimpleMonotoneId) == nullptr) {
+        (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::SimpleMonotoneCoveragePlanner>());
+    }
+    if (context->plannerRegistry().planner(Marine::CoverageStrategySemantics::AutoPlannerId) == nullptr) {
+        (void) context->plannerRegistry().registerPlanner(std::make_shared<Marine::AutoCoveragePlanner>());
     }
     return context;
 }

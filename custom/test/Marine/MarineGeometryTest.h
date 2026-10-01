@@ -19,6 +19,8 @@ private slots:
     void _testScanlineIntervals();
     void _testScanlineVertexAndBoundaryCases();
     void _testValidatedScanlineDegeneracies();
+    void _testPolygonRegionSetScanlineUnionAndHoles();
+    void _testPolygonRegionSetScanlineValidation();
     void _testPointContainment();
     void _testSegmentContainment();
     void _testPolygonRegionSegmentContainment();

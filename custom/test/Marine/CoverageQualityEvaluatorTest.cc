@@ -38,12 +38,15 @@ std::pair<std::vector<Point2D>, std::vector<PathLegRole>> lanePath(double widthM
     return {path, roles};
 }
 
+PlannerStrategyIdentity testStrategy();
+
 CoverageQualityEvaluation evaluateRectangle(double widthM, double heightM, double swathM,
                                             const std::vector<double>& lanes,
                                             CoverageRequirement requirement = CoverageRequirement::Standard)
 {
     auto [path, roles] = lanePath(widthM, lanes);
-    return evaluateCoverageQuality({rectangle(0.0, 0.0, widthM, heightM)}, path, roles, swathM, requirement);
+    return evaluateCoverageQuality({rectangle(0.0, 0.0, widthM, heightM)}, path, roles, swathM, requirement,
+                                   testStrategy());
 }
 
 double area(const PolygonRegionSet2D& regions)
@@ -71,6 +74,11 @@ void verifySharedEvaluationTruth(const CoverageQualityEvaluation& standard, cons
     QCOMPARE(standard.wholeTargetStrictFallback, strict.wholeTargetStrictFallback);
     QCOMPARE(standard.residual.strictFallbackTargetComponents.size(),
              strict.residual.strictFallbackTargetComponents.size());
+}
+
+PlannerStrategyIdentity testStrategy()
+{
+    return {.strategyId = "marine.coverage.simple-monotone", .semanticVersion = "simple-monotone.v1"};
 }
 
 CoverageQualityEvaluation comparatorValue(double critical, double uncovered)
@@ -142,6 +150,26 @@ void CoverageQualityEvaluatorTest::_testInternalCriticalGap()
     QVERIFY(standard.criticalUncoveredAreaM2 > standard.numericalToleranceM2);
 }
 
+void CoverageQualityEvaluatorTest::_testStrategyIdentityDoesNotChangeQualityTruth()
+{
+    const PolygonRegionSet2D target{rectangle(0.0, 0.0, 100.0, 100.0)};
+    const std::vector<double> lanes{1.0,  3.0,  5.0,  7.0,  9.0,  11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0,
+                                    27.0, 29.0, 31.0, 33.0, 35.0, 37.0, 39.0, 41.0, 43.0, 45.0, 47.0, 49.0, 51.0,
+                                    53.0, 55.0, 57.0, 59.0, 61.0, 63.0, 65.0, 67.0, 69.0, 71.0, 73.0, 75.0, 77.0,
+                                    79.0, 81.0, 83.0, 85.0, 87.0, 89.0, 91.0, 93.0, 95.0, 97.0, 99.0};
+    auto [path, roles] = lanePath(100.0, lanes);
+    const auto simple =
+        evaluateCoverageQuality(target, path, roles, 2.0, CoverageRequirement::Standard, testStrategy());
+    const PlannerStrategyIdentity bcd{.strategyId = "marine.coverage.bcd", .semanticVersion = "bcd.pre-v05-06.v1"};
+    const auto boustrophedon = evaluateCoverageQuality(target, path, roles, 2.0, CoverageRequirement::Standard, bcd);
+    QVERIFY(!(simple.strategy == boustrophedon.strategy));
+    verifySharedEvaluationTruth(simple, boustrophedon);
+    QCOMPARE(simple.status, boustrophedon.status);
+    QCOMPARE(simple.passesRequirement, boustrophedon.passesRequirement);
+    QCOMPARE(simple.requirement, boustrophedon.requirement);
+    QCOMPARE(simple.policySemanticVersion, boustrophedon.policySemanticVersion);
+}
+
 void CoverageQualityEvaluatorTest::_testCoverageRatioGate()
 {
     const auto value = evaluateRectangle(20.0, 50.0, 2.0,
@@ -156,8 +184,8 @@ void CoverageQualityEvaluatorTest::_testTransitDoesNotCover()
 {
     const std::vector<Point2D> path{{-5.0, 5.0}, {15.0, 5.0}};
     const std::vector<PathLegRole> roles{PathLegRole::Transit};
-    const auto value =
-        evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0, CoverageRequirement::Standard);
+    const auto value = evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0,
+                                               CoverageRequirement::Standard, testStrategy());
     QCOMPARE(value.status, CoverageQualityStatus::Insufficient);
     QCOMPARE(value.coveredAreaM2, 0.0);
     QCOMPARE(value.uncoveredAreaM2, value.targetAreaM2);
@@ -169,8 +197,8 @@ void CoverageQualityEvaluatorTest::_testOverlappingFootprintsCountOnce()
 {
     const std::vector<Point2D> path{{0.0, 5.0}, {10.0, 5.0}, {0.0, 5.0}};
     const std::vector<PathLegRole> roles{PathLegRole::Coverage, PathLegRole::Coverage};
-    const auto value =
-        evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0, CoverageRequirement::Strict);
+    const auto value = evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0,
+                                               CoverageRequirement::Strict, testStrategy());
     QCOMPARE(value.status, CoverageQualityStatus::Insufficient);
     QVERIFY(qAbs(value.coveredAreaM2 - 20.0) < 0.02);
 }
@@ -179,8 +207,8 @@ void CoverageQualityEvaluatorTest::_testFootprintOutsideTargetIsClipped()
 {
     const std::vector<Point2D> path{{-5.0, 5.0}, {15.0, 5.0}};
     const std::vector<PathLegRole> roles{PathLegRole::Coverage};
-    const auto value =
-        evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0, CoverageRequirement::Strict);
+    const auto value = evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0,
+                                               CoverageRequirement::Strict, testStrategy());
     QCOMPARE(value.status, CoverageQualityStatus::Insufficient);
     QVERIFY(qAbs(value.coveredAreaM2 - 20.0) < 0.02);
     QVERIFY(value.coveredAreaM2 <= value.targetAreaM2);
@@ -195,7 +223,8 @@ void CoverageQualityEvaluatorTest::_testHoleCriticalCore()
         100.0, {1.0,  3.0,  5.0,  7.0,  9.0,  11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 31.0, 33.0,
                 35.0, 37.0, 39.0, 41.0, 43.0, 45.0, 47.0, 49.0, 51.0, 53.0, 55.0, 57.0, 59.0, 61.0, 63.0, 65.0, 67.0,
                 69.0, 71.0, 73.0, 75.0, 77.0, 79.0, 81.0, 83.0, 85.0, 87.0, 89.0, 91.0, 93.0, 95.0, 97.0, 99.0});
-    const auto value = evaluateCoverageQuality({target}, path, roles, 2.0, CoverageRequirement::Standard);
+    const auto value =
+        evaluateCoverageQuality({target}, path, roles, 2.0, CoverageRequirement::Standard, testStrategy());
     QVERIFY(value.status != CoverageQualityStatus::AssessmentError);
     QVERIFY(!value.residual.criticalCoverageCore.empty());
     QVERIFY(!value.residual.criticalCoverageCore.front().holes.empty());
@@ -212,13 +241,15 @@ void CoverageQualityEvaluatorTest::_testMultipleComponentsAndFallbacks()
     const PolygonRegionSet2D target{rectangle(0.0, 0.0, 10.0, 10.0), rectangle(20.0, 0.0, 30.0, 10.0)};
     const std::vector<Point2D> path{{0.0, 5.0}, {10.0, 5.0}};
     const std::vector<PathLegRole> roles{PathLegRole::Coverage};
-    const auto multi = evaluateCoverageQuality(target, path, roles, 10.0, CoverageRequirement::Standard);
+    const auto multi =
+        evaluateCoverageQuality(target, path, roles, 10.0, CoverageRequirement::Standard, testStrategy());
     QCOMPARE(multi.status, CoverageQualityStatus::Insufficient);
     QCOMPARE(multi.residual.criticalCoverageCore.size(), std::size_t{2});
 
     const PolygonRegionSet2D tinyTarget{rectangle(0.0, 0.0, 0.4, 0.4)};
     const std::vector<Point2D> tinyPath{{0.0, 0.2}, {0.4, 0.2}};
-    const auto fallback = evaluateCoverageQuality(tinyTarget, tinyPath, roles, 1.0, CoverageRequirement::Standard);
+    const auto fallback =
+        evaluateCoverageQuality(tinyTarget, tinyPath, roles, 1.0, CoverageRequirement::Standard, testStrategy());
     QVERIFY(fallback.strictFallbackTriggered);
     QVERIFY(fallback.wholeTargetStrictFallback);
     QCOMPARE(fallback.residual.strictFallbackTargetComponents.size(), std::size_t{1});
@@ -228,8 +259,8 @@ void CoverageQualityEvaluatorTest::_testTransitOnlyIsReliableInsufficient()
 {
     const std::vector<Point2D> path{{-1.0, 5.0}, {11.0, 5.0}};
     const std::vector<PathLegRole> roles{PathLegRole::Transit};
-    const auto value =
-        evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0, CoverageRequirement::Standard);
+    const auto value = evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0,
+                                               CoverageRequirement::Standard, testStrategy());
     QCOMPARE(value.status, CoverageQualityStatus::Insufficient);
     QCOMPARE(value.error, CoverageQualityError::None);
     QCOMPARE(value.coveredAreaM2, 0.0);
@@ -242,34 +273,46 @@ void CoverageQualityEvaluatorTest::_testMalformedInputs()
     const std::vector<Point2D> validPath{{0.0, 5.0}, {10.0, 5.0}};
     const std::vector<PathLegRole> validRoles{PathLegRole::Coverage};
     const PolygonRegionSet2D target{rectangle(0.0, 0.0, 10.0, 10.0)};
-    QCOMPARE(evaluateCoverageQuality({}, validPath, validRoles, 2.0, CoverageRequirement::Standard).error,
-             CoverageQualityError::InvalidTarget);
-    QCOMPARE(evaluateCoverageQuality(target, validPath, validRoles, 0.0, CoverageRequirement::Standard).error,
+    QCOMPARE(
+        evaluateCoverageQuality({}, validPath, validRoles, 2.0, CoverageRequirement::Standard, testStrategy()).error,
+        CoverageQualityError::InvalidTarget);
+    QCOMPARE(evaluateCoverageQuality(target, validPath, validRoles, 0.0, CoverageRequirement::Standard, testStrategy())
+                 .error,
              CoverageQualityError::InvalidSwathWidth);
-    QCOMPARE(evaluateCoverageQuality(target, validPath, validRoles, 2.0, static_cast<CoverageRequirement>(99)).error,
+    QCOMPARE(evaluateCoverageQuality(target, validPath, validRoles, 2.0, static_cast<CoverageRequirement>(99),
+                                     testStrategy())
+                 .error,
              CoverageQualityError::InvalidRequirement);
     const std::vector<Point2D> shortPath{{0.0, 0.0}};
-    QCOMPARE(evaluateCoverageQuality(target, shortPath, {}, 2.0, CoverageRequirement::Standard).error,
+    QCOMPARE(evaluateCoverageQuality(target, shortPath, {}, 2.0, CoverageRequirement::Standard, testStrategy()).error,
              CoverageQualityError::InvalidPath);
-    QCOMPARE(evaluateCoverageQuality(target, validPath, {}, 2.0, CoverageRequirement::Standard).error,
+    QCOMPARE(evaluateCoverageQuality(target, validPath, {}, 2.0, CoverageRequirement::Standard, testStrategy()).error,
              CoverageQualityError::InvalidPath);
     const std::vector<Point2D> nonFinite{{0.0, 0.0}, {std::numeric_limits<double>::quiet_NaN(), 1.0}};
-    QCOMPARE(evaluateCoverageQuality(target, nonFinite, validRoles, 2.0, CoverageRequirement::Standard).error,
+    QCOMPARE(evaluateCoverageQuality(target, nonFinite, validRoles, 2.0, CoverageRequirement::Standard, testStrategy())
+                 .error,
              CoverageQualityError::InvalidPath);
     const std::vector<Point2D> zeroLeg{{1.0, 1.0}, {1.0, 1.0}};
-    QCOMPARE(evaluateCoverageQuality(target, zeroLeg, validRoles, 2.0, CoverageRequirement::Standard).error,
-             CoverageQualityError::InvalidPath);
+    QCOMPARE(
+        evaluateCoverageQuality(target, zeroLeg, validRoles, 2.0, CoverageRequirement::Standard, testStrategy()).error,
+        CoverageQualityError::InvalidPath);
     const std::vector<PathLegRole> invalidRole{static_cast<PathLegRole>(99)};
-    QCOMPARE(evaluateCoverageQuality(target, validPath, invalidRole, 2.0, CoverageRequirement::Standard).error,
+    QCOMPARE(evaluateCoverageQuality(target, validPath, invalidRole, 2.0, CoverageRequirement::Standard, testStrategy())
+                 .error,
              CoverageQualityError::InvalidPath);
+    const PlannerStrategyIdentity invalidStrategy;
+    QCOMPARE(evaluateCoverageQuality(target, validPath, validRoles, 2.0, CoverageRequirement::Standard, invalidStrategy)
+                 .error,
+             CoverageQualityError::InvalidStrategy);
 }
 
 void CoverageQualityEvaluatorTest::_testUnsupportedPolicy()
 {
     const std::vector<Point2D> path{{0.0, 5.0}, {10.0, 5.0}};
     const std::vector<PathLegRole> roles{PathLegRole::Coverage};
-    const auto value = evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0,
-                                               CoverageRequirement::Standard, "coverage-quality.future");
+    const auto value =
+        evaluateCoverageQuality({rectangle(0.0, 0.0, 10.0, 10.0)}, path, roles, 2.0, CoverageRequirement::Standard,
+                                testStrategy(), "coverage-quality.future");
     QCOMPARE(value.status, CoverageQualityStatus::AssessmentError);
     QCOMPARE(value.error, CoverageQualityError::UnsupportedPolicySemantics);
 }

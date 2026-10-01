@@ -2,10 +2,13 @@
 
 #include <memory>
 
+#include "AutoCoveragePlanner.h"
 #include "BoustrophedonCoveragePlanner.h"
+#include "CoverageStrategySemantics.h"
 #include "LawnmowerCoveragePlanner.h"
 #include "MockCoveragePlanner.h"
 #include "PlannerRegistry.h"
+#include "SimpleMonotoneCoveragePlanner.h"
 
 using namespace Marine;
 
@@ -44,13 +47,24 @@ void CoveragePlannerTest::_testRegisterAndLookup()
     const auto mockPlanner = std::make_shared<MockCoveragePlanner>();
     const auto lawnmowerPlanner = std::make_shared<LawnmowerCoveragePlanner>();
     const auto bcdPlanner = std::make_shared<BoustrophedonCoveragePlanner>();
+    const auto simplePlanner = std::make_shared<SimpleMonotoneCoveragePlanner>();
+    const auto autoPlanner = std::make_shared<AutoCoveragePlanner>();
 
     QVERIFY(registry.registerPlanner(mockPlanner));
     QVERIFY(registry.registerPlanner(lawnmowerPlanner));
     QVERIFY(registry.registerPlanner(bcdPlanner));
+    QVERIFY(registry.registerPlanner(simplePlanner));
+    QVERIFY(registry.registerPlanner(autoPlanner));
     QCOMPARE(registry.planner(mockPlanner->id()), mockPlanner);
     QCOMPARE(registry.planner(lawnmowerPlanner->id()), lawnmowerPlanner);
     QCOMPARE(registry.planner(bcdPlanner->id()), bcdPlanner);
+    QCOMPARE(registry.planner(simplePlanner->id()), simplePlanner);
+    QCOMPARE(registry.planner(autoPlanner->id()), autoPlanner);
+    QCOMPARE(mockPlanner->semanticVersion(), std::string(CoverageStrategySemantics::MockVersion));
+    QCOMPARE(lawnmowerPlanner->semanticVersion(), std::string(CoverageStrategySemantics::LawnMowerVersion));
+    QCOMPARE(bcdPlanner->semanticVersion(), std::string(CoverageStrategySemantics::LegacyBoustrophedonVersion));
+    QCOMPARE(simplePlanner->semanticVersion(), std::string(CoverageStrategySemantics::SimpleMonotoneVersion));
+    QCOMPARE(autoPlanner->semanticVersion(), std::string(CoverageStrategySemantics::AutoPlannerVersion));
     QVERIFY(!registry.registerPlanner(nullptr));
 }
 

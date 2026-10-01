@@ -370,8 +370,7 @@ Marine::Geometry::ScanlineResult intersectScanlineCore(const Marine::Polygon2D& 
     return {Marine::Geometry::ScanlineStatus::Success, std::move(intervals)};
 }
 
-Marine::Geometry::ScanlineResult intersectValidatedScanlineCore(const Marine::Polygon2D& sweepAlignedPolygon,
-                                                                double yM)
+Marine::Geometry::ScanlineResult intersectValidatedScanlineCore(const Marine::Polygon2D& sweepAlignedPolygon, double yM)
 {
     std::vector<double> criticalXs;
     std::vector<Marine::Geometry::ScanlineInterval> intervals;
@@ -379,8 +378,7 @@ Marine::Geometry::ScanlineResult intersectValidatedScanlineCore(const Marine::Po
 
     for (std::size_t index = 0; index < sweepAlignedPolygon.vertices.size(); ++index) {
         const Marine::Point2D& first = sweepAlignedPolygon.vertices[index];
-        const Marine::Point2D& second =
-            sweepAlignedPolygon.vertices[(index + 1) % sweepAlignedPolygon.vertices.size()];
+        const Marine::Point2D& second = sweepAlignedPolygon.vertices[(index + 1) % sweepAlignedPolygon.vertices.size()];
         const double deltaY = second.yM - first.yM;
         if (std::abs(deltaY) <= Marine::Geometry::LengthEpsilonM) {
             if (std::abs(first.yM - yM) <= Marine::Geometry::LengthEpsilonM) {
@@ -393,8 +391,7 @@ Marine::Geometry::ScanlineResult intersectValidatedScanlineCore(const Marine::Po
 
         const double minimumY = std::min(first.yM, second.yM);
         const double maximumY = std::max(first.yM, second.yM);
-        if ((yM < minimumY - Marine::Geometry::LengthEpsilonM) ||
-            (yM > maximumY + Marine::Geometry::LengthEpsilonM)) {
+        if ((yM < minimumY - Marine::Geometry::LengthEpsilonM) || (yM > maximumY + Marine::Geometry::LengthEpsilonM)) {
             continue;
         }
 
@@ -584,6 +581,81 @@ ScanlineResult intersectScanlineForValidatedGeometry(const Polygon2D& sweepAlign
         return {ScanlineStatus::InvalidInput, {}};
     }
     return intersectValidatedScanlineCore(sweepAlignedPolygon, yM);
+}
+
+ScanlineResult intersectScanlineForValidatedGeometry(const PolygonRegionSet2D& sweepAlignedRegions, double yM)
+{
+    if (!std::isfinite(yM) || sweepAlignedRegions.empty() ||
+        !std::ranges::all_of(sweepAlignedRegions, isValidPolygonRegion)) {
+        return {ScanlineStatus::InvalidInput, {}};
+    }
+
+    const auto mergeIntervals = [](std::vector<ScanlineInterval> intervals) {
+        std::ranges::sort(intervals, [](const ScanlineInterval& first, const ScanlineInterval& second) {
+            return first.minimumXM < second.minimumXM ||
+                   (first.minimumXM == second.minimumXM && first.maximumXM < second.maximumXM);
+        });
+        std::vector<ScanlineInterval> merged;
+        for (const ScanlineInterval& interval : intervals) {
+            if (!merged.empty() && interval.minimumXM <= merged.back().maximumXM) {
+                merged.back().maximumXM = std::max(merged.back().maximumXM, interval.maximumXM);
+            } else {
+                merged.push_back(interval);
+            }
+        }
+        return merged;
+    };
+
+    std::vector<ScanlineInterval> outerIntervals;
+    std::vector<ScanlineInterval> holeIntervals;
+    for (const PolygonRegion2D& region : sweepAlignedRegions) {
+        const ScanlineResult outer = intersectScanlineForValidatedGeometry(region.outerBoundary, yM);
+        if (outer.status == ScanlineStatus::InvalidInput || outer.status == ScanlineStatus::GeometryFailure) {
+            return {outer.status, {}};
+        }
+        outerIntervals.insert(outerIntervals.end(), outer.intervals.begin(), outer.intervals.end());
+        for (const Polygon2D& hole : region.holes) {
+            const ScanlineResult holeIntersection = intersectScanlineForValidatedGeometry(hole, yM);
+            if (holeIntersection.status == ScanlineStatus::InvalidInput ||
+                holeIntersection.status == ScanlineStatus::GeometryFailure) {
+                return {holeIntersection.status, {}};
+            }
+            holeIntervals.insert(holeIntervals.end(), holeIntersection.intervals.begin(),
+                                 holeIntersection.intervals.end());
+        }
+    }
+    outerIntervals = mergeIntervals(std::move(outerIntervals));
+    holeIntervals = mergeIntervals(std::move(holeIntervals));
+    if (outerIntervals.empty()) {
+        return {ScanlineStatus::NoIntersection, {}};
+    }
+
+    std::vector<ScanlineInterval> freeIntervals;
+    for (const ScanlineInterval& outer : outerIntervals) {
+        double cursor = outer.minimumXM;
+        for (const ScanlineInterval& hole : holeIntervals) {
+            if (hole.maximumXM <= cursor || hole.minimumXM >= outer.maximumXM) {
+                continue;
+            }
+            const double cutStart = std::clamp(hole.minimumXM, outer.minimumXM, outer.maximumXM);
+            const double cutEnd = std::clamp(hole.maximumXM, outer.minimumXM, outer.maximumXM);
+            if (cutStart > cursor) {
+                freeIntervals.push_back({cursor, cutStart});
+            }
+            cursor = std::max(cursor, cutEnd);
+            if (cursor >= outer.maximumXM) {
+                break;
+            }
+        }
+        if (cursor < outer.maximumXM) {
+            freeIntervals.push_back({cursor, outer.maximumXM});
+        }
+    }
+    freeIntervals = mergeIntervals(std::move(freeIntervals));
+    std::erase_if(freeIntervals,
+                  [](const ScanlineInterval& interval) { return interval.maximumXM <= interval.minimumXM; });
+    return freeIntervals.empty() ? ScanlineResult{ScanlineStatus::NoIntersection, {}}
+                                 : ScanlineResult{ScanlineStatus::Success, std::move(freeIntervals)};
 }
 
 bool containsPoint(const Polygon2D& polygon, const Point2D& point)

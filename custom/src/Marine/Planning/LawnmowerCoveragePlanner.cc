@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "CoverageProblemValidator.h"
+#include "CoverageStrategySemantics.h"
 #include "Geometry/MarineGeometry.h"
 #include "MonotoneCoverage.h"
 
@@ -151,7 +152,12 @@ namespace Marine {
 
 std::string LawnmowerCoveragePlanner::id() const
 {
-    return "marine.coverage.lawnmower";
+    return CoverageStrategySemantics::LawnmowerId;
+}
+
+std::string LawnmowerCoveragePlanner::semanticVersion() const
+{
+    return CoverageStrategySemantics::LawnMowerVersion;
 }
 
 std::string LawnmowerCoveragePlanner::displayName() const
@@ -189,6 +195,11 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
             generateCandidate(normalizedProblem, inset.polygon, normalizedProblem.requestedSweepAngleDeg);
         if (solution.status == PlanningStatus::Success) {
             solution.message = "Manual lawnmower coverage path generated";
+            solution.plannerSource =
+                PlannerSourceInfo{.requestedPlannerId = id(),
+                                  .resolvedStrategy = {.strategyId = id(), .semanticVersion = semanticVersion()},
+                                  .requestedSweepMode = problem.sweepAngleMode,
+                                  .selectedSweepAngleDeg = solution.selectedSweepAngleDeg};
         }
         return solution;
     }
@@ -222,6 +233,11 @@ CoveragePlanningSolution LawnmowerCoveragePlanner::plan(const CoveragePlanningPr
                                "No edge-angle candidate produced a safe coverage path");
     }
     bestSolution.message = "Automatic lawnmower coverage path generated";
+    bestSolution.plannerSource =
+        PlannerSourceInfo{.requestedPlannerId = id(),
+                          .resolvedStrategy = {.strategyId = id(), .semanticVersion = semanticVersion()},
+                          .requestedSweepMode = problem.sweepAngleMode,
+                          .selectedSweepAngleDeg = bestSolution.selectedSweepAngleDeg};
     return bestSolution;
 }
 

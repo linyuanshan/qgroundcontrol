@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "CoverageProblemValidator.h"
+#include "CoverageStrategySemantics.h"
 
 namespace {
 
@@ -31,7 +32,12 @@ namespace Marine {
 
 std::string MockCoveragePlanner::id() const
 {
-    return "marine.coverage.mock";
+    return CoverageStrategySemantics::MockPlannerId;
+}
+
+std::string MockCoveragePlanner::semanticVersion() const
+{
+    return CoverageStrategySemantics::MockVersion;
 }
 
 std::string MockCoveragePlanner::displayName() const
@@ -82,6 +88,11 @@ CoveragePlanningSolution MockCoveragePlanner::plan(const CoveragePlanningProblem
     solution.cellCount = 1;
     solution.turnCount = 1;
     solution.message = "Architecture test path generated. Not for field operation";
+    solution.plannerSource =
+        PlannerSourceInfo{.requestedPlannerId = id(),
+                          .resolvedStrategy = {.strategyId = id(), .semanticVersion = semanticVersion()},
+                          .requestedSweepMode = problem.sweepAngleMode,
+                          .selectedSweepAngleDeg = solution.selectedSweepAngleDeg};
     return solution;
 }
 

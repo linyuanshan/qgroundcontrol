@@ -69,6 +69,10 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Mission/ArduPilotMissionAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/ICoveragePlanner.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlannerSource.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageStrategySemantics.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/AutoCoveragePlanner.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/AutoCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/LawnmowerCoveragePlanner.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/LawnmowerCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MonotoneCoverage.cc
@@ -112,6 +116,10 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlanningResult.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/SimpleMonotoneCapability.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/SimpleMonotoneCapability.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/SimpleMonotoneCoveragePlanner.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/SimpleMonotoneCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlannerRegistry.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlannerRegistry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC/MarinePlanContext.cc
@@ -130,6 +138,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/ArduPilotMissionAdapterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlannerTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/AutoCoveragePlannerTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/AutoCoveragePlannerTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageGeometryTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageGeometryTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageSafetyTest.cc
@@ -142,6 +152,10 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageQualityEvaluatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageTaskAdapterTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/SimpleMonotoneCapabilityTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/SimpleMonotoneCapabilityTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/SimpleMonotoneCoveragePlannerTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/SimpleMonotoneCoveragePlannerTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeoReferenceTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeoReferenceTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GeometryTypesTest.cc
@@ -286,6 +300,17 @@ if(QGC_BUILD_TESTING)
         "${CMAKE_SOURCE_DIR}"
         CALL
         add_qgc_test
+        AutoCoveragePlannerTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
         BoustrophedonCoveragePlannerTest
         LABELS
         Unit
@@ -320,6 +345,28 @@ if(QGC_BUILD_TESTING)
         CALL
         add_qgc_test
         BoundaryCoverageSupportTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        SimpleMonotoneCapabilityTest
+        LABELS
+        Unit
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        SimpleMonotoneCoveragePlannerTest
         LABELS
         Unit
     )

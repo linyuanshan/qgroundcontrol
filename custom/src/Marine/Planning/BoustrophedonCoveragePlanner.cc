@@ -10,6 +10,7 @@
 #include "CoverageFreeSpace.h"
 #include "CoverageProblemValidator.h"
 #include "CoverageQualityEvaluator.h"
+#include "CoverageStrategySemantics.h"
 #include "Geometry/MarineGeometry.h"
 #include "GlobalSweepSelector.h"
 #include "GreedyCellOrdering.h"
@@ -37,7 +38,12 @@ namespace Marine {
 
 std::string BoustrophedonCoveragePlanner::id() const
 {
-    return "marine.coverage.bcd";
+    return CoverageStrategySemantics::BoustrophedonId;
+}
+
+std::string BoustrophedonCoveragePlanner::semanticVersion() const
+{
+    return CoverageStrategySemantics::LegacyBoustrophedonVersion;
 }
 
 std::string BoustrophedonCoveragePlanner::displayName() const
@@ -120,17 +126,32 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
     }
 
     const PolygonRegionSet2D coverageTarget{freeSpace.freeSpace.coverageTarget};
+    const PlannerStrategyIdentity strategy{.strategyId = id(), .semanticVersion = semanticVersion()};
     CoverageQualityEvaluation quality =
         evaluateCoverageQuality(coverageTarget, assembly.path, assembly.legRoles, normalizedProblem.swathWidthM,
-                                normalizedProblem.coverageRequirement);
+                                normalizedProblem.coverageRequirement, strategy);
     if (quality.status == CoverageQualityStatus::Insufficient) {
         CoveragePlanningSolution failed = failure(CoveragePlanningError::CoverageIncomplete, quality.message);
         failed.coverageQuality = std::move(quality);
+        failed.plannerSource = PlannerSourceInfo{
+            .requestedPlannerId = id(),
+            .resolvedStrategy = strategy,
+            .requestedSweepMode = problem.sweepAngleMode,
+            .selectedSweepAngleDeg = selectedSweepAngleDeg,
+            .sweepSemanticVersion =
+                problem.sweepAngleMode == SweepAngleMode::Auto ? CoverageStrategySemantics::GlobalSweepVersion : ""};
         return failed;
     }
     if (quality.status == CoverageQualityStatus::AssessmentError) {
         CoveragePlanningSolution failed = failure(CoveragePlanningError::GeometryFailure, quality.message);
         failed.coverageQuality = std::move(quality);
+        failed.plannerSource = PlannerSourceInfo{
+            .requestedPlannerId = id(),
+            .resolvedStrategy = strategy,
+            .requestedSweepMode = problem.sweepAngleMode,
+            .selectedSweepAngleDeg = selectedSweepAngleDeg,
+            .sweepSemanticVersion =
+                problem.sweepAngleMode == SweepAngleMode::Auto ? CoverageStrategySemantics::GlobalSweepVersion : ""};
         return failed;
     }
 
@@ -146,6 +167,13 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
     solution.turnCount = assembly.turnCount;
     solution.error = CoveragePlanningError::None;
     solution.coverageQuality = std::move(quality);
+    solution.plannerSource = PlannerSourceInfo{
+        .requestedPlannerId = id(),
+        .resolvedStrategy = strategy,
+        .requestedSweepMode = problem.sweepAngleMode,
+        .selectedSweepAngleDeg = selectedSweepAngleDeg,
+        .sweepSemanticVersion =
+            problem.sweepAngleMode == SweepAngleMode::Auto ? CoverageStrategySemantics::GlobalSweepVersion : ""};
     solution.message = "Boustrophedon coverage path generated and quality assessed";
     return solution;
 }

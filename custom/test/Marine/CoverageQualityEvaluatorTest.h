@@ -12,6 +12,7 @@ private slots:
     void _testBoundaryOnlyShortfall();
     void _testInternalCriticalGap();
     void _testCoverageRatioGate();
+    void _testStrategyIdentityDoesNotChangeQualityTruth();
     void _testTransitDoesNotCover();
     void _testOverlappingFootprintsCountOnce();
     void _testFootprintOutsideTargetIsClipped();

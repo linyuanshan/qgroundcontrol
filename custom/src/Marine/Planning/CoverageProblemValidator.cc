@@ -101,6 +101,8 @@ PlanningStatus CoverageProblemValidator::statusForError(CoveragePlanningError er
         case CoveragePlanningError::CellCoverageFailed:
         case CoveragePlanningError::SafeTransitNotFound:
         case CoveragePlanningError::CoverageIncomplete:
+        case CoveragePlanningError::UnsupportedStrategyCapability:
+        case CoveragePlanningError::ResolvedStrategyUnavailable:
             return PlanningStatus::Failed;
     }
     return PlanningStatus::Failed;
@@ -181,6 +183,10 @@ std::string CoverageProblemValidator::messageForError(CoveragePlanningError erro
             return "No safe static transit route exists between the requested points";
         case CoveragePlanningError::CoverageIncomplete:
             return "The nominal coverage footprint leaves part of the coverage target uncovered";
+        case CoveragePlanningError::UnsupportedStrategyCapability:
+            return "SimpleMonotone does not support the current target topology or selected sweep";
+        case CoveragePlanningError::ResolvedStrategyUnavailable:
+            return "Auto resolved this task to the v0.5 BCD strategy, which is implemented in V05-06";
     }
     return "Coverage planning failed";
 }

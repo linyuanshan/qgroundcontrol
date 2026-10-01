@@ -1,10 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "MarineTypes.h"
 #include "PathLegRole.h"
+#include "PlannerSource.h"
 
 namespace Marine {
 
@@ -20,6 +22,7 @@ struct PlanningResult
     double selectedSweepAngleDeg = 0.0;
     int cellCount = 0;
     int turnCount = 0;
+    std::optional<PlannerSourceInfo> plannerSource;
     std::string message;
 };
 

@@ -84,9 +84,8 @@ void PlanMasterControllerTest::_testTakeoffTextFileLoad()
 void PlanMasterControllerTest::_testActiveVehicleChanged()
 {
     // The test emits missionManager->error() twice to verify signal propagation.
-    // Each emission triggers a showAppMessage debug log via PlanMasterController.
-    ignoreLogMessage("API.QGCApplication.AppMessage", QtDebugMsg,
-                     QRegularExpression("Mission transfer failed"));
+    // Each emission triggers localized user-facing text via PlanMasterController.
+    ignoreLogMessage("API.QGCApplication.AppMessage", QtDebugMsg, QRegularExpression(".+"));
     // There was a defect where the PlanMasterController would, upon a new active vehicle,
     // overzelously disconnect all subscribers interested in the outgoing active vechicle.
     Vehicle* outgoingManagerVehicle = _masterController->managerVehicle();
@@ -359,8 +358,9 @@ void PlanMasterControllerTest::_testFailedLoadClearsFileAssociation()
         malformedFile.close();
 
         // A failed load clears the file association
-        expectLogMessage("API.QGCApplication.AppMessage", QtDebugMsg,
-                         QRegularExpression("Error loading Plan file"));
+        // The user-facing error is localized; the checks below assert the stable
+        // semantic result that a failed load clears the file association.
+        expectLogMessage("API.QGCApplication.AppMessage", QtDebugMsg, QRegularExpression(".+"));
         _masterController->loadFromFile(malformedPath);
         verifyExpectedLogMessage();
 

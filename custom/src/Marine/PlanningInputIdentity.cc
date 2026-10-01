@@ -122,6 +122,18 @@ bool PlanningInputIdentity::matches(const MarineTask& task, const PlanningSemant
     return current.has_value() && *this == *current;
 }
 
+bool PlanningInputIdentity::matchesSupported(const MarineTask& task) const
+{
+    if ((encodingVersion != 1) ||
+        (semantics.planningVersion != QString::fromLatin1(CoverageStrategySemantics::PlanningSemanticsVersion)) ||
+        (semantics.policyVersion != QString::fromLatin1(CoverageQualityPolicySemanticVersion)) ||
+        !CoverageStrategySemantics::isSupportedStrategySemantic(semantics.resolvedStrategy.toStdString(),
+                                                                semantics.strategyVersion.toStdString())) {
+        return false;
+    }
+    return matches(task, semantics);
+}
+
 QJsonObject PlanningInputIdentity::toJson() const
 {
     return {{"encodingVersion", encodingVersion},           {"planningVersion", semantics.planningVersion},

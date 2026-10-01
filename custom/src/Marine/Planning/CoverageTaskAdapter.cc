@@ -96,6 +96,7 @@ PlanningResult CoverageTaskAdapter::toPlanningResult(const CoveragePlanningSolut
     PlanningResult result;
     result.status = solution.status;
     result.message = solution.message;
+    result.plannerSource = solution.plannerSource;
     if (solution.status != PlanningStatus::Success) {
         return result;
     }

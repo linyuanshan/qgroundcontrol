@@ -32,10 +32,9 @@ const size_t MissionManagerTest::_cTestCases = sizeof(_rgTestCases) / sizeof(_rg
 void MissionManagerTest::init()
 {
     MissionControllerManagerTest::init();
-    // All failure-handling tests deliberately trigger mission transfer failures which
-    // cause showAppMessage() debug logs. Ignore them for the whole fixture.
-    ignoreLogMessage("API.QGCApplication.AppMessage", QtDebugMsg,
-                     QRegularExpression("Mission transfer failed"));
+    // Failure-handling tests assert protocol state and signals. The AppMessage text is
+    // localized, so ignore any non-empty debug message for the fixture.
+    ignoreLogMessage("API.QGCApplication.AppMessage", QtDebugMsg, QRegularExpression(".+"));
     // ArduPilot metadata includes an invalid enum value for RTL_CONE_SLOPE; skip warning is expected.
     ignoreLogMessage("FirmwarePlugin.ParameterMetaData", QtWarningMsg,
                      QRegularExpression("Skipping invalid enum value"));

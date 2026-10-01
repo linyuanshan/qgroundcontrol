@@ -11,5 +11,7 @@ private slots:
     void _testCanonicalGeometry();
     void _testNonPlanningFields();
     void _testSemanticIdentity();
+    void _testPlanningAndResolvedSemanticFingerprints();
+    void _testSupportedSemanticMatching();
     void _testInvalidIdentity();
 };

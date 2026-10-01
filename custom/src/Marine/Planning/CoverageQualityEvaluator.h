@@ -9,6 +9,7 @@
 #include "Geometry/PolygonRegion.h"
 #include "MarineTask.h"
 #include "PathLegRole.h"
+#include "PlannerSource.h"
 
 namespace Marine {
 
@@ -27,6 +28,7 @@ enum class CoverageQualityError
     InvalidPath,
     InvalidSwathWidth,
     InvalidRequirement,
+    InvalidStrategy,
     UnsupportedPolicySemantics,
     GeometryFailure,
     NumericalFailure,
@@ -53,6 +55,7 @@ struct CoverageQualityEvaluation
 {
     CoverageQualityStatus status = CoverageQualityStatus::AssessmentError;
     CoverageQualityError error = CoverageQualityError::None;
+    PlannerStrategyIdentity strategy;
     CoverageRequirement requirement = CoverageRequirement::Standard;
     std::string policySemanticVersion;
     double targetAreaM2 = 0.0;
@@ -70,7 +73,7 @@ struct CoverageQualityEvaluation
 
 [[nodiscard]] CoverageQualityEvaluation evaluateCoverageQuality(
     const PolygonRegionSet2D& coverageTarget, std::span<const Point2D> path, std::span<const PathLegRole> legRoles,
-    double swathWidthM, CoverageRequirement requirement,
+    double swathWidthM, CoverageRequirement requirement, const PlannerStrategyIdentity& strategy,
     std::string_view policySemanticVersion = CoverageQualityPolicySemanticVersion);
 
 [[nodiscard]] CoverageQualityComparison compareCoverageQuality(const CoverageQualityEvaluation& left,

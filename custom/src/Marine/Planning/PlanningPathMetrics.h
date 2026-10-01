@@ -16,6 +16,7 @@ struct PlanningPathMetrics
     double coverageLengthM = 0.0;
     double transitLengthM = 0.0;
     double pathLengthM = 0.0;
+    int turnCount = 0;
 };
 
 /// Validates the complete canonical path and derives lengths from its actual legs.
