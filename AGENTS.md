@@ -50,10 +50,10 @@ V05 governance state:
 | Complete | V05-02 production implementation |
 | Complete | V05-03 production implementation |
 | Complete | V05-04 production implementation |
-| Authorized | V05-05 production implementation |
+| Complete | V05-05 production implementation |
 
-V05-05 implementation is explicitly authorized by the project owner.
-After implementation, stop for independent review. V05-06 and later packages remain unauthorized.
+V05-05 production implementation is complete and has passed independent review.
+V05-06 and later packages remain unauthorized.
 
 V05-01 must not begin until the pre-V05-01 gate is completed and the project owner explicitly
 authorizes
