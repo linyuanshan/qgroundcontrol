@@ -70,8 +70,8 @@ void SimpleMonotoneCoveragePlannerTest::_testMetadataAndRectangle()
     QCOMPARE(planner.semanticVersion(), std::string(CoverageStrategySemantics::SimpleMonotoneVersion));
     QCOMPARE(solution.status, PlanningStatus::Success);
     QCOMPARE(solution.error, CoveragePlanningError::None);
-    QVERIFY(solution.coverageQuality.has_value());
-    QVERIFY(solution.coverageQuality->passesRequirement);
+    QVERIFY(solution.outcome.coverageQuality.has_value());
+    QVERIFY(solution.outcome.coverageQuality->passesRequirement);
     QVERIFY(solution.plannerSource.has_value());
     QCOMPARE(solution.plannerSource->requestedPlannerId, std::string(CoverageStrategySemantics::SimpleMonotoneId));
     QCOMPARE(solution.plannerSource->resolvedStrategy.semanticVersion,
@@ -128,8 +128,8 @@ void SimpleMonotoneCoveragePlannerTest::_testExecutionMarginAndPreferredTier()
     const CoveragePlanningSolution solution = SimpleMonotoneCoveragePlanner{}.plan(problem);
 
     QCOMPARE(solution.status, PlanningStatus::Success);
-    QVERIFY(solution.coverageQuality.has_value());
-    QVERIFY(solution.coverageQuality->passesRequirement);
+    QVERIFY(solution.outcome.coverageQuality.has_value());
+    QVERIFY(solution.outcome.coverageQuality->passesRequirement);
     QCOMPARE(solution.path.size() >= 2, true);
 }
 
@@ -141,8 +141,8 @@ void SimpleMonotoneCoveragePlannerTest::_testHardPassOutranksPreferredInsufficie
     const CoveragePlanningSolution solution = SimpleMonotoneCoveragePlanner{}.plan(problem);
 
     QCOMPARE(solution.status, PlanningStatus::Success);
-    QVERIFY(solution.coverageQuality.has_value());
-    QVERIFY(solution.coverageQuality->passesRequirement);
+    QVERIFY(solution.outcome.coverageQuality.has_value());
+    QVERIFY(solution.outcome.coverageQuality->passesRequirement);
     const auto safety = buildSafetyTrackRegions(problem.region, problem.safety, problem.executionSafety);
     QCOMPARE(safety.error, CoveragePlanningError::None);
     bool preferred = true;
@@ -155,7 +155,7 @@ void SimpleMonotoneCoveragePlannerTest::_testHardPassOutranksPreferredInsufficie
     QVERIFY(!preferred);
 }
 
-void SimpleMonotoneCoveragePlannerTest::_testIncompleteAndAssessmentErrorDoNotReturnPath()
+void SimpleMonotoneCoveragePlannerTest::_testIncompleteAndAssessmentErrorRetainReviewPath()
 {
     CoveragePlanningProblem incomplete =
         simpleProblem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(0.0, 0.0, 20.0, 20.0));
@@ -164,19 +164,21 @@ void SimpleMonotoneCoveragePlannerTest::_testIncompleteAndAssessmentErrorDoNotRe
     // Boundary support may now satisfy Standard; Strict retains the irreducible corner deficit.
     incomplete.coverageRequirement = CoverageRequirement::Strict;
     const CoveragePlanningSolution failedCoverage = SimpleMonotoneCoveragePlanner{}.plan(incomplete);
-    QCOMPARE(failedCoverage.status, PlanningStatus::Failed);
-    QCOMPARE(failedCoverage.error, CoveragePlanningError::CoverageIncomplete);
-    QVERIFY(failedCoverage.path.empty());
-    QCOMPARE(failedCoverage.coverageQuality->status, CoverageQualityStatus::Insufficient);
+    QCOMPARE(failedCoverage.status, PlanningStatus::Success);
+    QCOMPARE(failedCoverage.outcome.readiness, MissionReadiness::ReviewRequired);
+    QCOMPARE(failedCoverage.error, CoveragePlanningError::None);
+    QVERIFY(!failedCoverage.path.empty());
+    QCOMPARE(failedCoverage.outcome.coverageQuality->status, CoverageQualityStatus::Insufficient);
 
     CoveragePlanningProblem assessmentError =
         simpleProblem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(-5.0, -5.0, 25.0, 25.0), 1.0e150);
     const CoveragePlanningSolution failedAssessment = SimpleMonotoneCoveragePlanner{}.plan(assessmentError);
-    QCOMPARE(failedAssessment.status, PlanningStatus::Failed);
-    QCOMPARE(failedAssessment.error, CoveragePlanningError::GeometryFailure);
-    QVERIFY(failedAssessment.path.empty());
-    QVERIFY(failedAssessment.coverageQuality.has_value());
-    QCOMPARE(failedAssessment.coverageQuality->status, CoverageQualityStatus::AssessmentError);
+    QCOMPARE(failedAssessment.status, PlanningStatus::Success);
+    QCOMPARE(failedAssessment.outcome.readiness, MissionReadiness::ReviewRequired);
+    QCOMPARE(failedAssessment.error, CoveragePlanningError::None);
+    QVERIFY(!failedAssessment.path.empty());
+    QVERIFY(failedAssessment.outcome.coverageQuality.has_value());
+    QCOMPARE(failedAssessment.outcome.coverageQuality->status, CoverageQualityStatus::AssessmentError);
 }
 
 void SimpleMonotoneCoveragePlannerTest::_testDirectCapabilityFailureDoesNotEscalate()

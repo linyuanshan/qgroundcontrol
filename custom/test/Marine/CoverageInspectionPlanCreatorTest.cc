@@ -128,7 +128,7 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
     QVERIFY(!coverageItem->plan());
     QVERIFY(coverageItem->planningResult().path.empty());
 
-    // Explicit historical planner exercises 2D creation without implementing Auto resolution.
+    // Explicit v0.5 BCD exercises creation and integrated certification.
     MarineTask task = *_marineContext->task(coverageItem->taskId().toStdString());
     task.planner.plannerId = "marine.coverage.bcd";
     task.safety.hardSafetyMarginM = 0.0;
@@ -161,10 +161,10 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
         QVERIFY(point.latitudeDeg >= -90.0 && point.latitudeDeg <= 90.0);
         QVERIFY(point.longitudeDeg >= -180.0 && point.longitudeDeg <= 180.0);
     }
-    QVERIFY(coverageItem->planningResult().path.empty());
+    QVERIFY(!coverageItem->planningResult().path.empty());
     QList<MissionItem*> missionItems;
     coverageItem->appendMissionItems(missionItems, this);
-    QVERIFY(missionItems.isEmpty());
+    QCOMPARE(missionItems.size(), static_cast<qsizetype>(result.path.size()));
 }
 
 UT_REGISTER_TEST(CoverageInspectionPlanCreatorTest, TestLabel::Unit, TestLabel::MissionManager)

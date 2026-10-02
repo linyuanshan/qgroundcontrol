@@ -86,6 +86,8 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
     }
     result.targetAreaM2 = targetArea.areaM2;
     result.numericalToleranceM2 = areaTolerance(targetArea.areaM2);
+    result.availability.targetArea = true;
+    result.availability.numericalTolerance = true;
 
     if (!std::isfinite(swathWidthM) || (swathWidthM <= 0.0)) {
         return assessmentError(std::move(result), CoverageQualityError::InvalidSwathWidth,
@@ -127,6 +129,8 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
         return assessmentError(std::move(result), CoverageQualityError::GeometryFailure,
                                "Coverage residual boolean operation failed");
     }
+    result.residual.uncoveredRegion = uncovered.regions;
+    result.availability.uncovered = true;
     const Geometry::PolygonRegionAreaResult uncoveredArea = Geometry::polygonRegionArea(uncovered.regions);
     if (uncoveredArea.status != Geometry::PolygonRegionOperationStatus::Success) {
         return assessmentError(std::move(result), CoverageQualityError::GeometryFailure,
@@ -144,7 +148,9 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
     result.coveredAreaM2 = coveredM2;
     result.uncoveredAreaM2 = uncoveredM2;
     result.coverageRatio = coveredM2 / result.targetAreaM2;
-    result.residual.uncoveredRegion = uncovered.regions;
+    result.availability.coveredArea = true;
+    result.availability.uncoveredArea = true;
+    result.availability.ratio = true;
 
     bool componentFallbacksPass = true;
     for (const PolygonRegion2D& component : coverageTarget) {
@@ -197,6 +203,8 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
                                "Critical coverage core union failed");
     }
     result.residual.criticalCoverageCore = normalizedCore.regions;
+    result.availability.criticalCore = true;
+    result.availability.fallbackComponents = true;
     const Geometry::PolygonRegionAreaResult combinedCoreArea =
         Geometry::polygonRegionArea(result.residual.criticalCoverageCore);
     if (combinedCoreArea.status != Geometry::PolygonRegionOperationStatus::Success ||
@@ -218,6 +226,7 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
                                "Boundary shortfall difference failed");
     }
     result.residual.boundaryShortfallRegion = boundaryShortfall.regions;
+    result.availability.boundaryShortfall = true;
 
     // Reconstruct the critical residual relative to the fixed uncovered subject, not a generic intersection.
     const Geometry::PolygonRegionOperationResult criticalUncovered =
@@ -227,6 +236,7 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
                                "Critical uncovered reconstruction failed");
     }
     result.residual.criticalUncoveredRegion = criticalUncovered.regions;
+    result.availability.criticalUncovered = true;
     const Geometry::PolygonRegionAreaResult criticalArea = Geometry::polygonRegionArea(criticalUncovered.regions);
     if (criticalArea.status != Geometry::PolygonRegionOperationStatus::Success) {
         return assessmentError(std::move(result), CoverageQualityError::GeometryFailure,
@@ -248,6 +258,7 @@ CoverageQualityEvaluation evaluateCoverageQuality(const PolygonRegionSet2D& cove
                                "Boundary shortfall area is numerically inconsistent");
     }
     result.criticalUncoveredAreaM2 = std::clamp(criticalArea.areaM2, 0.0, uncoveredM2);
+    result.availability.criticalUncoveredArea = true;
 
     if (uncoveredM2 <= toleranceM2) {
         result.status = CoverageQualityStatus::Complete;

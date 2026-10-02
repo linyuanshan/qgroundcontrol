@@ -42,16 +42,35 @@ enum class CoverageQualityComparison
     NotComparable,
 };
 
-struct CoverageQualityResidualGeometry
+template <typename RegionSet>
+struct CoverageResidualGeometry
 {
-    PolygonRegionSet2D criticalCoverageCore;
-    PolygonRegionSet2D uncoveredRegion;
-    PolygonRegionSet2D criticalUncoveredRegion;
-    PolygonRegionSet2D boundaryShortfallRegion;
-    PolygonRegionSet2D strictFallbackTargetComponents;
+    RegionSet criticalCoverageCore;
+    RegionSet uncoveredRegion;
+    RegionSet criticalUncoveredRegion;
+    RegionSet boundaryShortfallRegion;
+    RegionSet strictFallbackTargetComponents;
 };
 
-struct CoverageQualityEvaluation
+struct CoverageQualityAvailability
+{
+    bool targetArea = false;
+    bool coveredArea = false;
+    bool uncoveredArea = false;
+    bool ratio = false;
+    bool criticalUncoveredArea = false;
+    bool numericalTolerance = false;
+    bool criticalCore = false;
+    bool uncovered = false;
+    bool criticalUncovered = false;
+    bool boundaryShortfall = false;
+    bool fallbackComponents = false;
+
+    bool operator==(const CoverageQualityAvailability&) const = default;
+};
+
+template <typename RegionSet>
+struct CoverageEvaluation
 {
     CoverageQualityStatus status = CoverageQualityStatus::AssessmentError;
     CoverageQualityError error = CoverageQualityError::None;
@@ -67,9 +86,14 @@ struct CoverageQualityEvaluation
     bool passesRequirement = false;
     bool strictFallbackTriggered = false;
     bool wholeTargetStrictFallback = false;
-    CoverageQualityResidualGeometry residual;
+    CoverageQualityAvailability availability;
+    CoverageResidualGeometry<RegionSet> residual;
     std::string message;
 };
+
+using CoverageQualityResidualGeometry = CoverageResidualGeometry<PolygonRegionSet2D>;
+using CoverageQualityEvaluation = CoverageEvaluation<PolygonRegionSet2D>;
+using GeoCoverageQualityEvaluation = CoverageEvaluation<GeoPolygonRegionSet>;
 
 [[nodiscard]] CoverageQualityEvaluation evaluateCoverageQuality(
     const PolygonRegionSet2D& coverageTarget, std::span<const Point2D> path, std::span<const PathLegRole> legRoles,

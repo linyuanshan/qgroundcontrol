@@ -35,7 +35,7 @@ void PlanningInputIdentityTest::_testPlanningFields()
     const auto task = input();
     const auto identity = PlanningInputIdentity::fromTask(task);
     QVERIFY(identity.has_value());
-    QCOMPARE(identity->fingerprint, QStringLiteral("1ca08ed4daef1c9b516266caf053ed7369f8909e12a4338675115bfd201ed4a8"));
+    QCOMPARE(identity->fingerprint, QStringLiteral("51f684c03747ac2e9bb338e6395685447f0e7ebdbda206e79fcf8f6c7f78236e"));
     QCOMPARE(PlanningInputIdentity::fromTask(task)->fingerprint, identity->fingerprint);
     const std::vector<std::function<void(MarineTask&)>> changes = {
         [](auto& t) { t.region.coverageBoundary.vertices[0].latitudeDeg += 0.01; },
@@ -138,14 +138,14 @@ void PlanningInputIdentityTest::_testPlanningAndResolvedSemanticFingerprints()
     semantics.strategyVersion = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion);
     const auto resolved = PlanningInputIdentity::fromTask(task, semantics);
     QVERIFY(resolved.has_value());
-    QCOMPARE(resolved->fingerprint, QStringLiteral("5a95cc6ccab5dbf53a2663e7324e54f7368bdba19b3b6ac63ace9a15bd8ca7b6"));
+    QCOMPARE(resolved->fingerprint, QStringLiteral("1c6ad106603bce501ee0b3d265e6fa613018aabcd6feaa321f0cf104df29336e"));
 
     semantics.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId);
     semantics.strategyVersion = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion);
     const auto bcdResolved = PlanningInputIdentity::fromTask(task, semantics);
     QVERIFY(bcdResolved.has_value());
     QCOMPARE(bcdResolved->fingerprint,
-             QStringLiteral("b1910e0795b3ad2f1da551c25a79df5316025f6b30adf3d062b45e2121b2e434"));
+             QStringLiteral("5d2dd8d5f794504c58115321b89fb33640a724a05ad96db5fae34ef22ea4766b"));
 }
 
 void PlanningInputIdentityTest::_testSupportedSemanticMatching()

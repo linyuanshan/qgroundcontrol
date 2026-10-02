@@ -53,11 +53,11 @@ void verifyBcdSource(const CoveragePlanningSolution& solution, PlannerResolution
     QCOMPARE(solution.status, PlanningStatus::Success);
     QVERIFY(!solution.path.empty());
     QVERIFY(!solution.legRoles.empty());
-    QVERIFY(solution.coverageQuality.has_value());
-    QVERIFY(solution.coverageQuality->passesRequirement);
-    QCOMPARE(solution.coverageQuality->strategy.strategyId,
+    QVERIFY(solution.outcome.coverageQuality.has_value());
+    QVERIFY(solution.outcome.coverageQuality->passesRequirement);
+    QCOMPARE(solution.outcome.coverageQuality->strategy.strategyId,
              std::string(CoverageStrategySemantics::BoustrophedonId));
-    QCOMPARE(solution.coverageQuality->strategy.semanticVersion,
+    QCOMPARE(solution.outcome.coverageQuality->strategy.semanticVersion,
              std::string(CoverageStrategySemantics::BoustrophedonVersion));
     QVERIFY(solution.plannerSource.has_value());
     QCOMPARE(solution.plannerSource->requestedPlannerId, std::string(CoverageStrategySemantics::AutoPlannerId));
@@ -149,17 +149,19 @@ void AutoCoveragePlannerTest::_testCoverageAssessmentAndSafetyFailureDoNotEscala
     // Test post-repair failure, rather than freezing the pre-repair Standard deficit.
     incomplete.coverageRequirement = CoverageRequirement::Strict;
     const CoveragePlanningSolution coverageFailure = AutoCoveragePlanner{}.plan(incomplete);
-    QCOMPARE(coverageFailure.status, PlanningStatus::Failed);
-    QCOMPARE(coverageFailure.error, CoveragePlanningError::CoverageIncomplete);
-    QCOMPARE(coverageFailure.coverageQuality->status, CoverageQualityStatus::Insufficient);
+    QCOMPARE(coverageFailure.status, PlanningStatus::Success);
+    QCOMPARE(coverageFailure.outcome.readiness, MissionReadiness::ReviewRequired);
+    QCOMPARE(coverageFailure.error, CoveragePlanningError::None);
+    QCOMPARE(coverageFailure.outcome.coverageQuality->status, CoverageQualityStatus::Insufficient);
     verifySimpleSource(coverageFailure, SweepAngleMode::Manual);
 
     CoveragePlanningProblem assessmentError =
         problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(-5.0, -5.0, 25.0, 25.0), 1.0e150);
     const CoveragePlanningSolution assessmentFailure = AutoCoveragePlanner{}.plan(assessmentError);
-    QCOMPARE(assessmentFailure.status, PlanningStatus::Failed);
-    QCOMPARE(assessmentFailure.error, CoveragePlanningError::GeometryFailure);
-    QCOMPARE(assessmentFailure.coverageQuality->status, CoverageQualityStatus::AssessmentError);
+    QCOMPARE(assessmentFailure.status, PlanningStatus::Success);
+    QCOMPARE(assessmentFailure.outcome.readiness, MissionReadiness::ReviewRequired);
+    QCOMPARE(assessmentFailure.error, CoveragePlanningError::None);
+    QCOMPARE(assessmentFailure.outcome.coverageQuality->status, CoverageQualityStatus::AssessmentError);
     verifySimpleSource(assessmentFailure, SweepAngleMode::Manual);
 
     CoveragePlanningProblem noTrack = problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(0.0, 0.0, 20.0, 20.0));

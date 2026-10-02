@@ -17,7 +17,7 @@ inline constexpr char LegacyBoustrophedonVersion[] = "bcd.pre-v05-06.v1";
 inline constexpr char LawnMowerVersion[] = "lawnmower.p1.frozen.v1";
 inline constexpr char MockVersion[] = "mock.test.v1";
 inline constexpr char GlobalSweepVersion[] = "global-sweep.v1";
-inline constexpr char PlanningSemanticsVersion[] = "p2.v0.5.planning.1";
+inline constexpr char PlanningSemanticsVersion[] = "p2.v0.5.planning.2";
 
 [[nodiscard]] constexpr bool isSupportedStrategySemantic(std::string_view strategyId, std::string_view semanticVersion)
 {

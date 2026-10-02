@@ -392,14 +392,14 @@ void CoverageRepairTest::_testPlannerInitialPassAndStandardStrict()
     standardProblem.coverageRequirement = CoverageRequirement::Standard;
     const auto standard = SimpleMonotoneCoveragePlanner{}.plan(standardProblem);
     QCOMPARE(standard.status, PlanningStatus::Success);
-    QCOMPARE(standard.coverageQuality->status, CoverageQualityStatus::Acceptable);
+    QCOMPARE(standard.outcome.coverageQuality->status, CoverageQualityStatus::Acceptable);
     for (const auto& repair : standard.repairCandidates) {
         QVERIFY(!repair.attempted);
     }
     standardProblem.coverageRequirement = CoverageRequirement::Strict;
     const auto strict = SimpleMonotoneCoveragePlanner{}.plan(standardProblem);
     QCOMPARE(strict.status, PlanningStatus::Success);
-    QCOMPARE(strict.coverageQuality->status, CoverageQualityStatus::Complete);
+    QCOMPARE(strict.outcome.coverageQuality->status, CoverageQualityStatus::Complete);
     for (std::size_t index = 0; index < strict.repairCandidates.size(); ++index) {
         const auto& repair = strict.repairCandidates[index];
         QVERIFY(repair.attempted);
@@ -433,16 +433,17 @@ void CoverageRepairTest::_testAllCandidatesAndHardPassPriority()
         }
     }
     QCOMPARE(evaluateSafetyCandidate(safety, result.path).tier, SafetySolutionTier::D1);
-    QVERIFY(result.coverageQuality->passesRequirement);
+    QVERIFY(result.outcome.coverageQuality->passesRequirement);
 }
 
 void CoverageRepairTest::_testAutoNoEscalationAndBcdIntegration()
 {
     const auto problem = problemFor(2, 2);
     const auto result = AutoCoveragePlanner{}.plan(problem);
-    QCOMPARE(result.status, PlanningStatus::Failed);
-    QCOMPARE(result.error, CoveragePlanningError::CoverageIncomplete);
-    QVERIFY(result.path.empty());
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QCOMPARE(result.outcome.readiness, MissionReadiness::ReviewRequired);
+    QCOMPARE(result.error, CoveragePlanningError::None);
+    QVERIFY(!result.path.empty());
     QCOMPARE(result.plannerSource->resolvedStrategy.strategyId,
              std::string(CoverageStrategySemantics::SimpleMonotoneId));
     QVERIFY(!result.plannerSource->escalated);

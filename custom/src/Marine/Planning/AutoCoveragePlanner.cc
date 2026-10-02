@@ -9,6 +9,7 @@
 #include "CoverageSafety.h"
 #include "CoverageStrategySemantics.h"
 #include "GlobalSweepSelector.h"
+#include "IntegratedPlanningResult.h"
 #include "SimpleMonotoneCapability.h"
 #include "SimpleMonotoneCoveragePlanner.h"
 
@@ -23,6 +24,9 @@ CoveragePlanningSolution failure(CoveragePlanningError error, std::string messag
     result.error = error;
     result.message = message.empty() ? CoverageProblemValidator::messageForError(error) : std::move(message);
     result.plannerSource = std::move(source);
+    if (result.plannerSource) {
+        result.selectedSweepAngleDeg = result.plannerSource->selectedSweepAngleDeg;
+    }
     return result;
 }
 
@@ -67,20 +71,31 @@ CoveragePlanningSolution AutoCoveragePlanner::plan(const CoveragePlanningProblem
     }
     const CoverageGeometryResult coverageGeometry = buildCoverageGeometry(normalized.region);
     if (coverageGeometry.error != CoveragePlanningError::None) {
-        return failure(coverageGeometry.error);
+        auto result = failure(coverageGeometry.error);
+        publishUnresolvedOutcome(result, {}, {}, false);
+        return result;
     }
     const SafetyTrackRegionsResult safetyRegions =
         buildSafetyTrackRegions(normalized.region, normalized.safety, normalized.executionSafety);
     if (safetyRegions.error != CoveragePlanningError::None) {
-        return failure(safetyRegions.error);
+        auto result = failure(safetyRegions.error);
+        publishUnresolvedOutcome(result, coverageGeometry.geometry.coverageTarget,
+                                 coverageGeometry.geometry.rawNavigationFreeSpace, false);
+        return result;
     }
 
     double selectedAngleDeg = normalized.requestedSweepAngleDeg;
     if (normalized.sweepAngleMode == SweepAngleMode::Auto) {
         const GlobalSweepSelectionResult selection = selectGlobalSweepAngle(
-            normalized.region.coverageBoundary, safetyRegions.regions.hardExecutionTrackRegion, normalized.swathWidthM);
+            normalized.region.coverageBoundary,
+            (safetyRegions.regions.hardExecutionTrackRegion.empty() ? coverageGeometry.geometry.rawNavigationFreeSpace
+                                                                    : safetyRegions.regions.hardExecutionTrackRegion),
+            normalized.swathWidthM);
         if (selection.status != PlanningStatus::Success) {
-            return failure(selection.error, selection.message);
+            auto result = failure(selection.error, selection.message);
+            publishUnresolvedOutcome(result, coverageGeometry.geometry.coverageTarget,
+                                     coverageGeometry.geometry.rawNavigationFreeSpace, false);
+            return result;
         }
         selectedAngleDeg = selection.selectedSweepAngleDeg;
     }
@@ -97,6 +112,7 @@ CoveragePlanningSolution AutoCoveragePlanner::plan(const CoveragePlanningProblem
                                           problem.sweepAngleMode, selectedAngleDeg,
                                           CoverageStrategySemantics::BoustrophedonId,
                                           CoverageStrategySemantics::BoustrophedonVersion);
+        populatePlanningAdvice(result);
         return result;
     }
 
@@ -109,6 +125,7 @@ CoveragePlanningSolution AutoCoveragePlanner::plan(const CoveragePlanningProblem
         sourceInfo(PlannerResolutionStatus::Resolved, PlannerResolutionReason::None, false, problem.sweepAngleMode,
                    selectedAngleDeg, CoverageStrategySemantics::SimpleMonotoneId,
                    CoverageStrategySemantics::SimpleMonotoneVersion);
+    populatePlanningAdvice(result);
     return result;
 }
 

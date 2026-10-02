@@ -16,6 +16,7 @@
 #include "Geometry/MarineGeometry.h"
 #include "Geometry/PolygonRegion.h"
 #include "GlobalSweepSelector.h"
+#include "IntegratedPlanningResult.h"
 #include "PlanningPathMetrics.h"
 #include "SimpleMonotoneCapability.h"
 #include "StaticSafeRouter.h"
@@ -49,6 +50,9 @@ CoveragePlanningSolution failure(CoveragePlanningError error, std::string messag
     result.error = error;
     result.message = message.empty() ? CoverageProblemValidator::messageForError(error) : std::move(message);
     result.plannerSource = std::move(source);
+    if (result.plannerSource) {
+        result.selectedSweepAngleDeg = result.plannerSource->selectedSweepAngleDeg;
+    }
     return result;
 }
 
@@ -318,20 +322,31 @@ CoveragePlanningSolution SimpleMonotoneCoveragePlanner::plan(const CoveragePlann
     }
     const CoverageGeometryResult coverageGeometry = buildCoverageGeometry(normalized.region);
     if (coverageGeometry.error != CoveragePlanningError::None) {
-        return failure(coverageGeometry.error);
+        auto result = failure(coverageGeometry.error);
+        publishUnresolvedOutcome(result, {}, {}, false);
+        return result;
     }
     const SafetyTrackRegionsResult safetyRegions =
         buildSafetyTrackRegions(normalized.region, normalized.safety, normalized.executionSafety);
     if (safetyRegions.error != CoveragePlanningError::None) {
-        return failure(safetyRegions.error);
+        auto result = failure(safetyRegions.error);
+        publishUnresolvedOutcome(result, coverageGeometry.geometry.coverageTarget,
+                                 coverageGeometry.geometry.rawNavigationFreeSpace, false);
+        return result;
     }
 
     double selectedAngleDeg = normalized.requestedSweepAngleDeg;
     if (normalized.sweepAngleMode == SweepAngleMode::Auto) {
         const GlobalSweepSelectionResult selection = selectGlobalSweepAngle(
-            normalized.region.coverageBoundary, safetyRegions.regions.hardExecutionTrackRegion, normalized.swathWidthM);
+            normalized.region.coverageBoundary,
+            (safetyRegions.regions.hardExecutionTrackRegion.empty() ? coverageGeometry.geometry.rawNavigationFreeSpace
+                                                                    : safetyRegions.regions.hardExecutionTrackRegion),
+            normalized.swathWidthM);
         if (selection.status != PlanningStatus::Success) {
-            return failure(selection.error, selection.message);
+            auto result = failure(selection.error, selection.message);
+            publishUnresolvedOutcome(result, coverageGeometry.geometry.coverageTarget,
+                                     coverageGeometry.geometry.rawNavigationFreeSpace, false);
+            return result;
         }
         selectedAngleDeg = selection.selectedSweepAngleDeg;
     }
@@ -339,14 +354,21 @@ CoveragePlanningSolution SimpleMonotoneCoveragePlanner::plan(const CoveragePlann
     const SimpleMonotoneCapabilityResult capability =
         assessSimpleMonotoneCapability(coverageGeometry.geometry.coverageTarget, selectedAngleDeg);
     if (!capability.applicable) {
-        return failure(CoveragePlanningError::UnsupportedStrategyCapability, capability.message, source);
+        auto result = failure(CoveragePlanningError::UnsupportedStrategyCapability, capability.message, source);
+        publishUnresolvedOutcome(result, coverageGeometry.geometry.coverageTarget,
+                                 coverageGeometry.geometry.rawNavigationFreeSpace, true);
+        return result;
     }
 
     const double mathAngleDeg = Geometry::navigationAngleToMathAngle(selectedAngleDeg);
     const PolygonRegionSet2D targetSweep = toSweepFrame(coverageGeometry.geometry.coverageTarget, mathAngleDeg);
     const auto lanePositions = buildLaneSchedule(targetSweep, normalized.swathWidthM);
     if (!lanePositions) {
-        return failure(CoveragePlanningError::GeometryFailure, "SimpleMonotone lane schedule is invalid", source);
+        auto result =
+            failure(CoveragePlanningError::GeometryFailure, "SimpleMonotone lane schedule is invalid", source);
+        publishUnresolvedOutcome(result, coverageGeometry.geometry.coverageTarget,
+                                 coverageGeometry.geometry.rawNavigationFreeSpace, false);
+        return result;
     }
 
     const PlannerStrategyIdentity strategy{.strategyId = id(), .semanticVersion = semanticVersion()};
@@ -397,13 +419,48 @@ CoveragePlanningSolution SimpleMonotoneCoveragePlanner::plan(const CoveragePlann
     generateTier(safetyRegions.regions.preferredExecutionTrackRegion, true);
     generateTier(safetyRegions.regions.hardExecutionTrackRegion, false);
     if (candidates.empty()) {
-        return failure(lastHardError, {}, source);
+        auto diagnostic = failure(lastHardError, {}, source);
+        diagnostic.selectedSweepAngleDeg = selectedAngleDeg;
+        const auto& raw = coverageGeometry.geometry.rawNavigationFreeSpace;
+        const auto rawLanes =
+            buildLaneSegments(targetSweep, toSweepFrame(raw, mathAngleDeg), *lanePositions, lastHardError);
+        std::optional<Candidate> rawDiagnostic;
+        if (rawLanes) {
+            for (int orientation = 0; orientation < 2; ++orientation) {
+                auto rawCandidate =
+                    buildCandidate(*rawLanes, raw, mathAngleDeg, orientation == 0, orientation, lastHardError);
+                if (!rawCandidate) {
+                    continue;
+                }
+                const auto certification = evaluateSafetyCandidate(safetyRegions, rawCandidate->path);
+                if (certification.error == CoveragePlanningError::None) {
+                    // A newly discovered hard-safe route enters the existing repair and final ranking below.
+                    rawCandidate->preferredSafe = certification.tier == SafetySolutionTier::D0;
+                    rawCandidate->quality = evaluateCoverageQuality(
+                        coverageGeometry.geometry.coverageTarget, rawCandidate->path, rawCandidate->legRoles,
+                        normalized.swathWidthM, normalized.coverageRequirement, strategy);
+                    candidates.push_back(std::move(*rawCandidate));
+                } else if (!rawDiagnostic || rawCandidate->metrics.pathLengthM < rawDiagnostic->metrics.pathLengthM) {
+                    rawDiagnostic = std::move(rawCandidate);
+                }
+            }
+        }
+        if (candidates.empty()) {
+            if (rawDiagnostic && publishDiagnosticOutcome(diagnostic, safetyRegions, raw, rawDiagnostic->path,
+                                                          rawDiagnostic->legRoles)) {
+                return diagnostic;
+            }
+            publishUnresolvedOutcome(diagnostic, coverageGeometry.geometry.coverageTarget, raw, false);
+            return diagnostic;
+        }
     }
 
     const bool initialPass = std::ranges::any_of(
         candidates, [](const Candidate& candidate) { return coveragePolicyPass(candidate.quality); });
     std::vector<CoverageRepairResult> repairCandidates;
+    std::vector<PlanningPathMetrics> initialMetrics;
     for (Candidate& candidate : candidates) {
+        initialMetrics.push_back(candidate.metrics);
         CoverageRepairCandidate initial{candidate.path, candidate.legRoles, candidate.metrics, candidate.quality,
                                         candidate.preferredSafe};
         CoverageRepairResult repair{.candidate = initial};
@@ -426,31 +483,19 @@ CoveragePlanningSolution SimpleMonotoneCoveragePlanner::plan(const CoveragePlann
     CoveragePlanningSolution result;
     result.repairCandidates = std::move(repairCandidates);
     result.plannerSource = source;
-    result.coverageQuality = best->quality;
+    result.outcome.coverageQuality = best->quality;
     result.selectedSweepAngleDeg = selectedAngleDeg;
     result.cellCount = 1;
     result.turnCount = best->metrics.turnCount;
-    if (best->quality.status == CoverageQualityStatus::Complete ||
-        (best->quality.status == CoverageQualityStatus::Acceptable && best->quality.passesRequirement)) {
-        result.status = PlanningStatus::Success;
-        result.error = CoveragePlanningError::None;
-        result.path = best->path;
-        result.legRoles = best->legRoles;
-        result.coverageLengthM = best->metrics.coverageLengthM;
-        result.transitLengthM = best->metrics.transitLengthM;
-        result.pathLengthM = best->metrics.pathLengthM;
-        result.message = "SimpleMonotone generated a hard-safe path that passes the selected coverage policy";
-        return result;
-    }
-    if (best->quality.status == CoverageQualityStatus::Insufficient) {
-        result.status = PlanningStatus::Failed;
-        result.error = CoveragePlanningError::CoverageIncomplete;
-        result.message = best->quality.message;
-        return result;
-    }
-    result.status = PlanningStatus::Failed;
-    result.error = CoveragePlanningError::GeometryFailure;
+    result.path = best->path;
+    result.legRoles = best->legRoles;
+    result.coverageLengthM = best->metrics.coverageLengthM;
+    result.transitLengthM = best->metrics.transitLengthM;
+    result.pathLengthM = best->metrics.pathLengthM;
     result.message = best->quality.message;
+    const auto selectedIndex = static_cast<std::size_t>(best - candidates.begin());
+    publishCanonicalOutcome(result, evaluateSafetyCandidate(safetyRegions, best->path), selectedIndex,
+                            result.repairCandidates[selectedIndex], initialMetrics[selectedIndex], initialPass);
     return result;
 }
 

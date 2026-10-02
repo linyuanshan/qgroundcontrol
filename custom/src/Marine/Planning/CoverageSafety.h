@@ -20,18 +20,6 @@ struct SafetyTrackRegionsResult
     SafetyTrackRegions regions;
 };
 
-enum class SafetySolutionTier
-{
-    D0,
-    D1,
-};
-
-enum class SafetyLegClass
-{
-    PreferredSafe,
-    HardSafeWarning,
-};
-
 struct SafetyCandidateAssessment
 {
     CoveragePlanningError error = CoveragePlanningError::InvalidGeneratedPath;

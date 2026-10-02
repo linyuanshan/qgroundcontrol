@@ -152,12 +152,12 @@ double distance(const Point2D& first, const Point2D& second)
 void verifySuccess(const CoveragePlanningProblem& input, const CoveragePlanningSolution& solution)
 {
     std::string statusEvidence = solution.message;
-    if (solution.coverageQuality) {
-        statusEvidence += " (quality=" + std::to_string(static_cast<int>(solution.coverageQuality->status)) +
-                          ", ratio=" + std::to_string(solution.coverageQuality->coverageRatio) +
-                          ", uncovered=" + std::to_string(solution.coverageQuality->uncoveredAreaM2) +
-                          ", critical=" + std::to_string(solution.coverageQuality->criticalUncoveredAreaM2) +
-                          ", tolerance=" + std::to_string(solution.coverageQuality->numericalToleranceM2) + ")";
+    if (solution.outcome.coverageQuality) {
+        statusEvidence += " (quality=" + std::to_string(static_cast<int>(solution.outcome.coverageQuality->status)) +
+                          ", ratio=" + std::to_string(solution.outcome.coverageQuality->coverageRatio) +
+                          ", uncovered=" + std::to_string(solution.outcome.coverageQuality->uncoveredAreaM2) +
+                          ", critical=" + std::to_string(solution.outcome.coverageQuality->criticalUncoveredAreaM2) +
+                          ", tolerance=" + std::to_string(solution.outcome.coverageQuality->numericalToleranceM2) + ")";
     }
     QVERIFY2(solution.status == PlanningStatus::Success, statusEvidence.c_str());
     QCOMPARE(solution.error, CoveragePlanningError::None);
@@ -172,14 +172,14 @@ void verifySuccess(const CoveragePlanningProblem& input, const CoveragePlanningS
     QVERIFY(solution.turnCount >= 0);
     QVERIFY(solution.selectedSweepAngleDeg >= 0.0);
     QVERIFY(solution.selectedSweepAngleDeg < 180.0);
-    QVERIFY(solution.coverageQuality.has_value());
-    QVERIFY((solution.coverageQuality->status == CoverageQualityStatus::Complete) ||
-            (solution.coverageQuality->status == CoverageQualityStatus::Acceptable));
-    QVERIFY(solution.coverageQuality->passesRequirement);
-    QCOMPARE(solution.coverageQuality->requirement, input.coverageRequirement);
-    QCOMPARE(solution.coverageQuality->strategy.strategyId,
+    QVERIFY(solution.outcome.coverageQuality.has_value());
+    QVERIFY((solution.outcome.coverageQuality->status == CoverageQualityStatus::Complete) ||
+            (solution.outcome.coverageQuality->status == CoverageQualityStatus::Acceptable));
+    QVERIFY(solution.outcome.coverageQuality->passesRequirement);
+    QCOMPARE(solution.outcome.coverageQuality->requirement, input.coverageRequirement);
+    QCOMPARE(solution.outcome.coverageQuality->strategy.strategyId,
              std::string(CoverageStrategySemantics::BoustrophedonId));
-    QCOMPARE(solution.coverageQuality->strategy.semanticVersion,
+    QCOMPARE(solution.outcome.coverageQuality->strategy.semanticVersion,
              std::string(CoverageStrategySemantics::BoustrophedonVersion));
     QVERIFY(solution.plannerSource.has_value());
     QCOMPARE(solution.plannerSource->requestedPlannerId,
@@ -237,12 +237,13 @@ void compareSolutions(const CoveragePlanningSolution& first, const CoveragePlann
     if (first.plannerSource) {
         QCOMPARE(first.plannerSource.value(), second.plannerSource.value());
     }
-    QCOMPARE(first.coverageQuality.has_value(), second.coverageQuality.has_value());
-    if (first.coverageQuality) {
-        QCOMPARE(first.coverageQuality->status, second.coverageQuality->status);
-        QCOMPARE(first.coverageQuality->coverageRatio, second.coverageQuality->coverageRatio);
-        QCOMPARE(first.coverageQuality->uncoveredAreaM2, second.coverageQuality->uncoveredAreaM2);
-        QCOMPARE(first.coverageQuality->criticalUncoveredAreaM2, second.coverageQuality->criticalUncoveredAreaM2);
+    QCOMPARE(first.outcome.coverageQuality.has_value(), second.outcome.coverageQuality.has_value());
+    if (first.outcome.coverageQuality) {
+        QCOMPARE(first.outcome.coverageQuality->status, second.outcome.coverageQuality->status);
+        QCOMPARE(first.outcome.coverageQuality->coverageRatio, second.outcome.coverageQuality->coverageRatio);
+        QCOMPARE(first.outcome.coverageQuality->uncoveredAreaM2, second.outcome.coverageQuality->uncoveredAreaM2);
+        QCOMPARE(first.outcome.coverageQuality->criticalUncoveredAreaM2,
+                 second.outcome.coverageQuality->criticalUncoveredAreaM2);
     }
     for (std::size_t index = 0; index < first.path.size(); ++index) {
         QCOMPARE(first.path.at(index).xM, second.path.at(index).xM);
@@ -330,10 +331,11 @@ void BoustrophedonCoveragePlannerTest::_testManualNormalizationAndDeterminism()
     for (int repetition = 0; repetition < 3; ++repetition) {
         const CoveragePlanningSolution repeated = planner.plan(input);
         compareSolutions(ninety, repeated);
-        QVERIFY(repeated.coverageQuality.has_value());
-        QCOMPARE(repeated.coverageQuality->status, ninety.coverageQuality->status);
-        QCOMPARE(repeated.coverageQuality->coverageRatio, ninety.coverageQuality->coverageRatio);
-        QCOMPARE(repeated.coverageQuality->criticalUncoveredAreaM2, ninety.coverageQuality->criticalUncoveredAreaM2);
+        QVERIFY(repeated.outcome.coverageQuality.has_value());
+        QCOMPARE(repeated.outcome.coverageQuality->status, ninety.outcome.coverageQuality->status);
+        QCOMPARE(repeated.outcome.coverageQuality->coverageRatio, ninety.outcome.coverageQuality->coverageRatio);
+        QCOMPARE(repeated.outcome.coverageQuality->criticalUncoveredAreaM2,
+                 ninety.outcome.coverageQuality->criticalUncoveredAreaM2);
     }
 }
 
@@ -631,8 +633,8 @@ void BoustrophedonCoveragePlannerTest::_testGeoAdapterMarinePlanRoundTripRegress
     QCOMPARE(solution.status, PlanningStatus::Success);
     QCOMPARE(solution.error, CoveragePlanningError::None);
     QVERIFY(!solution.message.empty());
-    QVERIFY(solution.coverageQuality.has_value());
-    const CoverageQualityEvaluation& quality = *solution.coverageQuality;
+    QVERIFY(solution.outcome.coverageQuality.has_value());
+    const CoverageQualityEvaluation& quality = *solution.outcome.coverageQuality;
     QCOMPARE(quality.error, CoverageQualityError::None);
     QVERIFY((quality.status == CoverageQualityStatus::Complete) ||
             (quality.status == CoverageQualityStatus::Acceptable));

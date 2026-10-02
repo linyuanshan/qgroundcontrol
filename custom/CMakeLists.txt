@@ -63,6 +63,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningInputIdentity.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningInputIdentity.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningArtifact.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningArtifactCodec.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/PlanningArtifactCodec.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeoReference.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Geometry/GeometryTypes.h
@@ -121,6 +123,10 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/MockCoveragePlanner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlanningResult.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/PlanningOutcome.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoveragePlanningError.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/IntegratedPlanningResult.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/IntegratedPlanningResult.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/SimpleMonotoneCapability.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/SimpleMonotoneCapability.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/SimpleMonotoneCoveragePlanner.cc
@@ -177,6 +183,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoundaryCoverageSupportTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageRepairTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageRepairTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/IntegratedPlanningResultTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/IntegratedPlanningResultTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GreedyCellOrderingTest.cc
@@ -357,6 +365,7 @@ if(QGC_BUILD_TESTING)
     )
 
     cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL add_qgc_test CoverageRepairTest LABELS Unit)
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL add_qgc_test IntegratedPlanningResultTest LABELS Unit)
 
     cmake_language(
         DEFER

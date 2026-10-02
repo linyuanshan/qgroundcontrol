@@ -4,15 +4,19 @@
 #include <string>
 #include <vector>
 
+#include "CoveragePlanningError.h"
 #include "MarineTypes.h"
 #include "PathLegRole.h"
 #include "PlannerSource.h"
+#include "PlanningOutcome.h"
 
 namespace Marine {
 
 struct PlanningResult
 {
     PlanningStatus status = PlanningStatus::Failed;
+    CoveragePlanningError error = CoveragePlanningError::None;
+    PlanningOutcome<GeoPoint, GeoPolygonRegionSet> outcome;
     std::vector<GeoPoint> path;
     std::vector<PathLegRole> legRoles;
     double coverageLengthM = 0.0;

@@ -201,7 +201,7 @@ private:
     void _connectNoGoPolygon(QGCMapPolygon* polygon);
     void _noGoPolygonPathChanged();
     void _workRegionPolygonChanged();
-    void _applyPlanningResult(Marine::PlanningResult result);
+    void _applyPlanningResult(Marine::PlanningResult result, bool current = false);
     void _syncNoGoPolygonsFromTask();
     void _syncWorkRegionPolygonFromTask();
     void _updateTaskFromNoGoPolygons();

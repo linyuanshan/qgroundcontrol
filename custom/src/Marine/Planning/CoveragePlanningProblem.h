@@ -4,56 +4,16 @@
 #include <string>
 #include <vector>
 
-#include "CoverageQualityEvaluator.h"
+#include "CoveragePlanningError.h"
 #include "CoverageRepairData.h"
 #include "Geometry/GeometryTypes.h"
 #include "MarineTask.h"
 #include "MarineTypes.h"
 #include "PathLegRole.h"
 #include "PlannerSource.h"
+#include "PlanningOutcome.h"
 
 namespace Marine {
-
-enum class CoveragePlanningError
-{
-    None,
-    InvalidOuterBoundary,
-    InvalidNavigationBoundary,
-    CoverageOutsideNavigationBoundary,
-    EmptyCoverageTarget,
-    InvalidCoverageTarget,
-    UnsupportedSeparateBoundaries,
-    InvalidSwathWidth,
-    InvalidSafetyMargin,
-    InvalidPreferredSafetyMargin,
-    InvalidExecutionMargin,
-    InvalidSweepAngle,
-    InvalidCoverageRequirement,
-    CoverageImpossibleWithSafetyMargin,
-    CoverageImpossibleWithExecutionMargin,
-    UnsupportedExecutionSafetyProfile,
-    ExecutionRegionNotConservative,
-    UnsupportedNoGoRegion,
-    SafetyInsetEmpty,
-    SafetyInsetDisconnected,
-    NonMonotoneSweep,
-    UnsafeConnector,
-    InvalidGeneratedPath,
-    GeometryFailure,
-    InvalidNoGoRegion,
-    NoGoOutsideBoundary,
-    NoGoBoundaryConflict,
-    NoGoOverlapOrTouch,
-    NoNavigableArea,
-    DisconnectedFeasibleRegion,
-    DecompositionFailed,
-    InvalidCoverageCell,
-    CellCoverageFailed,
-    SafeTransitNotFound,
-    CoverageIncomplete,
-    UnsupportedStrategyCapability,
-    ResolvedStrategyUnavailable,
-};
 
 struct CoveragePlanningProblem
 {
@@ -80,10 +40,9 @@ struct CoveragePlanningSolution
     int cellCount = 0;
     int turnCount = 0;
     CoveragePlanningError error = CoveragePlanningError::None;
-    std::optional<CoverageQualityEvaluation> coverageQuality;
+    PlanningOutcome<Point2D, PolygonRegionSet2D> outcome;
     std::optional<PlannerSourceInfo> plannerSource;
-    // V05-07 pure runtime facts. Failed/CoverageIncomplete still exposes no executable path;
-    // the retained candidate in these records is not consumed by the Mission adapter or persisted.
+    // Internal V05-07 candidate records; only the selected outcome is persisted.
     std::vector<CoverageRepairResult> repairCandidates;
     std::string message;
 };

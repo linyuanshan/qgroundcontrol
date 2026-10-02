@@ -139,6 +139,31 @@ QJsonObject roleRunArtifact(const MarineTask& task, const std::vector<PathLegRol
     };
 }
 
+void setStoredStrategyVersion(QJsonObject& object, const QString& version)
+{
+    auto source = object.value("plannerSource").toObject();
+    source.insert("strategySemanticVersion", version);
+    object.insert("plannerSource", source);
+    auto outcome = object.value("outcome").toObject();
+    auto quality = outcome.value("coverageQuality").toObject();
+    quality.insert("strategyVersion", version);
+    outcome.insert("coverageQuality", quality);
+    auto repair = outcome.value("repair").toObject();
+    auto components = repair.value("components").toArray();
+    for (int index = 0; index < components.size(); ++index) {
+        auto component = components[index].toObject();
+        for (const char* name : {"before", "after"}) {
+            auto assessment = component.value(name).toObject();
+            assessment.insert("strategyVersion", version);
+            component.insert(name, assessment);
+        }
+        components[index] = component;
+    }
+    repair.insert("components", components);
+    outcome.insert("repair", repair);
+    object.insert("outcome", outcome);
+}
+
 class CountingPlanner final : public ICoveragePlanner
 {
 public:
@@ -351,7 +376,7 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
 
     QVERIFY(_item->planningArtifact().has_value());
     const PlanningResult& result = _item->planningArtifact()->result;
-    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
     QCOMPARE(result.status, PlanningStatus::Success);
     QVERIFY(!result.path.empty());
     QCOMPARE(result.legRoles.size(), result.path.size() - 1);
@@ -359,11 +384,11 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
     QCOMPARE(result.pathLengthM, result.coverageLengthM + result.transitLengthM);
     QVERIFY(result.cellCount >= 1);
 
-    QVERIFY(_item->generatedPathRoleRuns().isEmpty());
+    QVERIFY(!_item->generatedPathRoleRuns().isEmpty());
 
     QList<MissionItem*> missionItems;
     _item->appendMissionItems(missionItems, this);
-    QVERIFY(missionItems.isEmpty());
+    QCOMPARE(missionItems.size(), static_cast<qsizetype>(result.path.size()));
 }
 
 void CoverageComplexItemTest::_testGeneratedPathRoleRuns()
@@ -392,7 +417,7 @@ void CoverageComplexItemTest::_testPlanningFailures()
 {
     _item->setTaskId(QStringLiteral("missing-task"));
     QVERIFY(!_item->plan());
-    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
+    QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Planned);
     QVERIFY(_item->generatedPath().isEmpty());
     QVERIFY(!_item->planningResult().message.empty());
 
@@ -757,7 +782,7 @@ void CoverageComplexItemTest::_testSaveLoad()
     QCOMPARE(saved.size(), 1);
     const QJsonObject object = saved.first().toObject();
     QCOMPARE(object.value("version").toInt(), 3);
-    QCOMPARE(object.value("resultContract").toString(), QStringLiteral("InfrastructureOnly"));
+    QCOMPARE(object.value("resultContract").toString(), QStringLiteral("IntegratedV05"));
     QVERIFY(object.contains("inputIdentity"));
     QVERIFY(!object.contains("task"));
     QVERIFY(!object.contains("marine"));
@@ -771,19 +796,20 @@ void CoverageComplexItemTest::_testSaveLoad()
     QVERIFY(!loaded.planningArtifact()->stale);
     QCOMPARE(loaded.planningArtifact()->result.legRoles, _item->planningArtifact()->result.legRoles);
     QCOMPARE(loaded.noGoPolygons()->count(), 1);
-    QCOMPARE(loaded.planningState(), CoverageInspectionComplexItem::Unplanned);
-    QVERIFY(loaded.planningResult().path.empty());
-    QVERIFY(loaded.generatedPath().isEmpty());
+    QCOMPARE(loaded.planningState(), CoverageInspectionComplexItem::Planned);
+    QVERIFY(!loaded.planningResult().path.empty());
+    QVERIFY(!loaded.generatedPath().isEmpty());
     QVERIFY(!loaded.dirty());
     QList<MissionItem*> mission;
     loaded.appendMissionItems(mission, this);
-    QVERIFY(mission.isEmpty());
+    QCOMPARE(mission.size(), static_cast<qsizetype>(loaded.planningResult().path.size()));
     QJsonArray resaved;
     loaded.save(resaved);
     QCOMPARE(resaved, saved);
     QVERIFY(loaded.load(resaved.first().toObject(), 12, error));
+    mission.clear();
     loaded.appendMissionItems(mission, this);
-    QVERIFY(mission.isEmpty());
+    QCOMPARE(mission.size(), static_cast<qsizetype>(loaded.planningResult().path.size()));
 }
 
 void CoverageComplexItemTest::_testLawnmowerSaveLoad()
@@ -1180,8 +1206,8 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
              QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId));
     QCOMPARE(simpleIdentity.value(QStringLiteral("strategyVersion")).toString(),
              QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion));
-    QCOMPARE(simpleObject.value(QStringLiteral("resultContract")).toString(), QStringLiteral("InfrastructureOnly"));
-    QVERIFY(!simpleObject.contains(QStringLiteral("plannerSource")));
+    QCOMPARE(simpleObject.value(QStringLiteral("resultContract")).toString(), QStringLiteral("IntegratedV05"));
+    QVERIFY(simpleObject.contains(QStringLiteral("plannerSource")));
 
     CoverageInspectionComplexItem loadedSimple(planController(), false, _marineContext);
     QString error;
@@ -1192,7 +1218,7 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
              QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId));
     QList<MissionItem*> mission;
     loadedSimple.appendMissionItems(mission, this);
-    QVERIFY(mission.isEmpty());
+    QCOMPARE(mission.size(), static_cast<qsizetype>(loadedSimple.planningResult().path.size()));
 
     PlanningSemantics preRepairSimple;
     preRepairSimple.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId);
@@ -1201,6 +1227,7 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
     QVERIFY(oldSimpleIdentity.has_value());
     QJsonObject oldSimpleObject = simpleObject;
     oldSimpleObject.insert(QStringLiteral("inputIdentity"), oldSimpleIdentity->toJson());
+    setStoredStrategyVersion(oldSimpleObject, preRepairSimple.strategyVersion);
     QVERIFY2(loadedSimple.load(oldSimpleObject, 0, error), qPrintable(error));
     QVERIFY(loadedSimple.planningArtifact()->stale);
     QCOMPARE(loadedSimple.planningState(), CoverageInspectionComplexItem::Unplanned);
@@ -1246,8 +1273,8 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
              QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId));
     QCOMPARE(bcdIdentity.value(QStringLiteral("strategyVersion")).toString(),
              QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion));
-    QCOMPARE(bcdObject.value(QStringLiteral("resultContract")).toString(), QStringLiteral("InfrastructureOnly"));
-    QVERIFY(!bcdObject.contains(QStringLiteral("plannerSource")));
+    QCOMPARE(bcdObject.value(QStringLiteral("resultContract")).toString(), QStringLiteral("IntegratedV05"));
+    QVERIFY(bcdObject.contains(QStringLiteral("plannerSource")));
 
     CoverageInspectionComplexItem loadedBcd(planController(), false, _marineContext);
     QVERIFY2(loadedBcd.load(bcdObject, 0, error), qPrintable(error));
@@ -1257,11 +1284,11 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
              QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId));
     QCOMPARE(loadedBcd.planningArtifact()->identity.semantics.strategyVersion,
              QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion));
-    QCOMPARE(loadedBcd.planningState(), CoverageInspectionComplexItem::Unplanned);
-    QVERIFY(loadedBcd.planningResult().path.empty());
+    QCOMPARE(loadedBcd.planningState(), CoverageInspectionComplexItem::Planned);
+    QVERIFY(!loadedBcd.planningResult().path.empty());
     mission.clear();
     loadedBcd.appendMissionItems(mission, this);
-    QVERIFY(mission.isEmpty());
+    QCOMPARE(mission.size(), static_cast<qsizetype>(loadedBcd.planningResult().path.size()));
 
     for (const char* oldVersion : {CoverageStrategySemantics::BoustrophedonPendingVersion,
                                    CoverageStrategySemantics::LegacyBoustrophedonVersion, "bcd.v0.5.v1"}) {
@@ -1273,6 +1300,7 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
         QVERIFY(oldIdentity.has_value());
         QJsonObject oldObject = bcdObject;
         oldObject.insert(QStringLiteral("inputIdentity"), oldIdentity->toJson());
+        setStoredStrategyVersion(oldObject, oldSemantics.strategyVersion);
 
         CoverageInspectionComplexItem loadedOld(planController(), false, _marineContext);
         QVERIFY2(loadedOld.load(oldObject, 0, error), qPrintable(error));

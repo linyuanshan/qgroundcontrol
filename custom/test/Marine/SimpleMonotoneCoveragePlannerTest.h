@@ -12,7 +12,7 @@ private slots:
     void _testNavigationOutsideTargetUsedOnlyForTransit();
     void _testExecutionMarginAndPreferredTier();
     void _testHardPassOutranksPreferredInsufficient();
-    void _testIncompleteAndAssessmentErrorDoNotReturnPath();
+    void _testIncompleteAndAssessmentErrorRetainReviewPath();
     void _testDirectCapabilityFailureDoesNotEscalate();
     void _testDeterministicPathAndSafety();
 };

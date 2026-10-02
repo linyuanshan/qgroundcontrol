@@ -4,13 +4,19 @@
 #include <limits>
 
 #include "MissionItem.h"
+#include "PlanningArtifactCodec.h"
 
 namespace Marine {
 
-bool ArduPilotMissionAdapter::appendWaypoints(const PlanningResult& result, QList<MissionItem*>& items, QObject* parent,
-                                              int& sequenceNumber, QString& errorString)
+bool ArduPilotMissionAdapter::appendWaypoints(const PlanningArtifact& artifact, const MarineTask& currentTask,
+                                              QList<MissionItem*>& items, QObject* parent, int& sequenceNumber,
+                                              QString& errorString)
 {
     errorString.clear();
+    if (!PlanningArtifactCodec::uploadAllowed(artifact, currentTask, errorString)) {
+        return false;
+    }
+    const auto& result = artifact.result;
     if (result.status != PlanningStatus::Success) {
         errorString = QStringLiteral("Cannot create mission waypoints from an unsuccessful planning result");
         return false;
@@ -50,6 +56,13 @@ bool ArduPilotMissionAdapter::appendWaypoints(const PlanningResult& result, QLis
     }
 
     return true;
+}
+
+bool ArduPilotMissionAdapter::appendWaypoints(const PlanningResult&, QList<MissionItem*>&, QObject*, int&,
+                                              QString& errorString)
+{
+    errorString = QStringLiteral("Uncertified planning result: artifact identity and current task are required");
+    return false;
 }
 
 }  // namespace Marine

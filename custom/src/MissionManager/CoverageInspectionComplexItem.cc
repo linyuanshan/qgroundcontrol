@@ -14,12 +14,14 @@
 
 #include "ArduPilotMissionAdapter.h"
 #include "CoverageProblemValidator.h"
+#include "CoverageStrategySemantics.h"
 #include "CoverageTaskAdapter.h"
 #include "GeoJsonHelper.h"
 #include "Geometry/GeoReference.h"
 #include "Geometry/MarineGeometry.h"
 #include "JsonParsing.h"
 #include "MarinePlanContext.h"
+#include "PlanningArtifactCodec.h"
 #include "PlanningPathMetrics.h"
 
 using namespace Marine;
@@ -54,6 +56,16 @@ QString planningStatusToString(PlanningStatus status)
             return QStringLiteral("failed");
     }
     return {};
+}
+
+bool isV05ProductionPlanner(const std::string& plannerId, const std::string& semanticVersion)
+{
+    return (plannerId == CoverageStrategySemantics::AutoPlannerId &&
+            semanticVersion == CoverageStrategySemantics::AutoPlannerVersion) ||
+           (plannerId == CoverageStrategySemantics::SimpleMonotoneId &&
+            semanticVersion == CoverageStrategySemantics::SimpleMonotoneVersion) ||
+           (plannerId == CoverageStrategySemantics::BoustrophedonId &&
+            semanticVersion == CoverageStrategySemantics::BoustrophedonVersion);
 }
 
 bool planningStatusFromString(const QString& value, PlanningStatus& status)
@@ -212,7 +224,8 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
                 emit taskDataChanged();
                 setDirty(true);
                 emit readyForSaveStateChanged();
-                if (_planningArtifact && (!_task() || !_planningArtifact->identity.matchesSupported(*_task()))) {
+                if (_planningArtifact &&
+                    (!_task() || !PlanningArtifactCodec::matchesCurrentInput(*_planningArtifact, *_task()))) {
                     invalidatePlan();
                 }
             }
@@ -502,12 +515,12 @@ bool CoverageInspectionComplexItem::plan()
     if (!noGoRegionsReady()) {
         result.status = PlanningStatus::InvalidInput;
         result.message = "Complete every No-Go region with at least three vertices before planning";
-        _applyPlanningResult(std::move(result));
+        _applyPlanningResult(std::move(result), true);
         return false;
     }
     if (!_marineContext) {
         result.message = "Marine plan context is unavailable";
-        _applyPlanningResult(std::move(result));
+        _applyPlanningResult(std::move(result), true);
         return false;
     }
 
@@ -515,14 +528,14 @@ bool CoverageInspectionComplexItem::plan()
     if (task == nullptr) {
         result.status = PlanningStatus::InvalidInput;
         result.message = "Marine task was not found";
-        _applyPlanningResult(std::move(result));
+        _applyPlanningResult(std::move(result), true);
         return false;
     }
 
     if (!task->schemaValid()) {
         result.status = PlanningStatus::InvalidInput;
         result.message = "Task v3 planning inputs are incomplete or invalid";
-        _applyPlanningResult(std::move(result));
+        _applyPlanningResult(std::move(result), true);
         return false;
     }
 
@@ -530,17 +543,25 @@ bool CoverageInspectionComplexItem::plan()
         _marineContext->plannerRegistry().planner(task->planner.plannerId);
     if (!planner) {
         result.message = "Coverage planner was not found";
-        _applyPlanningResult(std::move(result));
+        _applyPlanningResult(std::move(result), true);
         return false;
     }
+    const bool productionPlanner = isV05ProductionPlanner(planner->id(), planner->semanticVersion());
 
     CoveragePlanningProblem problem;
     std::optional<GeoReference> geoReference;
     CoveragePlanningError adapterError = CoveragePlanningError::None;
     if (!CoverageTaskAdapter::buildProblem(*task, problem, geoReference, adapterError)) {
+        result.error = adapterError;
         result.status = CoverageProblemValidator::statusForError(adapterError);
         result.message = CoverageProblemValidator::messageForError(adapterError);
-        _applyPlanningResult(std::move(result));
+        if (result.status == PlanningStatus::InvalidInput) {
+            const auto identity = PlanningInputIdentity::fromTask(*task);
+            if (identity) {
+                _planningArtifact = PlanningArtifact{result, *identity, false, PlanningResultContract::IntegratedV05};
+            }
+        }
+        _applyPlanningResult(std::move(result), true);
         return false;
     }
 
@@ -571,11 +592,23 @@ bool CoverageInspectionComplexItem::plan()
     if (!identity) {
         result = {};
         result.message = "Task v3 planning inputs are incomplete or invalid";
-        _applyPlanningResult(std::move(result));
+        _applyPlanningResult(std::move(result), true);
         return false;
     }
-    _planningArtifact = InfrastructurePlanningArtifact{std::move(result), *identity, false};
-    _applyPlanningResult({});
+    // v0.5 production planners publish an integrated diagnostic outcome even when
+    // no executable route exists. Historical Mock/Lawnmower results remain the
+    // InfrastructureOnly transition contract.
+    const bool integrated = result.outcome.readiness != MissionReadiness::None || productionPlanner;
+    if (integrated && !PlanningArtifactCodec::validateResult(result, task, resultError)) {
+        result = {};
+        result.message = "Coverage planner returned invalid integrated certification: " + resultError.toStdString();
+        _applyPlanningResult(std::move(result), true);
+        return false;
+    }
+    _planningArtifact = PlanningArtifact{
+        std::move(result), *identity, false,
+        integrated ? PlanningResultContract::IntegratedV05 : PlanningResultContract::InfrastructureOnly};
+    _applyPlanningResult(integrated ? _planningArtifact->result : PlanningResult{}, integrated);
     return success;
 }
 
@@ -703,16 +736,14 @@ int CoverageInspectionComplexItem::lastSequenceNumber() const
 
 void CoverageInspectionComplexItem::appendMissionItems(QList<MissionItem*>& items, QObject* missionItemParent)
 {
-    // InfrastructureOnly artifacts have no execution certification, including fresh results.
-    if (_planningArtifact) {
+    const auto* task = _task();
+    if (!_planningArtifact || !task) {
         return;
     }
     int nextSequenceNumber = _sequenceNumber;
     QString errorString;
-    if (!ArduPilotMissionAdapter::appendWaypoints(_planningResult, items, missionItemParent, nextSequenceNumber,
-                                                  errorString)) {
-        return;
-    }
+    (void) ArduPilotMissionAdapter::appendWaypoints(*_planningArtifact, *task, items, missionItemParent,
+                                                    nextSequenceNumber, errorString);
 }
 
 void CoverageInspectionComplexItem::setMissionFlightStatus(MissionFlightStatus_t& missionFlightStatus)
@@ -758,6 +789,25 @@ void CoverageInspectionComplexItem::save(QJsonArray& missionItems)
     const MarineTask* task = _task();
     const auto currentIdentity = task ? PlanningInputIdentity::fromTask(*task) : std::nullopt;
     if (!task || (!_planningArtifact && !currentIdentity)) {
+        return;
+    }
+    // Preserve transitional and stale loaded data verbatim until an explicit replan.
+    if (_loadedArtifactObject && _planningArtifact &&
+        (_planningArtifact->resultContract == PlanningResultContract::InfrastructureOnly || _planningArtifact->stale ||
+         !PlanningArtifactCodec::matchesCurrentInput(*_planningArtifact, *task))) {
+        missionItems.append(*_loadedArtifactObject);
+        return;
+    }
+    if (_planningArtifact && _planningArtifact->resultContract == PlanningResultContract::IntegratedV05) {
+        QJsonObject object;
+        QString error;
+        if (!PlanningArtifactCodec::save(*_planningArtifact, *task, object, error)) {
+            return;
+        }
+        object.insert(VisualMissionItem::jsonTypeKey, VisualMissionItem::jsonTypeComplexItemValue);
+        object.insert(ComplexMissionItem::jsonComplexItemTypeKey, jsonComplexItemTypeValue);
+        object.insert(_jsonTaskIdKey, taskId());
+        missionItems.append(object);
         return;
     }
     const PlanningResult& result = _planningArtifact ? _planningArtifact->result : _planningResult;
@@ -817,6 +867,30 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
         errorString = tr("Unsupported development schema: Marine planning artifact version %1 (expected 3)")
                           .arg(version.toVariant().toString());
         return false;
+    }
+    if (object.value("resultContract").toString() == QStringLiteral("IntegratedV05")) {
+        const auto loadedTaskId = object.value(_jsonTaskIdKey).toString().toStdString();
+        const auto* task = _marineContext ? _marineContext->task(loadedTaskId) : nullptr;
+        if (!task ||
+            object.value(VisualMissionItem::jsonTypeKey).toString() != VisualMissionItem::jsonTypeComplexItemValue ||
+            object.value(ComplexMissionItem::jsonComplexItemTypeKey).toString() != jsonComplexItemTypeValue) {
+            errorString = tr("Marine coverage item references a missing task or unsupported type");
+            return false;
+        }
+        PlanningArtifact artifact;
+        if (!PlanningArtifactCodec::load(object, *task, artifact, errorString)) {
+            return false;
+        }
+        _taskId = loadedTaskId;
+        _sequenceNumber = sequenceNumber;
+        _syncWorkRegionPolygonFromTask();
+        _syncNoGoPolygonsFromTask();
+        _planningArtifact = std::move(artifact);
+        _loadedArtifactObject = object;
+        const bool current = !_planningArtifact->stale;
+        _applyPlanningResult(current ? _planningArtifact->result : PlanningResult{}, current);
+        setDirty(false);
+        return true;
     }
     if (object.value("resultContract").toString() != QStringLiteral("InfrastructureOnly")) {
         errorString = tr("Unsupported development schema: Marine artifact resultContract");
@@ -924,9 +998,9 @@ bool CoverageInspectionComplexItem::load(const QJsonObject& object, int sequence
     return true;
 }
 
-void CoverageInspectionComplexItem::_applyPlanningResult(PlanningResult result)
+void CoverageInspectionComplexItem::_applyPlanningResult(PlanningResult result, bool current)
 {
-    const PlanningState newState = (result.status == PlanningStatus::Success) ? Planned : Unplanned;
+    const PlanningState newState = current ? Planned : Unplanned;
     const bool stateChanged = _planningState != newState;
     const bool incompleteChanged = _isIncomplete != (newState != Planned);
     const bool pathChanged = !pathsEqual(_planningResult.path, result.path);

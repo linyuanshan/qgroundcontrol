@@ -162,9 +162,9 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         QCOMPARE(expectedPlanningResult.legRoles.size(), expectedPlanningResult.path.size() - 1);
         QVERIFY(expectedPlanningResult.cellCount >= 1);
         expectedPathRoleRuns = item->generatedPathRoleRuns();
-        QVERIFY(expectedPathRoleRuns.isEmpty());
+        QVERIFY(!expectedPathRoleRuns.isEmpty());
         item->appendMissionItems(expectedMissionItems, this);
-        QVERIFY(expectedMissionItems.isEmpty());
+        QCOMPARE(expectedMissionItems.size(), static_cast<qsizetype>(expectedPlanningResult.path.size()));
 
         QVERIFY(controller.saveToFile(planPath));
         QVERIFY(QFile::exists(planPath));
@@ -204,7 +204,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
     auto* restoredItem = coverageItem(restoredController);
     QVERIFY(restoredItem != nullptr);
     QCOMPARE(restoredItem->taskId(), expectedTaskId);
-    QCOMPARE(restoredItem->planningState(), CoverageInspectionComplexItem::Unplanned);
+    QCOMPARE(restoredItem->planningState(), CoverageInspectionComplexItem::Planned);
 
     const MarineTask* restoredTask = restoredContext->task(expectedTaskId.toStdString());
     QVERIFY(restoredTask != nullptr);
@@ -243,7 +243,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
                      expectedNoGo.vertices.at(static_cast<std::size_t>(index)));
     }
 
-    QVERIFY(restoredItem->planningResult().path.empty());
+    QVERIFY(!restoredItem->planningResult().path.empty());
     QVERIFY(restoredItem->planningArtifact().has_value());
     QVERIFY(!restoredItem->planningArtifact()->stale);
     const PlanningResult& restoredResult = restoredItem->planningArtifact()->result;
@@ -286,7 +286,7 @@ void MarinePlanIntegrationTest::_testPlanFileRoundTrip()
         artifact.insert("version", oldVersion);
         QVERIFY(!restoredItem->load(artifact, 0, error));
         QVERIFY(error.contains("Unsupported development schema"));
-        QVERIFY(restoredItem->planningResult().path.empty());
+        QVERIFY(!restoredItem->planningResult().path.empty());
     }
 }
 

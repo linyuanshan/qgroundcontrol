@@ -29,6 +29,14 @@ struct GeoPolygon
     std::vector<GeoPoint> vertices;
 };
 
+struct GeoPolygonRegion
+{
+    GeoPolygon outerBoundary;
+    std::vector<GeoPolygon> holes;
+};
+
+using GeoPolygonRegionSet = std::vector<GeoPolygonRegion>;
+
 /// A single repeated first 2D vertex is an optional ring terminator, not another edge.
 [[nodiscard]] inline std::size_t openRingVertexCount(const GeoPolygon& polygon)
 {
