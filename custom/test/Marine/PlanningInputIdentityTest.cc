@@ -138,14 +138,14 @@ void PlanningInputIdentityTest::_testPlanningAndResolvedSemanticFingerprints()
     semantics.strategyVersion = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion);
     const auto resolved = PlanningInputIdentity::fromTask(task, semantics);
     QVERIFY(resolved.has_value());
-    QCOMPARE(resolved->fingerprint, QStringLiteral("ccaeefbca3d7fac593dfa4a686c7f0a1f10a00bec1927941290e3ce0f884f53b"));
+    QCOMPARE(resolved->fingerprint, QStringLiteral("5a95cc6ccab5dbf53a2663e7324e54f7368bdba19b3b6ac63ace9a15bd8ca7b6"));
 
     semantics.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId);
     semantics.strategyVersion = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion);
     const auto bcdResolved = PlanningInputIdentity::fromTask(task, semantics);
     QVERIFY(bcdResolved.has_value());
     QCOMPARE(bcdResolved->fingerprint,
-             QStringLiteral("548e77c9c6d0f59cea9eac2905c9f8669c4b735eccd6bc336b606a837e2b5235"));
+             QStringLiteral("b1910e0795b3ad2f1da551c25a79df5316025f6b30adf3d062b45e2121b2e434"));
 }
 
 void PlanningInputIdentityTest::_testSupportedSemanticMatching()
@@ -171,7 +171,7 @@ void PlanningInputIdentityTest::_testSupportedSemanticMatching()
 
     for (const QString& unsupportedVersion :
          {QString::fromLatin1(CoverageStrategySemantics::LegacyBoustrophedonVersion),
-          QString::fromLatin1(CoverageStrategySemantics::BoustrophedonPendingVersion)}) {
+          QString::fromLatin1(CoverageStrategySemantics::BoustrophedonPendingVersion), QStringLiteral("bcd.v0.5.v1")}) {
         PlanningSemantics unsupportedBcd;
         unsupportedBcd.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId);
         unsupportedBcd.strategyVersion = unsupportedVersion;
@@ -182,7 +182,7 @@ void PlanningInputIdentityTest::_testSupportedSemanticMatching()
 
     PlanningSemantics unsupported;
     unsupported.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId);
-    unsupported.strategyVersion = QStringLiteral("simple-monotone.future");
+    unsupported.strategyVersion = QStringLiteral("simple-monotone.v1");
     auto identity = PlanningInputIdentity::fromTask(task, unsupported);
     QVERIFY(identity.has_value());
     QVERIFY(!identity->matchesSupported(task));

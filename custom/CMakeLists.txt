@@ -81,6 +81,11 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CellCoverage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoundaryCoverageSupport.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoundaryCoverageSupport.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageRepairSupport.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageRepairSupport.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageRepair.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageRepair.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/CoverageRepairData.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GlobalSweepSelector.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/GlobalSweepSelector.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/Planning/BoustrophedonCoveragePlanner.cc
@@ -170,6 +175,8 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CellCoverageTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoundaryCoverageSupportTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/BoundaryCoverageSupportTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageRepairTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageRepairTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/StaticSafeRouterTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/GreedyCellOrderingTest.cc
@@ -348,6 +355,8 @@ if(QGC_BUILD_TESTING)
         LABELS
         Unit
     )
+
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL add_qgc_test CoverageRepairTest LABELS Unit)
 
     cmake_language(
         DEFER

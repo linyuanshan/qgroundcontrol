@@ -1194,6 +1194,24 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
     loadedSimple.appendMissionItems(mission, this);
     QVERIFY(mission.isEmpty());
 
+    PlanningSemantics preRepairSimple;
+    preRepairSimple.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId);
+    preRepairSimple.strategyVersion = QStringLiteral("simple-monotone.v1");
+    const auto oldSimpleIdentity = PlanningInputIdentity::fromTask(simpleTask, preRepairSimple);
+    QVERIFY(oldSimpleIdentity.has_value());
+    QJsonObject oldSimpleObject = simpleObject;
+    oldSimpleObject.insert(QStringLiteral("inputIdentity"), oldSimpleIdentity->toJson());
+    QVERIFY2(loadedSimple.load(oldSimpleObject, 0, error), qPrintable(error));
+    QVERIFY(loadedSimple.planningArtifact()->stale);
+    QCOMPARE(loadedSimple.planningState(), CoverageInspectionComplexItem::Unplanned);
+    QVERIFY(loadedSimple.planningResult().path.empty());
+    mission.clear();
+    loadedSimple.appendMissionItems(mission, this);
+    QVERIFY(mission.isEmpty());
+    QJsonArray oldSimpleResaved;
+    loadedSimple.save(oldSimpleResaved);
+    QCOMPARE(oldSimpleResaved.first().toObject(), oldSimpleObject);
+
     MarineTask bcdTask = validTask();
     bcdTask.planner.plannerId = CoverageStrategySemantics::AutoPlannerId;
     bcdTask.region.noGoRegions.push_back(noGoRectangle());
@@ -1246,7 +1264,7 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
     QVERIFY(mission.isEmpty());
 
     for (const char* oldVersion : {CoverageStrategySemantics::BoustrophedonPendingVersion,
-                                   CoverageStrategySemantics::LegacyBoustrophedonVersion}) {
+                                   CoverageStrategySemantics::LegacyBoustrophedonVersion, "bcd.v0.5.v1"}) {
         PlanningSemantics oldSemantics;
         oldSemantics.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId);
         oldSemantics.strategyVersion = QString::fromLatin1(oldVersion);

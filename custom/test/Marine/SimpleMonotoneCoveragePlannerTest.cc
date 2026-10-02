@@ -159,8 +159,10 @@ void SimpleMonotoneCoveragePlannerTest::_testIncompleteAndAssessmentErrorDoNotRe
 {
     CoveragePlanningProblem incomplete =
         simpleProblem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(0.0, 0.0, 20.0, 20.0));
-    incomplete.safety.hardSafetyMarginM = 1.0;
-    incomplete.safety.preferredSafetyMarginM = 1.0;
+    incomplete.safety.hardSafetyMarginM = 2.0;
+    incomplete.safety.preferredSafetyMarginM = 2.0;
+    // Boundary support may now satisfy Standard; Strict retains the irreducible corner deficit.
+    incomplete.coverageRequirement = CoverageRequirement::Strict;
     const CoveragePlanningSolution failedCoverage = SimpleMonotoneCoveragePlanner{}.plan(incomplete);
     QCOMPARE(failedCoverage.status, PlanningStatus::Failed);
     QCOMPARE(failedCoverage.error, CoveragePlanningError::CoverageIncomplete);

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "CoverageQualityEvaluator.h"
+#include "CoverageRepairData.h"
 #include "Geometry/GeometryTypes.h"
 #include "MarineTask.h"
 #include "MarineTypes.h"
@@ -81,6 +82,9 @@ struct CoveragePlanningSolution
     CoveragePlanningError error = CoveragePlanningError::None;
     std::optional<CoverageQualityEvaluation> coverageQuality;
     std::optional<PlannerSourceInfo> plannerSource;
+    // V05-07 pure runtime facts. Failed/CoverageIncomplete still exposes no executable path;
+    // the retained candidate in these records is not consumed by the Mission adapter or persisted.
+    std::vector<CoverageRepairResult> repairCandidates;
     std::string message;
 };
 

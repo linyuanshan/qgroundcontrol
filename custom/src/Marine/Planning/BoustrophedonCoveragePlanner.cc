@@ -12,6 +12,7 @@
 #include "CoverageGeometry.h"
 #include "CoverageProblemValidator.h"
 #include "CoverageQualityEvaluator.h"
+#include "CoverageRepair.h"
 #include "CoverageSafety.h"
 #include "CoverageStrategySemantics.h"
 #include "Geometry/MarineGeometry.h"
@@ -262,8 +263,30 @@ CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanni
         return failed;
     }
 
+    const bool initialPass = std::ranges::any_of(
+        candidates, [](const BcdCandidate& candidate) { return coveragePolicyPass(candidate.quality); });
+    std::vector<CoverageRepairResult> repairCandidates;
+    for (BcdCandidate& candidate : candidates) {
+        CoverageRepairCandidate initial{candidate.path, candidate.legRoles, candidate.metrics, candidate.quality,
+                                        candidate.preferredSafe};
+        CoverageRepairResult repair{.candidate = initial};
+        if (!initialPass) {
+            const auto& active = candidate.generationOrder == 0 ? safetyRegions.regions.preferredExecutionTrackRegion
+                                                                : safetyRegions.regions.hardExecutionTrackRegion;
+            repair = repairCoverageCandidate(coverageGeometry.geometry.coverageTarget, active, safetyRegions,
+                                             normalized.swathWidthM, normalized.coverageRequirement, strategy, initial);
+            candidate.path = repair.candidate.path;
+            candidate.legRoles = repair.candidate.legRoles;
+            candidate.metrics = repair.candidate.metrics;
+            candidate.quality = repair.candidate.quality;
+            candidate.preferredSafe = repair.candidate.preferredSafe;
+        }
+        repairCandidates.push_back(std::move(repair));
+    }
+
     const auto best = std::min_element(candidates.begin(), candidates.end(), candidateBetter);
     CoveragePlanningSolution solution;
+    solution.repairCandidates = std::move(repairCandidates);
     solution.coverageQuality = best->quality;
     solution.plannerSource = source;
     solution.selectedSweepAngleDeg = selectedSweepAngleDeg;

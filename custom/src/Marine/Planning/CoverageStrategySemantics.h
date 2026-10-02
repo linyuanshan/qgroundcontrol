@@ -7,9 +7,9 @@ namespace Marine::CoverageStrategySemantics {
 inline constexpr char AutoPlannerId[] = "marine.coverage.auto";
 inline constexpr char AutoPlannerVersion[] = "auto.v1";
 inline constexpr char SimpleMonotoneId[] = "marine.coverage.simple-monotone";
-inline constexpr char SimpleMonotoneVersion[] = "simple-monotone.v1";
+inline constexpr char SimpleMonotoneVersion[] = "simple-monotone.v2";
 inline constexpr char BoustrophedonId[] = "marine.coverage.bcd";
-inline constexpr char BoustrophedonVersion[] = "bcd.v0.5.v1";
+inline constexpr char BoustrophedonVersion[] = "bcd.v0.5.v2";
 inline constexpr char LawnmowerId[] = "marine.coverage.lawnmower";
 inline constexpr char MockPlannerId[] = "marine.coverage.mock";
 inline constexpr char BoustrophedonPendingVersion[] = "bcd.v0.5.pending-v05-06";

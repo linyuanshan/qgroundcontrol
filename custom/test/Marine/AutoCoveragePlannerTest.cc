@@ -144,8 +144,10 @@ void AutoCoveragePlannerTest::_testNoGoOutsideCoverageDoesNotEscalate()
 void AutoCoveragePlannerTest::_testCoverageAssessmentAndSafetyFailureDoNotEscalate()
 {
     CoveragePlanningProblem incomplete = problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(0.0, 0.0, 20.0, 20.0));
-    incomplete.safety.hardSafetyMarginM = 1.0;
-    incomplete.safety.preferredSafetyMarginM = 1.0;
+    incomplete.safety.hardSafetyMarginM = 2.0;
+    incomplete.safety.preferredSafetyMarginM = 2.0;
+    // Test post-repair failure, rather than freezing the pre-repair Standard deficit.
+    incomplete.coverageRequirement = CoverageRequirement::Strict;
     const CoveragePlanningSolution coverageFailure = AutoCoveragePlanner{}.plan(incomplete);
     QCOMPARE(coverageFailure.status, PlanningStatus::Failed);
     QCOMPARE(coverageFailure.error, CoveragePlanningError::CoverageIncomplete);

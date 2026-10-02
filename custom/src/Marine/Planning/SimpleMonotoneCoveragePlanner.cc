@@ -10,6 +10,7 @@
 #include "CoverageGeometry.h"
 #include "CoverageProblemValidator.h"
 #include "CoverageQualityEvaluator.h"
+#include "CoverageRepair.h"
 #include "CoverageSafety.h"
 #include "CoverageStrategySemantics.h"
 #include "Geometry/MarineGeometry.h"
@@ -36,6 +37,7 @@ struct Candidate
     PlanningPathMetrics metrics;
     CoverageQualityEvaluation quality;
     bool preferredSafe = false;
+    bool preferredTier = false;
     int orientationOrder = 0;
 };
 
@@ -384,6 +386,7 @@ CoveragePlanningSolution SimpleMonotoneCoveragePlanner::plan(const CoveragePlann
                 continue;
             }
             candidate->preferredSafe = safety.tier == SafetySolutionTier::D0;
+            candidate->preferredTier = preferredTier;
             candidate->quality =
                 evaluateCoverageQuality(coverageGeometry.geometry.coverageTarget, candidate->path, candidate->legRoles,
                                         normalized.swathWidthM, normalized.coverageRequirement, strategy);
@@ -397,9 +400,31 @@ CoveragePlanningSolution SimpleMonotoneCoveragePlanner::plan(const CoveragePlann
         return failure(lastHardError, {}, source);
     }
 
+    const bool initialPass = std::ranges::any_of(
+        candidates, [](const Candidate& candidate) { return coveragePolicyPass(candidate.quality); });
+    std::vector<CoverageRepairResult> repairCandidates;
+    for (Candidate& candidate : candidates) {
+        CoverageRepairCandidate initial{candidate.path, candidate.legRoles, candidate.metrics, candidate.quality,
+                                        candidate.preferredSafe};
+        CoverageRepairResult repair{.candidate = initial};
+        if (!initialPass) {
+            const auto& active = candidate.preferredTier ? safetyRegions.regions.preferredExecutionTrackRegion
+                                                         : safetyRegions.regions.hardExecutionTrackRegion;
+            repair = repairCoverageCandidate(coverageGeometry.geometry.coverageTarget, active, safetyRegions,
+                                             normalized.swathWidthM, normalized.coverageRequirement, strategy, initial);
+            candidate.path = repair.candidate.path;
+            candidate.legRoles = repair.candidate.legRoles;
+            candidate.metrics = repair.candidate.metrics;
+            candidate.quality = repair.candidate.quality;
+            candidate.preferredSafe = repair.candidate.preferredSafe;
+        }
+        repairCandidates.push_back(std::move(repair));
+    }
+
     const auto best = std::ranges::min_element(
         candidates, [](const Candidate& left, const Candidate& right) { return candidateIsBetter(left, right); });
     CoveragePlanningSolution result;
+    result.repairCandidates = std::move(repairCandidates);
     result.plannerSource = source;
     result.coverageQuality = best->quality;
     result.selectedSweepAngleDeg = selectedAngleDeg;

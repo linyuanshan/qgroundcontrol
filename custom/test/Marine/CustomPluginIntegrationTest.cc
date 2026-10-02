@@ -80,7 +80,7 @@ void CustomPluginIntegrationTest::_testPlanContextAndCreatorRegistration()
     const auto automatic = contexts.first()->plannerRegistry().planner("marine.coverage.auto");
     QVERIFY(simple != nullptr);
     QVERIFY(automatic != nullptr);
-    QCOMPARE(simple->semanticVersion(), std::string("simple-monotone.v1"));
+    QCOMPARE(simple->semanticVersion(), std::string("simple-monotone.v2"));
     QCOMPARE(automatic->semanticVersion(), std::string("auto.v1"));
 
     QmlObjectListModel* creators = planController()->planCreators();
