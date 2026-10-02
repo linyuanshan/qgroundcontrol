@@ -13,6 +13,8 @@ private slots:
     void _testExplicitSplitAndMergeTopology();
     void _testCollinearAndNearEqualEvents();
     void _testDeterminismAndInputOrdering();
+    void _testMultipleTargetComponents();
+    void _testMultipleComponentsWithHole();
     void _testNonCardinalSweep();
     void _testInvalidInputs();
     void _testOutputInvariants();

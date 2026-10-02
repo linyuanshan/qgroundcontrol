@@ -128,7 +128,8 @@ std::vector<CellAdjacency> sharedSweepBoundaries(const CoverageDecompositionResu
     return edges;
 }
 
-void verifyCellInvariants(const CoverageDecompositionResult& result, const PolygonRegion2D& input, double angle)
+void verifyCellSetInvariants(const CoverageDecompositionResult& result, const PolygonRegionSet2D& inputs, double angle,
+                             bool requireConnected)
 {
     QVERIFY2(result.status == PlanningStatus::Success, result.message.c_str());
     QCOMPARE(result.error, CoveragePlanningError::None);
@@ -156,18 +157,19 @@ void verifyCellInvariants(const CoverageDecompositionResult& result, const Polyg
             perimeter += std::hypot(a.xM - b.xM, a.yM - b.yM);
         }
     };
-    addPerimeter(input.outerBoundary);
-    for (const auto& hole : input.holes) {
-        addPerimeter(hole);
+    for (const PolygonRegion2D& input : inputs) {
+        addPerimeter(input.outerBoundary);
+        for (const auto& hole : input.holes) {
+            addPerimeter(hole);
+        }
     }
     const double areaToleranceM2 = perimeter * Geometry::LengthEpsilonM * 2.0;
-    QVERIFY(std::abs(area(unionResult.regions) - area(input)) <= areaToleranceM2);
-    const auto inputAsSet = PolygonRegionSet2D{input};
+    QVERIFY(std::abs(area(unionResult.regions) - area(inputs)) <= areaToleranceM2);
     const auto unionBuffer = Geometry::bufferPolygonRegions(unionResult.regions, 2.0 * Geometry::LengthEpsilonM);
-    const auto inputBuffer = Geometry::bufferPolygonRegions(inputAsSet, 2.0 * Geometry::LengthEpsilonM);
+    const auto inputBuffer = Geometry::bufferPolygonRegions(inputs, 2.0 * Geometry::LengthEpsilonM);
     QCOMPARE(unionBuffer.status, Geometry::PolygonRegionOperationStatus::Success);
     QCOMPARE(inputBuffer.status, Geometry::PolygonRegionOperationStatus::Success);
-    QVERIFY(Geometry::isRegionSetContained(inputAsSet, unionBuffer.regions).contained);
+    QVERIFY(Geometry::isRegionSetContained(inputs, unionBuffer.regions).contained);
     QVERIFY(Geometry::isRegionSetContained(unionResult.regions, inputBuffer.regions).contained);
     QVERIFY(std::abs(area(unionResult.regions) - [&result] {
                 double sum = 0.0;
@@ -237,7 +239,14 @@ void verifyCellInvariants(const CoverageDecompositionResult& result, const Polyg
             }
         }
     }
-    QVERIFY(std::all_of(visited.begin(), visited.end(), [](bool value) { return value; }));
+    if (requireConnected) {
+        QVERIFY(std::all_of(visited.begin(), visited.end(), [](bool value) { return value; }));
+    }
+}
+
+void verifyCellInvariants(const CoverageDecompositionResult& result, const PolygonRegion2D& input, double angle)
+{
+    verifyCellSetInvariants(result, {input}, angle, true);
 }
 
 }  // namespace
@@ -338,6 +347,62 @@ void BoustrophedonDecompositionTest::_testDeterminismAndInputOrdering()
     compareResults(first, decompose(region(cyclicOuter, {firstHole, secondHole})));
 }
 
+void BoustrophedonDecompositionTest::_testMultipleTargetComponents()
+{
+    const PolygonRegion2D left = region(rectangle(0, 0, 50, 10));
+    const PolygonRegion2D upperRight = region(rectangle(20, 20, 30, 30));
+    const PolygonRegionSet2D targetRegions{left, upperRight};
+    const auto result = decomposeBoustrophedon(targetRegions, 90.0);
+    QVERIFY2(result.status == PlanningStatus::Success, result.message.c_str());
+    QCOMPARE(result.cells.size(), std::size_t{2});
+    QCOMPARE(result.cells[0].id, CoverageCellId{0});
+    QCOMPARE(result.cells[1].id, CoverageCellId{1});
+    QVERIFY(result.adjacency.empty());
+    verifyCellSetInvariants(result, targetRegions, 90.0, false);
+
+    PolygonRegion2D rotatedLeft = left;
+    std::rotate(rotatedLeft.outerBoundary.vertices.begin(), rotatedLeft.outerBoundary.vertices.begin() + 2,
+                rotatedLeft.outerBoundary.vertices.end());
+    PolygonRegion2D reversedUpperRight = upperRight;
+    std::reverse(reversedUpperRight.outerBoundary.vertices.begin(), reversedUpperRight.outerBoundary.vertices.end());
+    const PolygonRegionSet2D transformedRegions{reversedUpperRight, rotatedLeft};
+
+    compareResults(result, decomposeBoustrophedon({upperRight, left}, 90.0));
+    compareResults(result, decomposeBoustrophedon(transformedRegions, 90.0));
+    compareResults(result, decomposeBoustrophedon(targetRegions, 90.0));
+}
+
+void BoustrophedonDecompositionTest::_testMultipleComponentsWithHole()
+{
+    const PolygonRegion2D withHole = region(rectangle(0, 0, 10, 10), {rectangle(4, 3, 6, 7)});
+    const PolygonRegion2D holeFree = region(rectangle(20, 0, 25, 10));
+    const PolygonRegionSet2D inputs{holeFree, withHole};
+    const auto result = decomposeBoustrophedon(inputs, 90.0);
+    QVERIFY2(result.status == PlanningStatus::Success, result.message.c_str());
+    QCOMPARE(result.cells.size(), std::size_t{5});
+    verifyCellSetInvariants(result, inputs, 90.0, false);
+
+    for (std::size_t index = 0; index < 4; ++index) {
+        for (const Point2D& vertex : result.cells[index].polygon.vertices) {
+            QVERIFY(vertex.xM <= 10.0);
+        }
+    }
+    for (const Point2D& vertex : result.cells[4].polygon.vertices) {
+        QVERIFY(vertex.xM >= 20.0);
+    }
+    for (const CellAdjacency& edge : result.adjacency) {
+        QVERIFY(edge.first < 4);
+        QVERIFY(edge.second < 4);
+    }
+
+    PolygonRegion2D transformedWithHole = withHole;
+    std::rotate(transformedWithHole.holes.front().vertices.begin(),
+                transformedWithHole.holes.front().vertices.begin() + 1,
+                transformedWithHole.holes.front().vertices.end());
+    std::reverse(transformedWithHole.holes.front().vertices.begin(), transformedWithHole.holes.front().vertices.end());
+    compareResults(result, decomposeBoustrophedon({transformedWithHole, holeFree}, 90.0));
+}
+
 void BoustrophedonDecompositionTest::_testNonCardinalSweep()
 {
     const Polygon2D outer = rectangle(-10, -10, 10, 10);
@@ -348,9 +413,11 @@ void BoustrophedonDecompositionTest::_testNonCardinalSweep()
 
 void BoustrophedonDecompositionTest::_testInvalidInputs()
 {
-    QVERIFY(decomposeBoustrophedon({}, 90.0).status == PlanningStatus::Failed);
-    QVERIFY(decomposeBoustrophedon({region(rectangle(0, 0, 1, 1)), region(rectangle(2, 0, 3, 1))}, 90.0).error ==
-            CoveragePlanningError::DisconnectedFeasibleRegion);
+    const auto emptyTarget = decomposeBoustrophedon({}, 90.0);
+    QCOMPARE(emptyTarget.status, PlanningStatus::InvalidInput);
+    QCOMPARE(emptyTarget.error, CoveragePlanningError::EmptyCoverageTarget);
+    QVERIFY(emptyTarget.cells.empty());
+    QVERIFY(emptyTarget.adjacency.empty());
     QVERIFY(decompose(region(rectangle(0, 0, 10, 10)), std::numeric_limits<double>::quiet_NaN()).status ==
             PlanningStatus::InvalidInput);
     const Polygon2D nanPolygon = polygon({{0, 0}, {10, 0}, {10, 10}, {std::numeric_limits<double>::quiet_NaN(), 10}});
@@ -363,6 +430,11 @@ void BoustrophedonDecompositionTest::_testInvalidInputs()
     QVERIFY(!Geometry::isValidPolygonRegion(region(rectangle(0, 0, 10, 10), {rectangle(0, 2, 3, 4)})));
     QVERIFY(!Geometry::isValidPolygonRegion(
         region(rectangle(0, 0, 10, 10), {rectangle(2, 2, 8, 8), rectangle(3, 3, 4, 4)})));
+    const auto invalidRegionSet = decomposeBoustrophedon(
+        {region(rectangle(0, 0, 1, 1)), region(polygon({{0, 0}, {1, 1}, {0, 1}, {1, 0}}))}, 90.0);
+    QCOMPARE(invalidRegionSet.status, PlanningStatus::InvalidInput);
+    QVERIFY(invalidRegionSet.cells.empty());
+    QVERIFY(invalidRegionSet.adjacency.empty());
     QVERIFY(!Geometry::shareSlabBoundary(rectangle(0, 0, 5, 5), rectangle(5, 5, 10, 10), 5.0));
     QVERIFY(Geometry::shareSlabBoundary(rectangle(0, 0, 6, 5), rectangle(5, 5, 10, 10), 5.0));
     QVERIFY(Geometry::shareSlabBoundary(rectangle(0, 0, 5.001, 5), rectangle(5, 5, 10, 10), 5.0));

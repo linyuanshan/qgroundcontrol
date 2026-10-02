@@ -403,6 +403,64 @@ void MarineGeometryTest::_testPolygonRegionIntersection()
     QCOMPARE(area(intersection.regions), 50.0);
     QCOMPARE(Geometry::intersectPolygonRegions({}, second).status, Geometry::PolygonRegionOperationStatus::Success);
     QVERIFY(Geometry::intersectPolygonRegions({}, second).regions.empty());
+    const auto emptyClips = Geometry::intersectPolygonRegions(first, {});
+    QCOMPARE(emptyClips.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(emptyClips.regions.empty());
+
+    const PolygonRegionSet2D disjoint{{.outerBoundary = {{{20.0, 0.0}, {30.0, 0.0}, {30.0, 10.0}, {20.0, 10.0}}}}};
+    const auto disjointIntersection = Geometry::intersectPolygonRegions(first, disjoint);
+    QCOMPARE(disjointIntersection.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(disjointIntersection.regions.empty());
+
+    const PolygonRegionSet2D inner{{.outerBoundary = {{{2.0, 2.0}, {4.0, 2.0}, {4.0, 4.0}, {2.0, 4.0}}}}};
+    for (const auto containedIntersection : {Geometry::intersectPolygonRegions(first, inner),
+                                             Geometry::intersectPolygonRegions(inner, first)}) {
+        QCOMPARE(containedIntersection.status, Geometry::PolygonRegionOperationStatus::Success);
+        QCOMPARE(area(containedIntersection.regions), area(inner));
+        const auto resultInInner = Geometry::isRegionSetContained(containedIntersection.regions, inner);
+        const auto innerInResult = Geometry::isRegionSetContained(inner, containedIntersection.regions);
+        QCOMPARE(resultInInner.status, Geometry::PolygonRegionOperationStatus::Success);
+        QCOMPARE(innerInResult.status, Geometry::PolygonRegionOperationStatus::Success);
+        QVERIFY(resultInInner.contained);
+        QVERIFY(innerInResult.contained);
+    }
+}
+
+void MarineGeometryTest::_testPolygonRegionIntersectionCommutativity()
+{
+    const PolygonRegionSet2D rectangleA{{.outerBoundary = {{{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}}}}};
+    const PolygonRegionSet2D rectangleB{{.outerBoundary = {{{5.0, 0.0}, {15.0, 0.0}, {15.0, 10.0}, {5.0, 10.0}}}}};
+    const PolygonRegionSet2D holedA{{.outerBoundary = rectangle(),
+                                     .holes = {{{{8.0, 3.0}, {12.0, 3.0}, {12.0, 7.0}, {8.0, 7.0}}}}}};
+    const PolygonRegionSet2D holedB{{.outerBoundary = {{{5.0, 5.0}, {15.0, 5.0}, {15.0, 15.0}, {5.0, 15.0}}}}};
+    const PolygonRegionSet2D nonGridA{{.outerBoundary =
+                                          {{{0.0004, 0.0004}, {74.9996, 0.001}, {75.0002, 111.1777},
+                                            {0.0001, 111.1771}}}}};
+    const PolygonRegionSet2D nonGridB{{.outerBoundary =
+                                          {{{20.0004, -3.0004}, {80.0001, 3.0002}, {70.0004, 120.0001},
+                                            {10.0002, 108.0004}}}}};
+
+    const auto verifyCommutative = [](const PolygonRegionSet2D& left, const PolygonRegionSet2D& right) {
+        const auto ab = Geometry::intersectPolygonRegions(left, right);
+        const auto ba = Geometry::intersectPolygonRegions(right, left);
+        QCOMPARE(ab.status, Geometry::PolygonRegionOperationStatus::Success);
+        QCOMPARE(ba.status, Geometry::PolygonRegionOperationStatus::Success);
+        const auto abArea = Geometry::polygonRegionArea(ab.regions);
+        const auto baArea = Geometry::polygonRegionArea(ba.regions);
+        QCOMPARE(abArea.status, Geometry::PolygonRegionOperationStatus::Success);
+        QCOMPARE(baArea.status, Geometry::PolygonRegionOperationStatus::Success);
+        QVERIFY(std::abs(abArea.areaM2 - baArea.areaM2) <= 0.001);
+        const auto abInBa = Geometry::isRegionSetContained(ab.regions, ba.regions);
+        const auto baInAb = Geometry::isRegionSetContained(ba.regions, ab.regions);
+        QCOMPARE(abInBa.status, Geometry::PolygonRegionOperationStatus::Success);
+        QCOMPARE(baInAb.status, Geometry::PolygonRegionOperationStatus::Success);
+        QVERIFY(abInBa.contained);
+        QVERIFY(baInAb.contained);
+    };
+
+    verifyCommutative(rectangleA, rectangleB);
+    verifyCommutative(holedA, holedB);
+    verifyCommutative(nonGridA, nonGridB);
 }
 
 void MarineGeometryTest::_testPolygonRegionInset()

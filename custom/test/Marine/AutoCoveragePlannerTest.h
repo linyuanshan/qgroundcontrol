@@ -9,8 +9,10 @@ class AutoCoveragePlannerTest : public UnitTest
 private slots:
     void _testManualRectangleResolvesSimpleMonotone();
     void _testConcaveMonotoneResolvesSimpleMonotone();
-    void _testCapabilityEscalationIsPendingBcd();
+    void _testCapabilityEscalationDelegatesToBcd();
     void _testNoGoOutsideCoverageDoesNotEscalate();
     void _testCoverageAssessmentAndSafetyFailureDoNotEscalate();
+    void _testBcdFailurePreservesResolvedStrategyProvenance();
     void _testAutoSweepIsDeterministicAndDistinctFromPlannerAuto();
+    void _testAutoSweepEscalationSelectsOnce();
 };

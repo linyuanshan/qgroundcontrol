@@ -3,6 +3,7 @@
 #include <optional>
 #include <utility>
 
+#include "BoustrophedonCoveragePlanner.h"
 #include "CoverageGeometry.h"
 #include "CoverageProblemValidator.h"
 #include "CoverageSafety.h"
@@ -87,13 +88,16 @@ CoveragePlanningSolution AutoCoveragePlanner::plan(const CoveragePlanningProblem
     const SimpleMonotoneCapabilityResult capability =
         assessSimpleMonotoneCapability(coverageGeometry.geometry.coverageTarget, selectedAngleDeg);
     if (!capability.applicable) {
-        PlannerSourceInfo source =
-            sourceInfo(PlannerResolutionStatus::ResolvedStrategyUnavailable, capability.reason, true,
-                       problem.sweepAngleMode, selectedAngleDeg, CoverageStrategySemantics::BoustrophedonId,
-                       CoverageStrategySemantics::BoustrophedonPendingVersion);
-        return failure(CoveragePlanningError::ResolvedStrategyUnavailable,
-                       CoverageProblemValidator::messageForError(CoveragePlanningError::ResolvedStrategyUnavailable),
-                       std::move(source));
+        CoveragePlanningProblem delegatedProblem = normalized;
+        delegatedProblem.sweepAngleMode = SweepAngleMode::Manual;
+        delegatedProblem.requestedSweepAngleDeg = selectedAngleDeg;
+        BoustrophedonCoveragePlanner bcdPlanner;
+        CoveragePlanningSolution result = bcdPlanner.plan(delegatedProblem);
+        result.plannerSource = sourceInfo(PlannerResolutionStatus::Resolved, capability.reason, true,
+                                          problem.sweepAngleMode, selectedAngleDeg,
+                                          CoverageStrategySemantics::BoustrophedonId,
+                                          CoverageStrategySemantics::BoustrophedonVersion);
+        return result;
     }
 
     CoveragePlanningProblem delegatedProblem = normalized;

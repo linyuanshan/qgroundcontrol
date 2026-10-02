@@ -6,6 +6,7 @@
 #include "BoustrophedonCoveragePlanner.h"
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageInspectionPlanCreator.h"
+#include "CoverageStrategySemantics.h"
 #include "LawnmowerCoveragePlanner.h"
 #include "MarinePlanContext.h"
 #include "MissionController.h"
@@ -145,7 +146,14 @@ void CoverageInspectionPlanCreatorTest::_testCreatePlanWithTwoDimensionalCenter(
     QCOMPARE(result.pathLengthM, result.coverageLengthM + result.transitLengthM);
     QVERIFY(result.cellCount >= 1);
     QVERIFY(result.turnCount > 0);
-    QVERIFY(result.message.find("Boustrophedon") != std::string::npos);
+    QVERIFY(result.plannerSource.has_value());
+    const PlannerSourceInfo& source = *result.plannerSource;
+    QCOMPARE(source.requestedPlannerId, std::string(CoverageStrategySemantics::BoustrophedonId));
+    QCOMPARE(source.resolvedStrategy.strategyId, std::string(CoverageStrategySemantics::BoustrophedonId));
+    QCOMPARE(source.resolvedStrategy.semanticVersion, std::string(CoverageStrategySemantics::BoustrophedonVersion));
+    QCOMPARE(source.resolutionStatus, PlannerResolutionStatus::Resolved);
+    QCOMPARE(source.resolutionReason, PlannerResolutionReason::None);
+    QVERIFY(!source.escalated);
     for (const auto& point : result.path) {
         QVERIFY(std::isfinite(point.latitudeDeg));
         QVERIFY(std::isfinite(point.longitudeDeg));

@@ -14,4 +14,11 @@ private slots:
     void _testNonCardinalAndNarrowCells();
     void _testAlternateLaneParity();
     void _testFailureIsAtomic();
+    void _testTargetTrackClipping();
+    void _testTransitCanLeaveTargetAndUsesPathMetrics();
+    void _testMultiIntervalSelectionIsDeterministic();
+    void _testActiveTrackHoleIsRespected();
+    void _testNoTrackOverlap();
+    void _testTrackOverloadFailureIsAtomic();
+    void _testTrackOverloadInputValidation();
 };

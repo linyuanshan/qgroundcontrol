@@ -12,5 +12,9 @@ private slots:
     void _testAutoSelectionAndInputOrder();
     void _testFailurePropagation();
     void _testExecutionSafeScenarios();
+    void _testCoverageNavigationSeparation();
+    void _testCoverageFirstCandidateRanking();
+    void _testDirectAutoSweepAndFailureSource();
     void _testGeoRoundTripS04Regression();
+    void _testGeoAdapterMarinePlanRoundTripRegression();
 };

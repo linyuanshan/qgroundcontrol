@@ -1,35 +1,174 @@
 #include "BoustrophedonCoveragePlanner.h"
 
+#include <algorithm>
 #include <cmath>
+#include <optional>
 #include <utility>
+#include <vector>
 
-#include "BoundaryCoverageSupport.h"
 #include "BoustrophedonDecomposition.h"
 #include "CellCoverage.h"
 #include "ComplexCoverageAssembly.h"
-#include "CoverageFreeSpace.h"
+#include "CoverageGeometry.h"
 #include "CoverageProblemValidator.h"
 #include "CoverageQualityEvaluator.h"
+#include "CoverageSafety.h"
 #include "CoverageStrategySemantics.h"
 #include "Geometry/MarineGeometry.h"
 #include "GlobalSweepSelector.h"
 #include "GreedyCellOrdering.h"
+#include "PlanningPathMetrics.h"
 
 namespace {
 
-Marine::CoveragePlanningSolution failure(Marine::PlanningStatus status, Marine::CoveragePlanningError error,
-                                         std::string message)
+using namespace Marine;
+
+struct BcdCandidate
 {
-    Marine::CoveragePlanningSolution solution;
+    std::vector<Point2D> path;
+    std::vector<PathLegRole> legRoles;
+    PlanningPathMetrics metrics;
+    CoverageQualityEvaluation quality;
+    bool preferredSafe = false;
+    int cellCount = 0;
+    std::size_t generationOrder = 0;
+};
+
+struct CandidateAttempt
+{
+    std::optional<BcdCandidate> candidate;
+    CoveragePlanningError error = CoveragePlanningError::None;
+    std::string message;
+};
+
+CoveragePlanningSolution failure(PlanningStatus status, CoveragePlanningError error, std::string message,
+                                 std::optional<PlannerSourceInfo> source = std::nullopt)
+{
+    CoveragePlanningSolution solution;
     solution.status = status;
     solution.error = error;
-    solution.message = message.empty() ? Marine::CoverageProblemValidator::messageForError(error) : std::move(message);
+    solution.message = message.empty() ? CoverageProblemValidator::messageForError(error) : std::move(message);
+    solution.plannerSource = std::move(source);
     return solution;
 }
 
-Marine::CoveragePlanningSolution failure(Marine::CoveragePlanningError error, std::string message = {})
+CoveragePlanningSolution failure(CoveragePlanningError error, std::string message = {},
+                                 std::optional<PlannerSourceInfo> source = std::nullopt)
 {
-    return failure(Marine::CoverageProblemValidator::statusForError(error), error, std::move(message));
+    return failure(CoverageProblemValidator::statusForError(error), error, std::move(message), std::move(source));
+}
+
+PlannerSourceInfo directSource(SweepAngleMode requestedMode, double selectedAngleDeg)
+{
+    return {.requestedPlannerId = CoverageStrategySemantics::BoustrophedonId,
+            .resolvedStrategy = {.strategyId = CoverageStrategySemantics::BoustrophedonId,
+                                 .semanticVersion = CoverageStrategySemantics::BoustrophedonVersion},
+            .resolutionStatus = PlannerResolutionStatus::Resolved,
+            .resolutionReason = PlannerResolutionReason::None,
+            .escalated = false,
+            .requestedSweepMode = requestedMode,
+            .selectedSweepAngleDeg = selectedAngleDeg,
+            .sweepSemanticVersion =
+                requestedMode == SweepAngleMode::Auto ? CoverageStrategySemantics::GlobalSweepVersion : ""};
+}
+
+int qualityCategory(const CoverageQualityEvaluation& quality)
+{
+    if (((quality.status == CoverageQualityStatus::Complete) ||
+         (quality.status == CoverageQualityStatus::Acceptable)) && quality.passesRequirement) {
+        return 2;
+    }
+    if (quality.status == CoverageQualityStatus::Insufficient) {
+        return 1;
+    }
+    return 0;
+}
+
+bool candidateBetter(const BcdCandidate& left, const BcdCandidate& right)
+{
+    const int leftCategory = qualityCategory(left.quality);
+    const int rightCategory = qualityCategory(right.quality);
+    if (leftCategory != rightCategory) {
+        return leftCategory > rightCategory;
+    }
+
+    if ((leftCategory == 1) || (leftCategory == 2)) {
+        switch (compareCoverageQuality(left.quality, right.quality)) {
+        case CoverageQualityComparison::Better:
+            return true;
+        case CoverageQualityComparison::Worse:
+            return false;
+        case CoverageQualityComparison::Equivalent:
+        case CoverageQualityComparison::NotComparable:
+            break;
+        }
+    }
+
+    if (left.preferredSafe != right.preferredSafe) {
+        return left.preferredSafe;
+    }
+    if (left.metrics.pathLengthM != right.metrics.pathLengthM) {
+        return left.metrics.pathLengthM < right.metrics.pathLengthM;
+    }
+    if (left.metrics.turnCount != right.metrics.turnCount) {
+        return left.metrics.turnCount < right.metrics.turnCount;
+    }
+    return left.generationOrder < right.generationOrder;
+}
+
+CandidateAttempt generateCandidate(const CoverageDecompositionResult& decomposition,
+                                   const PolygonRegionSet2D& coverageTarget,
+                                   const PolygonRegionSet2D& activeTrackRegion,
+                                   const SafetyTrackRegionsResult& safetyRegions,
+                                   const CoveragePlanningProblem& problem, double selectedAngleDeg,
+                                   const PlannerStrategyIdentity& strategy, std::size_t generationOrder)
+{
+    const CellCoverageGenerationResult cellCoverage =
+        generateCellCoverage(decomposition.cells, activeTrackRegion, problem.swathWidthM, selectedAngleDeg);
+    if (cellCoverage.status != PlanningStatus::Success) {
+        return {.error = cellCoverage.error, .message = cellCoverage.message};
+    }
+
+    const CellOrderingResult ordering =
+        orderCellTraversals(activeTrackRegion, cellCoverage.cells, cellCoverage.traversalStates);
+    if (ordering.status != PlanningStatus::Success) {
+        return {.error = ordering.error, .message = ordering.message};
+    }
+
+    const ComplexCoverageAssemblyResult assembly =
+        assembleComplexCoverage(activeTrackRegion, cellCoverage.cells, ordering.visits);
+    if (assembly.status != PlanningStatus::Success) {
+        return {.error = assembly.error, .message = assembly.message};
+    }
+
+    if ((assembly.path.size() < 2) || (assembly.legRoles.size() != assembly.path.size() - 1) ||
+        (assembly.cellCount != static_cast<int>(decomposition.cells.size())) || (selectedAngleDeg < 0.0) ||
+        (selectedAngleDeg >= 180.0)) {
+        return {.error = CoveragePlanningError::InvalidGeneratedPath,
+                .message = "BCD assembly returned inconsistent path structure"};
+    }
+    const std::optional<PlanningPathMetrics> metrics = calculatePlanningPathMetrics(assembly.path, assembly.legRoles);
+    if (!metrics || !planningPathMetricsMatch(*metrics, assembly.coverageLengthM, assembly.transitLengthM,
+                                               assembly.pathLengthM)) {
+        return {.error = CoveragePlanningError::InvalidGeneratedPath,
+                .message = "BCD assembly path metrics do not match its canonical geometry"};
+    }
+
+    const SafetyCandidateAssessment safety = evaluateSafetyCandidate(safetyRegions, assembly.path);
+    if (safety.error != CoveragePlanningError::None) {
+        return {.error = safety.error, .message = CoverageProblemValidator::messageForError(safety.error)};
+    }
+
+    CoverageQualityEvaluation quality = evaluateCoverageQuality(
+        coverageTarget, assembly.path, assembly.legRoles, problem.swathWidthM, problem.coverageRequirement, strategy);
+    BcdCandidate candidate{.path = assembly.path,
+                           .legRoles = assembly.legRoles,
+                           .metrics = *metrics,
+                           .quality = std::move(quality),
+                           .preferredSafe = safety.tier.has_value() && (*safety.tier == SafetySolutionTier::D0),
+                           .cellCount = assembly.cellCount,
+                           .generationOrder = generationOrder};
+    return {.candidate = std::move(candidate)};
 }
 
 }  // namespace
@@ -43,7 +182,7 @@ std::string BoustrophedonCoveragePlanner::id() const
 
 std::string BoustrophedonCoveragePlanner::semanticVersion() const
 {
-    return CoverageStrategySemantics::LegacyBoustrophedonVersion;
+    return CoverageStrategySemantics::BoustrophedonVersion;
 }
 
 std::string BoustrophedonCoveragePlanner::displayName() const
@@ -53,128 +192,111 @@ std::string BoustrophedonCoveragePlanner::displayName() const
 
 CoveragePlanningSolution BoustrophedonCoveragePlanner::plan(const CoveragePlanningProblem& problem) const
 {
-    CoveragePlanningProblem normalizedProblem = problem;
-    const CoveragePlanningError validationError = CoverageProblemValidator::validateAndNormalize(normalizedProblem);
+    CoveragePlanningProblem normalized = problem;
+    const CoveragePlanningError validationError = CoverageProblemValidator::validateAndNormalize(normalized);
     if (validationError != CoveragePlanningError::None) {
         return failure(validationError);
     }
 
-    const CoverageFreeSpaceResult freeSpace = buildCoverageFreeSpace(normalizedProblem);
-    if (freeSpace.status != PlanningStatus::Success) {
-        return failure(freeSpace.status, freeSpace.error, freeSpace.message);
+    const CoverageGeometryResult coverageGeometry = buildCoverageGeometry(normalized.region);
+    if (coverageGeometry.error != CoveragePlanningError::None) {
+        return failure(coverageGeometry.error);
+    }
+    const SafetyTrackRegionsResult safetyRegions =
+        buildSafetyTrackRegions(normalized.region, normalized.safety, normalized.executionSafety);
+    if (safetyRegions.error != CoveragePlanningError::None) {
+        return failure(safetyRegions.error);
     }
 
-    double selectedSweepAngleDeg = normalizedProblem.requestedSweepAngleDeg;
-    if (normalizedProblem.sweepAngleMode == SweepAngleMode::Auto) {
+    double selectedSweepAngleDeg = normalized.requestedSweepAngleDeg;
+    if (normalized.sweepAngleMode == SweepAngleMode::Auto) {
         const GlobalSweepSelectionResult selection =
-            selectGlobalSweepAngle(normalizedProblem.region.coverageBoundary,
-                                   freeSpace.freeSpace.executionTrackFeasibleRegion, normalizedProblem.swathWidthM);
+            selectGlobalSweepAngle(normalized.region.coverageBoundary,
+                                   safetyRegions.regions.hardExecutionTrackRegion, normalized.swathWidthM);
         if (selection.status != PlanningStatus::Success) {
             return failure(selection.status, selection.error, selection.message);
         }
         selectedSweepAngleDeg = selection.selectedSweepAngleDeg;
     }
+    const PlannerSourceInfo source = directSource(problem.sweepAngleMode, selectedSweepAngleDeg);
 
     const CoverageDecompositionResult decomposition =
-        decomposeBoustrophedon(freeSpace.freeSpace.executionTrackFeasibleRegion, selectedSweepAngleDeg);
+        decomposeBoustrophedon(coverageGeometry.geometry.coverageTarget, selectedSweepAngleDeg);
     if (decomposition.status != PlanningStatus::Success) {
-        return failure(decomposition.status, decomposition.error, decomposition.message);
+        CoveragePlanningSolution failed = failure(decomposition.status, decomposition.error, decomposition.message, source);
+        failed.selectedSweepAngleDeg = selectedSweepAngleDeg;
+        return failed;
     }
 
-    const CellCoverageGenerationResult cellCoverage =
-        generateCellCoverage(decomposition.cells, normalizedProblem.swathWidthM, selectedSweepAngleDeg);
-    if (cellCoverage.status != PlanningStatus::Success) {
-        return failure(cellCoverage.status, cellCoverage.error, cellCoverage.message);
-    }
+    const PlannerStrategyIdentity strategy{.strategyId = CoverageStrategySemantics::BoustrophedonId,
+                                           .semanticVersion = CoverageStrategySemantics::BoustrophedonVersion};
+    std::vector<BcdCandidate> candidates;
+    CoveragePlanningError hardFailureError = CoveragePlanningError::NoNavigableArea;
+    std::string hardFailureMessage = CoverageProblemValidator::messageForError(hardFailureError);
 
-    const BoundaryCoverageSupportResult boundarySupport =
-        generateBoundaryCoverageSupport(freeSpace.freeSpace.executionTrackFeasibleRegion);
-    if (boundarySupport.status != PlanningStatus::Success) {
-        return failure(boundarySupport.status, boundarySupport.error, boundarySupport.message);
-    }
-
-    const CellOrderingResult ordering = orderCellTraversals(freeSpace.freeSpace.executionTrackFeasibleRegion,
-                                                            cellCoverage.cells, cellCoverage.traversalStates);
-    if (ordering.status != PlanningStatus::Success) {
-        return failure(ordering.status, ordering.error, ordering.message);
-    }
-
-    ComplexCoverageAssemblyResult assembly =
-        assembleComplexCoverage(freeSpace.freeSpace.executionTrackFeasibleRegion, boundarySupport.components,
-                                cellCoverage.cells, ordering.visits);
-    if (assembly.status != PlanningStatus::Success) {
-        return failure(assembly.status, assembly.error, assembly.message);
-    }
-    for (std::size_t index = 1; index < assembly.path.size(); ++index) {
-        if (!Geometry::segmentInsidePolygonRegion(freeSpace.freeSpace.executionTrackFeasibleRegion,
-                                                  assembly.path[index - 1], assembly.path[index])) {
-            return failure(CoveragePlanningError::InvalidGeneratedPath,
-                           "Coverage path leaves the execution-safe region");
+    const auto attemptTier = [&](const PolygonRegionSet2D& activeTrackRegion, std::size_t generationOrder,
+                                 bool hardTier) {
+        if (activeTrackRegion.empty()) {
+            if (hardTier) {
+                hardFailureError = CoveragePlanningError::NoNavigableArea;
+                hardFailureMessage = CoverageProblemValidator::messageForError(hardFailureError);
+            }
+            return;
         }
-    }
+        CandidateAttempt attempt = generateCandidate(decomposition, coverageGeometry.geometry.coverageTarget,
+                                                     activeTrackRegion, safetyRegions, normalized,
+                                                     selectedSweepAngleDeg, strategy, generationOrder);
+        if (attempt.candidate) {
+            candidates.push_back(std::move(*attempt.candidate));
+        } else if (hardTier) {
+            hardFailureError = attempt.error;
+            hardFailureMessage = std::move(attempt.message);
+        }
+    };
 
-    const bool validMetrics = std::isfinite(assembly.coverageLengthM) && std::isfinite(assembly.transitLengthM) &&
-                              std::isfinite(assembly.pathLengthM) && (assembly.coverageLengthM >= 0.0) &&
-                              (assembly.transitLengthM >= 0.0) &&
-                              (std::abs(assembly.coverageLengthM + assembly.transitLengthM - assembly.pathLengthM) <=
-                               Geometry::LengthEpsilonM);
-    if ((selectedSweepAngleDeg < 0.0) || (selectedSweepAngleDeg >= 180.0) || !validMetrics ||
-        (assembly.path.size() < 2) || (assembly.legRoles.size() != assembly.path.size() - 1) ||
-        std::cmp_not_equal(assembly.cellCount, decomposition.cells.size())) {
-        return failure(CoveragePlanningError::InvalidGeneratedPath,
-                       "Boustrophedon coverage pipeline produced inconsistent output");
-    }
-
-    const PolygonRegionSet2D coverageTarget{freeSpace.freeSpace.coverageTarget};
-    const PlannerStrategyIdentity strategy{.strategyId = id(), .semanticVersion = semanticVersion()};
-    CoverageQualityEvaluation quality =
-        evaluateCoverageQuality(coverageTarget, assembly.path, assembly.legRoles, normalizedProblem.swathWidthM,
-                                normalizedProblem.coverageRequirement, strategy);
-    if (quality.status == CoverageQualityStatus::Insufficient) {
-        CoveragePlanningSolution failed = failure(CoveragePlanningError::CoverageIncomplete, quality.message);
-        failed.coverageQuality = std::move(quality);
-        failed.plannerSource = PlannerSourceInfo{
-            .requestedPlannerId = id(),
-            .resolvedStrategy = strategy,
-            .requestedSweepMode = problem.sweepAngleMode,
-            .selectedSweepAngleDeg = selectedSweepAngleDeg,
-            .sweepSemanticVersion =
-                problem.sweepAngleMode == SweepAngleMode::Auto ? CoverageStrategySemantics::GlobalSweepVersion : ""};
-        return failed;
-    }
-    if (quality.status == CoverageQualityStatus::AssessmentError) {
-        CoveragePlanningSolution failed = failure(CoveragePlanningError::GeometryFailure, quality.message);
-        failed.coverageQuality = std::move(quality);
-        failed.plannerSource = PlannerSourceInfo{
-            .requestedPlannerId = id(),
-            .resolvedStrategy = strategy,
-            .requestedSweepMode = problem.sweepAngleMode,
-            .selectedSweepAngleDeg = selectedSweepAngleDeg,
-            .sweepSemanticVersion =
-                problem.sweepAngleMode == SweepAngleMode::Auto ? CoverageStrategySemantics::GlobalSweepVersion : ""};
+    attemptTier(safetyRegions.regions.preferredExecutionTrackRegion, 0, false);
+    attemptTier(safetyRegions.regions.hardExecutionTrackRegion, 1, true);
+    if (candidates.empty()) {
+        CoveragePlanningSolution failed = failure(hardFailureError, std::move(hardFailureMessage), source);
+        failed.selectedSweepAngleDeg = selectedSweepAngleDeg;
         return failed;
     }
 
+    const auto best = std::min_element(candidates.begin(), candidates.end(), candidateBetter);
     CoveragePlanningSolution solution;
-    solution.status = PlanningStatus::Success;
-    solution.path = std::move(assembly.path);
-    solution.legRoles = std::move(assembly.legRoles);
-    solution.coverageLengthM = assembly.coverageLengthM;
-    solution.transitLengthM = assembly.transitLengthM;
-    solution.pathLengthM = assembly.pathLengthM;
+    solution.coverageQuality = best->quality;
+    solution.plannerSource = source;
     solution.selectedSweepAngleDeg = selectedSweepAngleDeg;
-    solution.cellCount = assembly.cellCount;
-    solution.turnCount = assembly.turnCount;
+    solution.cellCount = static_cast<int>(decomposition.cells.size());
+    solution.turnCount = best->metrics.turnCount;
+
+    if (best->quality.status == CoverageQualityStatus::Insufficient) {
+        solution.status = PlanningStatus::Failed;
+        solution.error = CoveragePlanningError::CoverageIncomplete;
+        solution.message = best->quality.message;
+        return solution;
+    }
+    if (best->quality.status == CoverageQualityStatus::AssessmentError) {
+        solution.status = PlanningStatus::Failed;
+        solution.error = CoveragePlanningError::GeometryFailure;
+        solution.message = best->quality.message;
+        return solution;
+    }
+    if (!best->quality.passesRequirement) {
+        solution.status = PlanningStatus::Failed;
+        solution.error = CoveragePlanningError::GeometryFailure;
+        solution.message = "BCD coverage evaluator returned an unclassified non-passing result";
+        return solution;
+    }
+
+    solution.status = PlanningStatus::Success;
     solution.error = CoveragePlanningError::None;
-    solution.coverageQuality = std::move(quality);
-    solution.plannerSource = PlannerSourceInfo{
-        .requestedPlannerId = id(),
-        .resolvedStrategy = strategy,
-        .requestedSweepMode = problem.sweepAngleMode,
-        .selectedSweepAngleDeg = selectedSweepAngleDeg,
-        .sweepSemanticVersion =
-            problem.sweepAngleMode == SweepAngleMode::Auto ? CoverageStrategySemantics::GlobalSweepVersion : ""};
-    solution.message = "Boustrophedon coverage path generated and quality assessed";
+    solution.path = best->path;
+    solution.legRoles = best->legRoles;
+    solution.coverageLengthM = best->metrics.coverageLengthM;
+    solution.transitLengthM = best->metrics.transitLengthM;
+    solution.pathLengthM = best->metrics.pathLengthM;
+    solution.message = "BCD produced a hard-safe canonical path that passes the selected coverage policy";
     return solution;
 }
 

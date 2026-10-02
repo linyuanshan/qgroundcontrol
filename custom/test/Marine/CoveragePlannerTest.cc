@@ -62,7 +62,7 @@ void CoveragePlannerTest::_testRegisterAndLookup()
     QCOMPARE(registry.planner(autoPlanner->id()), autoPlanner);
     QCOMPARE(mockPlanner->semanticVersion(), std::string(CoverageStrategySemantics::MockVersion));
     QCOMPARE(lawnmowerPlanner->semanticVersion(), std::string(CoverageStrategySemantics::LawnMowerVersion));
-    QCOMPARE(bcdPlanner->semanticVersion(), std::string(CoverageStrategySemantics::LegacyBoustrophedonVersion));
+    QCOMPARE(bcdPlanner->semanticVersion(), std::string(CoverageStrategySemantics::BoustrophedonVersion));
     QCOMPARE(simplePlanner->semanticVersion(), std::string(CoverageStrategySemantics::SimpleMonotoneVersion));
     QCOMPARE(autoPlanner->semanticVersion(), std::string(CoverageStrategySemantics::AutoPlannerVersion));
     QVERIFY(!registry.registerPlanner(nullptr));

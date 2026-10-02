@@ -3,7 +3,12 @@
 #include "CoverageProblemValidator.h"
 #include "Geometry/MarineGeometry.h"
 #include "Planning/AutoCoveragePlanner.h"
+#include "Planning/BoustrophedonCoveragePlanner.h"
+#include "Planning/CoverageGeometry.h"
+#include "Planning/CoverageSafety.h"
 #include "Planning/CoverageStrategySemantics.h"
+#include "Planning/GlobalSweepSelector.h"
+#include "Planning/SimpleMonotoneCapability.h"
 
 using namespace Marine;
 
@@ -42,23 +47,34 @@ void verifySimpleSource(const CoveragePlanningSolution& solution, SweepAngleMode
     QCOMPARE(solution.plannerSource->requestedSweepMode, requestedSweepMode);
 }
 
-void verifyPendingBcd(const CoveragePlanningSolution& solution, PlannerResolutionReason reason)
+void verifyBcdSource(const CoveragePlanningSolution& solution, PlannerResolutionReason reason,
+                     SweepAngleMode requestedSweepMode = SweepAngleMode::Manual)
 {
-    QCOMPARE(solution.status, PlanningStatus::Failed);
-    QCOMPARE(solution.error, CoveragePlanningError::ResolvedStrategyUnavailable);
-    QVERIFY(solution.path.empty());
-    QVERIFY(solution.legRoles.empty());
-    QVERIFY(solution.message.find("Auto resolved this task to the v0.5 BCD strategy, which is implemented in V05-06") !=
-            std::string::npos);
+    QCOMPARE(solution.status, PlanningStatus::Success);
+    QVERIFY(!solution.path.empty());
+    QVERIFY(!solution.legRoles.empty());
+    QVERIFY(solution.coverageQuality.has_value());
+    QVERIFY(solution.coverageQuality->passesRequirement);
+    QCOMPARE(solution.coverageQuality->strategy.strategyId,
+             std::string(CoverageStrategySemantics::BoustrophedonId));
+    QCOMPARE(solution.coverageQuality->strategy.semanticVersion,
+             std::string(CoverageStrategySemantics::BoustrophedonVersion));
     QVERIFY(solution.plannerSource.has_value());
     QCOMPARE(solution.plannerSource->requestedPlannerId, std::string(CoverageStrategySemantics::AutoPlannerId));
     QCOMPARE(solution.plannerSource->resolvedStrategy.strategyId,
              std::string(CoverageStrategySemantics::BoustrophedonId));
     QCOMPARE(solution.plannerSource->resolvedStrategy.semanticVersion,
-             std::string(CoverageStrategySemantics::BoustrophedonPendingVersion));
-    QCOMPARE(solution.plannerSource->resolutionStatus, PlannerResolutionStatus::ResolvedStrategyUnavailable);
+             std::string(CoverageStrategySemantics::BoustrophedonVersion));
+    QCOMPARE(solution.plannerSource->resolutionStatus, PlannerResolutionStatus::Resolved);
     QCOMPARE(solution.plannerSource->resolutionReason, reason);
     QVERIFY(solution.plannerSource->escalated);
+    QCOMPARE(solution.plannerSource->requestedSweepMode, requestedSweepMode);
+    if (requestedSweepMode == SweepAngleMode::Manual) {
+        QVERIFY(solution.plannerSource->sweepSemanticVersion.empty());
+    } else {
+        QCOMPARE(solution.plannerSource->sweepSemanticVersion,
+                 std::string(CoverageStrategySemantics::GlobalSweepVersion));
+    }
 }
 
 }  // namespace
@@ -87,21 +103,33 @@ void AutoCoveragePlannerTest::_testConcaveMonotoneResolvesSimpleMonotone()
     verifySimpleSource(solution, SweepAngleMode::Manual);
 }
 
-void AutoCoveragePlannerTest::_testCapabilityEscalationIsPendingBcd()
+void AutoCoveragePlannerTest::_testCapabilityEscalationDelegatesToBcd()
 {
     const Polygon2D uShape{
         .vertices = {
             {0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {7.0, 10.0}, {7.0, 3.0}, {3.0, 3.0}, {3.0, 10.0}, {0.0, 10.0}}};
-    verifyPendingBcd(AutoCoveragePlanner{}.plan(problem(uShape, rectangle(-5.0, -5.0, 15.0, 15.0))),
-                     PlannerResolutionReason::TargetNonMonotoneForSelectedSweep);
+    verifyBcdSource(AutoCoveragePlanner{}.plan(problem(uShape, rectangle(-5.0, -5.0, 15.0, 15.0))),
+                    PlannerResolutionReason::TargetNonMonotoneForSelectedSweep);
 
     CoveragePlanningProblem hole = problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(-5.0, -5.0, 25.0, 25.0));
     hole.region.noGoRegions.push_back(rectangle(8.0, 8.0, 12.0, 12.0));
-    verifyPendingBcd(AutoCoveragePlanner{}.plan(hole), PlannerResolutionReason::TargetHasHoles);
+    verifyBcdSource(AutoCoveragePlanner{}.plan(hole), PlannerResolutionReason::TargetHasHoles);
 
-    CoveragePlanningProblem split = problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(-5.0, -5.0, 25.0, 25.0));
-    split.region.noGoRegions.push_back(rectangle(9.0, -1.0, 11.0, 21.0));
-    verifyPendingBcd(AutoCoveragePlanner{}.plan(split), PlannerResolutionReason::TargetHasMultipleComponents);
+    CoveragePlanningProblem split = problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(-5.0, -5.0, 25.0, 25.0), 4.0);
+    split.region.noGoRegions.push_back(rectangle(9.0, -2.0, 11.0, 22.0));
+    const CoveragePlanningSolution splitResult = AutoCoveragePlanner{}.plan(split);
+    verifyBcdSource(splitResult, PlannerResolutionReason::TargetHasMultipleComponents);
+    QVERIFY(splitResult.cellCount >= 2);
+    const CoverageGeometryResult geometry = buildCoverageGeometry(split.region);
+    QCOMPARE(geometry.error, CoveragePlanningError::None);
+    bool transitOutsideTarget = false;
+    for (std::size_t leg = 0; leg < splitResult.legRoles.size(); ++leg) {
+        if (splitResult.legRoles[leg] == PathLegRole::Transit) {
+            transitOutsideTarget |= !Geometry::segmentInsidePolygonRegion(
+                geometry.geometry.coverageTarget, splitResult.path[leg], splitResult.path[leg + 1]);
+        }
+    }
+    QVERIFY(transitOutsideTarget);
 }
 
 void AutoCoveragePlannerTest::_testNoGoOutsideCoverageDoesNotEscalate()
@@ -139,6 +167,42 @@ void AutoCoveragePlannerTest::_testCoverageAssessmentAndSafetyFailureDoNotEscala
     verifySimpleSource(safetyFailure, SweepAngleMode::Manual);
 }
 
+void AutoCoveragePlannerTest::_testBcdFailurePreservesResolvedStrategyProvenance()
+{
+    CoveragePlanningProblem input =
+        problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(-5.0, -5.0, 25.0, 25.0));
+    input.region.noGoRegions.push_back(rectangle(8.0, 8.0, 12.0, 12.0));
+    input.executionSafety.executionMarginM = 100.0;
+
+    const CoverageGeometryResult geometry = buildCoverageGeometry(input.region);
+    QCOMPARE(geometry.error, CoveragePlanningError::None);
+    const SimpleMonotoneCapabilityResult capability =
+        assessSimpleMonotoneCapability(geometry.geometry.coverageTarget, input.requestedSweepAngleDeg);
+    QVERIFY(!capability.applicable);
+    QCOMPARE(capability.reason, PlannerResolutionReason::TargetHasHoles);
+
+    const SafetyTrackRegionsResult safety =
+        buildSafetyTrackRegions(input.region, input.safety, input.executionSafety);
+    QCOMPARE(safety.error, CoveragePlanningError::None);
+    QVERIFY(safety.regions.hardExecutionTrackRegion.empty());
+
+    const CoveragePlanningSolution solution = AutoCoveragePlanner{}.plan(input);
+    QCOMPARE(solution.status, PlanningStatus::Failed);
+    QCOMPARE(solution.error, CoveragePlanningError::NoNavigableArea);
+    QVERIFY(solution.path.empty());
+    QVERIFY(solution.legRoles.empty());
+    QVERIFY(solution.plannerSource.has_value());
+    QCOMPARE(solution.plannerSource->requestedPlannerId,
+             std::string(CoverageStrategySemantics::AutoPlannerId));
+    QCOMPARE(solution.plannerSource->resolvedStrategy.strategyId,
+             std::string(CoverageStrategySemantics::BoustrophedonId));
+    QCOMPARE(solution.plannerSource->resolvedStrategy.semanticVersion,
+             std::string(CoverageStrategySemantics::BoustrophedonVersion));
+    QCOMPARE(solution.plannerSource->resolutionStatus, PlannerResolutionStatus::Resolved);
+    QCOMPARE(solution.plannerSource->resolutionReason, capability.reason);
+    QVERIFY(solution.plannerSource->escalated);
+}
+
 void AutoCoveragePlannerTest::_testAutoSweepIsDeterministicAndDistinctFromPlannerAuto()
 {
     CoveragePlanningProblem automaticSweep =
@@ -165,6 +229,34 @@ void AutoCoveragePlannerTest::_testAutoSweepIsDeterministicAndDistinctFromPlanne
     verifySimpleSource(manual, SweepAngleMode::Manual);
     QCOMPARE(manual.selectedSweepAngleDeg, 37.0);
     QVERIFY(manual.plannerSource->sweepSemanticVersion.empty());
+}
+
+void AutoCoveragePlannerTest::_testAutoSweepEscalationSelectsOnce()
+{
+    CoveragePlanningProblem input =
+        problem(rectangle(0.0, 0.0, 20.0, 20.0), rectangle(-5.0, -5.0, 25.0, 25.0), 4.0);
+    input.region.noGoRegions.push_back(rectangle(8.0, 8.0, 12.0, 12.0));
+    input.sweepAngleMode = SweepAngleMode::Auto;
+    const CoverageGeometryResult geometry = buildCoverageGeometry(input.region);
+    QCOMPARE(geometry.error, CoveragePlanningError::None);
+    const SafetyTrackRegionsResult safety =
+        buildSafetyTrackRegions(input.region, input.safety, input.executionSafety);
+    QCOMPARE(safety.error, CoveragePlanningError::None);
+    const GlobalSweepSelectionResult expected = selectGlobalSweepAngle(
+        input.region.coverageBoundary, safety.regions.hardExecutionTrackRegion, input.swathWidthM);
+    QCOMPARE(expected.status, PlanningStatus::Success);
+
+    const CoveragePlanningSolution first = AutoCoveragePlanner{}.plan(input);
+    const CoveragePlanningSolution second = AutoCoveragePlanner{}.plan(input);
+    verifyBcdSource(first, PlannerResolutionReason::TargetHasHoles, SweepAngleMode::Auto);
+    QCOMPARE(first.selectedSweepAngleDeg, expected.selectedSweepAngleDeg);
+    QCOMPARE(first.plannerSource->selectedSweepAngleDeg, expected.selectedSweepAngleDeg);
+    QCOMPARE(first.selectedSweepAngleDeg, second.selectedSweepAngleDeg);
+    QCOMPARE(first.path.size(), second.path.size());
+    for (std::size_t index = 0; index < first.path.size(); ++index) {
+        QCOMPARE(first.path[index].xM, second.path[index].xM);
+        QCOMPARE(first.path[index].yM, second.path[index].yM);
+    }
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(AutoCoveragePlannerTest, TestLabel::Unit)

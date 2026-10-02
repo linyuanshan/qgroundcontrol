@@ -25,4 +25,5 @@ private slots:
     void _testResidualAreaConsistencyAndDeterminism();
     void _testComparatorOrderingAndEquivalence();
     void _testComparatorErrorAndTransitivity();
+    void _testGeoResidualTruthRegression();
 };

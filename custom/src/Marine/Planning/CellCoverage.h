@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "CoverageDecomposition.h"
+#include "Geometry/PolygonRegion.h"
 #include "PathLegRole.h"
 
 namespace Marine {
@@ -48,5 +49,10 @@ struct CellCoverageGenerationResult
 /// Cell polygons are already centerline-feasible and are not inset again.
 [[nodiscard]] CellCoverageGenerationResult generateCellCoverage(std::span<const CoverageCell> cells, double swathWidthM,
                                                                 double navigationAngleDeg);
+
+/// Generates target-derived coverage lanes clipped to the active execution track region.
+[[nodiscard]] CellCoverageGenerationResult generateCellCoverage(std::span<const CoverageCell> cells,
+                                                                const PolygonRegionSet2D& activeTrackRegion,
+                                                                double swathWidthM, double navigationAngleDeg);
 
 }  // namespace Marine

@@ -243,7 +243,7 @@ void CoverageComplexItemTest::_testPlanning()
 
     _item->setTaskId(QString::fromStdString(task.id));
     _item->setDirty(false);
-    QVERIFY(_item->plan());
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
 
     QCOMPARE(_item->planningState(), CoverageInspectionComplexItem::Unplanned);
     QCOMPARE(_item->planningResult().status, PlanningStatus::Failed);
@@ -304,7 +304,7 @@ void CoverageComplexItemTest::_testLawnmowerUiNoGoRejection()
 {
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.lawnmower";
-    task.coverage.swathWidthM = 20.0;
+    task.coverage.swathWidthM = 5.0;
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
 
@@ -328,11 +328,10 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
 {
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.bcd";
-    task.coverage.swathWidthM = 20.0;
+    task.coverage.swathWidthM = 5.0;
     task.safety.hardSafetyMarginM = 0.0;
     task.safety.preferredSafetyMarginM = 0.0;
-    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
-    task.coverage.sweepAngleDeg = 90.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Auto;
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
 
@@ -345,7 +344,10 @@ void CoverageComplexItemTest::_testBoustrophedonNoGoPlanning()
     QTRY_VERIFY(_item->noGoRegionsReady());
     QTRY_COMPARE(_marineContext->task(task.id)->region.noGoRegions.size(), std::size_t{1});
 
-    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+    const bool planned = _item->plan();
+    const std::string planMessage = _item->planningArtifact() ? _item->planningArtifact()->result.message
+                                                             : _item->planningResult().message;
+    QVERIFY2(planned, planMessage.c_str());
 
     QVERIFY(_item->planningArtifact().has_value());
     const PlanningResult& result = _item->planningArtifact()->result;
@@ -606,9 +608,8 @@ void CoverageComplexItemTest::_testNoGoRegionEditing()
 {
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.bcd";
-    task.coverage.swathWidthM = 20.0;
-    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
-    task.coverage.sweepAngleDeg = 90.0;
+    task.coverage.swathWidthM = 5.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Auto;
     task.region.noGoRegions = {noGoRectangle()};
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
@@ -620,7 +621,10 @@ void CoverageComplexItemTest::_testNoGoRegionEditing()
     QVERIFY(firstPolygon != nullptr);
     QCOMPARE(firstPolygon->count(), 4);
     QCOMPARE(firstPolygon->vertexCoordinate(0).latitude(), noGoRectangle().vertices[0].latitudeDeg);
-    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
+    const bool planned = _item->plan();
+    const std::string planMessage = _item->planningArtifact() ? _item->planningArtifact()->result.message
+                                                             : _item->planningResult().message;
+    QVERIFY2(planned, planMessage.c_str());
 
     QVERIFY(_item->addNoGoRegion());
     QCOMPARE(_item->noGoPolygons()->count(), 2);
@@ -739,13 +743,15 @@ void CoverageComplexItemTest::_testSaveLoad()
 {
     MarineTask task = validTask();
     task.planner.plannerId = "marine.coverage.bcd";
-    task.coverage.swathWidthM = 20.0;
-    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
-    task.coverage.sweepAngleDeg = 90.0;
+    task.coverage.swathWidthM = 5.0;
+    task.coverage.sweepAngleMode = SweepAngleMode::Auto;
     task.region.noGoRegions = {noGoRectangle()};
     _marineContext->addTask(task);
     _item->setTaskId(QString::fromStdString(task.id));
-    QVERIFY(_item->plan());
+    const bool planned = _item->plan();
+    const std::string planMessage = _item->planningArtifact() ? _item->planningArtifact()->result.message
+                                                             : _item->planningResult().message;
+    QVERIFY2(planned, planMessage.c_str());
     QJsonArray saved;
     _item->save(saved);
     QCOMPARE(saved.size(), 1);
@@ -1148,7 +1154,7 @@ void CoverageComplexItemTest::_testStaleArtifactReferenceChange()
     QCOMPARE(planner->calls, 1);
 }
 
-void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndPendingBcd()
+void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndBcdArtifacts()
 {
     MarineTask simpleTask = validTask();
     simpleTask.planner.plannerId = CoverageStrategySemantics::AutoPlannerId;
@@ -1188,42 +1194,78 @@ void CoverageComplexItemTest::_testAutoResolvedStrategyIdentityAndPendingBcd()
     loadedSimple.appendMissionItems(mission, this);
     QVERIFY(mission.isEmpty());
 
-    MarineTask pendingTask = validTask();
-    pendingTask.planner.plannerId = CoverageStrategySemantics::AutoPlannerId;
-    pendingTask.region.noGoRegions.push_back(noGoRectangle());
-    _marineContext->addTask(pendingTask);
-    _item->setTaskId(QString::fromStdString(pendingTask.id));
-    QVERIFY(!_item->plan());
+    MarineTask bcdTask = validTask();
+    bcdTask.planner.plannerId = CoverageStrategySemantics::AutoPlannerId;
+    bcdTask.region.noGoRegions.push_back(noGoRectangle());
+    _marineContext->addTask(bcdTask);
+    _item->setTaskId(QString::fromStdString(bcdTask.id));
+    QVERIFY2(_item->plan(), _item->planningResult().message.c_str());
     QVERIFY(_item->planningArtifact().has_value());
-    const PlanningResult& pending = _item->planningArtifact()->result;
-    QCOMPARE(pending.status, PlanningStatus::Failed);
-    QCOMPARE(pending.path.size(), std::size_t{0});
-    QVERIFY(pending.plannerSource.has_value());
-    QCOMPARE(pending.plannerSource->resolvedStrategy.strategyId,
+    const PlanningResult& bcdResult = _item->planningArtifact()->result;
+    QCOMPARE(bcdResult.status, PlanningStatus::Success);
+    QVERIFY(!bcdResult.path.empty());
+    QVERIFY(bcdResult.plannerSource.has_value());
+    QCOMPARE(bcdResult.plannerSource->requestedPlannerId, std::string(CoverageStrategySemantics::AutoPlannerId));
+    QCOMPARE(bcdResult.plannerSource->resolvedStrategy.strategyId,
              std::string(CoverageStrategySemantics::BoustrophedonId));
-    QCOMPARE(pending.plannerSource->resolvedStrategy.semanticVersion,
-             std::string(CoverageStrategySemantics::BoustrophedonPendingVersion));
-
-    QJsonArray pendingSaved;
-    _item->save(pendingSaved);
-    QCOMPARE(pendingSaved.size(), 1);
-    const QJsonObject pendingObject = pendingSaved.first().toObject();
-    const QJsonObject pendingIdentity = pendingObject.value(QStringLiteral("inputIdentity")).toObject();
-    QCOMPARE(pendingIdentity.value(QStringLiteral("resolvedStrategy")).toString(),
+    QCOMPARE(bcdResult.plannerSource->resolvedStrategy.semanticVersion,
+             std::string(CoverageStrategySemantics::BoustrophedonVersion));
+    QCOMPARE(bcdResult.plannerSource->resolutionStatus, PlannerResolutionStatus::Resolved);
+    QVERIFY(bcdResult.plannerSource->escalated);
+    QJsonArray bcdSaved;
+    _item->save(bcdSaved);
+    QCOMPARE(bcdSaved.size(), 1);
+    const QJsonObject bcdObject = bcdSaved.first().toObject();
+    const QJsonObject bcdIdentity = bcdObject.value(QStringLiteral("inputIdentity")).toObject();
+    PlanningInputIdentity parsedBcdIdentity;
+    QString identityError;
+    QVERIFY2(PlanningInputIdentity::fromJson(bcdIdentity, parsedBcdIdentity, identityError), qPrintable(identityError));
+    QVERIFY(parsedBcdIdentity.matchesSupported(bcdTask));
+    const MarineTask* contextBcdTask = _marineContext->task(bcdTask.id);
+    QVERIFY(contextBcdTask != nullptr);
+    QVERIFY(parsedBcdIdentity.matchesSupported(*contextBcdTask));
+    QCOMPARE(bcdIdentity.value(QStringLiteral("resolvedStrategy")).toString(),
              QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId));
-    QCOMPARE(pendingIdentity.value(QStringLiteral("strategyVersion")).toString(),
-             QString::fromLatin1(CoverageStrategySemantics::BoustrophedonPendingVersion));
-    QVERIFY(!pendingObject.contains(QStringLiteral("plannerSource")));
+    QCOMPARE(bcdIdentity.value(QStringLiteral("strategyVersion")).toString(),
+             QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion));
+    QCOMPARE(bcdObject.value(QStringLiteral("resultContract")).toString(), QStringLiteral("InfrastructureOnly"));
+    QVERIFY(!bcdObject.contains(QStringLiteral("plannerSource")));
 
-    CoverageInspectionComplexItem loadedPending(planController(), false, _marineContext);
-    QVERIFY2(loadedPending.load(pendingObject, 0, error), qPrintable(error));
-    QVERIFY(loadedPending.planningArtifact().has_value());
-    QVERIFY(!loadedPending.planningArtifact()->stale);
-    QCOMPARE(loadedPending.planningState(), CoverageInspectionComplexItem::Unplanned);
-    QVERIFY(loadedPending.planningResult().path.empty());
+    CoverageInspectionComplexItem loadedBcd(planController(), false, _marineContext);
+    QVERIFY2(loadedBcd.load(bcdObject, 0, error), qPrintable(error));
+    QVERIFY(loadedBcd.planningArtifact().has_value());
+    QVERIFY(!loadedBcd.planningArtifact()->stale);
+    QCOMPARE(loadedBcd.planningArtifact()->identity.semantics.resolvedStrategy,
+             QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId));
+    QCOMPARE(loadedBcd.planningArtifact()->identity.semantics.strategyVersion,
+             QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion));
+    QCOMPARE(loadedBcd.planningState(), CoverageInspectionComplexItem::Unplanned);
+    QVERIFY(loadedBcd.planningResult().path.empty());
     mission.clear();
-    loadedPending.appendMissionItems(mission, this);
+    loadedBcd.appendMissionItems(mission, this);
     QVERIFY(mission.isEmpty());
+
+    for (const char* oldVersion : {CoverageStrategySemantics::BoustrophedonPendingVersion,
+                                   CoverageStrategySemantics::LegacyBoustrophedonVersion}) {
+        PlanningSemantics oldSemantics;
+        oldSemantics.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId);
+        oldSemantics.strategyVersion = QString::fromLatin1(oldVersion);
+        const std::optional<PlanningInputIdentity> oldIdentity =
+            PlanningInputIdentity::fromTask(bcdTask, oldSemantics);
+        QVERIFY(oldIdentity.has_value());
+        QJsonObject oldObject = bcdObject;
+        oldObject.insert(QStringLiteral("inputIdentity"), oldIdentity->toJson());
+
+        CoverageInspectionComplexItem loadedOld(planController(), false, _marineContext);
+        QVERIFY2(loadedOld.load(oldObject, 0, error), qPrintable(error));
+        QVERIFY(loadedOld.planningArtifact().has_value());
+        QVERIFY(loadedOld.planningArtifact()->stale);
+        QCOMPARE(loadedOld.planningState(), CoverageInspectionComplexItem::Unplanned);
+        QVERIFY(loadedOld.planningResult().path.empty());
+        mission.clear();
+        loadedOld.appendMissionItems(mission, this);
+        QVERIFY(mission.isEmpty());
+    }
 }
 
 void CoverageComplexItemTest::_testClosingVertexIdentityAndPlan()

@@ -41,12 +41,70 @@ std::vector<double> eventLevels(const PolygonRegion2D& region)
     return merged;
 }
 
+using CanonicalRing = std::vector<Point2D>;
+
+bool pointLess(const Point2D& left, const Point2D& right)
+{
+    return (left.xM < right.xM) || ((left.xM == right.xM) && (left.yM < right.yM));
+}
+
+bool ringLess(const CanonicalRing& left, const CanonicalRing& right)
+{
+    return std::lexicographical_compare(left.begin(), left.end(), right.begin(), right.end(), pointLess);
+}
+
+CanonicalRing canonicalRing(const Polygon2D& polygon)
+{
+    CanonicalRing best;
+    const std::size_t vertexCount = polygon.vertices.size();
+    for (std::size_t start = 0; start < vertexCount; ++start) {
+        CanonicalRing forward;
+        CanonicalRing reverse;
+        forward.reserve(vertexCount);
+        reverse.reserve(vertexCount);
+        for (std::size_t offset = 0; offset < vertexCount; ++offset) {
+            forward.push_back(polygon.vertices[(start + offset) % vertexCount]);
+            reverse.push_back(polygon.vertices[(start + vertexCount - offset) % vertexCount]);
+        }
+        if (best.empty() || ringLess(forward, best)) {
+            best = std::move(forward);
+        }
+        if (ringLess(reverse, best)) {
+            best = std::move(reverse);
+        }
+    }
+    return best;
+}
+
+struct CanonicalRegionOrderingKey
+{
+    CanonicalRing outer;
+    std::vector<CanonicalRing> holes;
+};
+
+CanonicalRegionOrderingKey canonicalOrderingKey(const PolygonRegion2D& region)
+{
+    CanonicalRegionOrderingKey key{.outer = canonicalRing(region.outerBoundary)};
+    key.holes.reserve(region.holes.size());
+    for (const Polygon2D& hole : region.holes) {
+        key.holes.push_back(canonicalRing(hole));
+    }
+    std::sort(key.holes.begin(), key.holes.end(), ringLess);
+    return key;
+}
+
 bool polygonLess(const PolygonRegion2D& left, const PolygonRegion2D& right)
 {
-    return std::lexicographical_compare(
-        left.outerBoundary.vertices.begin(), left.outerBoundary.vertices.end(), right.outerBoundary.vertices.begin(),
-        right.outerBoundary.vertices.end(),
-        [](const Point2D& a, const Point2D& b) { return (a.xM < b.xM) || ((a.xM == b.xM) && (a.yM < b.yM)); });
+    const CanonicalRegionOrderingKey leftKey = canonicalOrderingKey(left);
+    const CanonicalRegionOrderingKey rightKey = canonicalOrderingKey(right);
+    if (ringLess(leftKey.outer, rightKey.outer)) {
+        return true;
+    }
+    if (ringLess(rightKey.outer, leftKey.outer)) {
+        return false;
+    }
+    return std::lexicographical_compare(leftKey.holes.begin(), leftKey.holes.end(), rightKey.holes.begin(),
+                                        rightKey.holes.end(), ringLess);
 }
 
 struct ActivePiece
@@ -55,30 +113,8 @@ struct ActivePiece
     CoverageCellId owner = 0;
 };
 
-}  // namespace
-
-namespace Marine {
-
-CoverageDecompositionResult decomposeBoustrophedon(const PolygonRegionSet2D& trackFeasibleRegion,
-                                                   double navigationAngleDeg)
+CoverageDecompositionResult decomposeSingleComponent(const PolygonRegion2D& input, double navigationAngleDeg)
 {
-    if (!std::isfinite(navigationAngleDeg)) {
-        return failure(PlanningStatus::InvalidInput, CoveragePlanningError::InvalidSweepAngle,
-                       "Decomposition sweep angle must be finite");
-    }
-    if (trackFeasibleRegion.empty()) {
-        return failure(PlanningStatus::Failed, CoveragePlanningError::NoNavigableArea, "No region to decompose");
-    }
-    if (trackFeasibleRegion.size() != 1) {
-        return failure(PlanningStatus::Failed, CoveragePlanningError::DisconnectedFeasibleRegion,
-                       "Decomposition requires one connected region");
-    }
-    const PolygonRegion2D& input = trackFeasibleRegion.front();
-    if (!Geometry::isValidPolygonRegion(input)) {
-        return failure(PlanningStatus::InvalidInput, CoveragePlanningError::DecompositionFailed,
-                       "Decomposition requires a valid polygon region");
-    }
-
     const double mathAngle = Geometry::navigationAngleToMathAngle(navigationAngleDeg);
     PolygonRegion2D sweepRegion{.outerBoundary = Geometry::toSweepFrame(input.outerBoundary, mathAngle)};
     for (const Polygon2D& hole : input.holes) {
@@ -156,7 +192,8 @@ CoverageDecompositionResult decomposeBoustrophedon(const PolygonRegionSet2D& tra
         for (Point2D& vertex : polygon.vertices) {
             vertex = Geometry::fromSweepFrame(vertex, mathAngle);
         }
-        if (!Geometry::isMonotoneCellPolygon(polygon, mathAngle)) {
+        if (!polygon.isFinite() || !Geometry::isValidPolygonRegion({.outerBoundary = polygon}) ||
+            !Geometry::isMonotoneCellPolygon(polygon, mathAngle)) {
             return failure(PlanningStatus::Failed, CoveragePlanningError::InvalidCoverageCell,
                            "Cell is invalid in the local coordinate frame");
         }
@@ -166,6 +203,67 @@ CoverageDecompositionResult decomposeBoustrophedon(const PolygonRegionSet2D& tra
         return failure(PlanningStatus::Failed, CoveragePlanningError::DecompositionFailed,
                        "Slab clipping produced no coverage cells");
     }
+    std::sort(result.adjacency.begin(), result.adjacency.end(), [](const CellAdjacency& a, const CellAdjacency& b) {
+        return (a.first < b.first) || ((a.first == b.first) && (a.second < b.second));
+    });
+    result.adjacency.erase(std::unique(result.adjacency.begin(), result.adjacency.end()), result.adjacency.end());
+    result.status = PlanningStatus::Success;
+    result.error = CoveragePlanningError::None;
+    return result;
+}
+
+}  // namespace
+
+namespace Marine {
+
+CoverageDecompositionResult decomposeBoustrophedon(const PolygonRegionSet2D& targetRegions, double navigationAngleDeg)
+{
+    if (!std::isfinite(navigationAngleDeg)) {
+        return failure(PlanningStatus::InvalidInput, CoveragePlanningError::InvalidSweepAngle,
+                       "Decomposition sweep angle must be finite");
+    }
+    if (targetRegions.empty()) {
+        return failure(PlanningStatus::InvalidInput, CoveragePlanningError::EmptyCoverageTarget,
+                       "No coverage target to decompose");
+    }
+    for (const PolygonRegion2D& targetRegion : targetRegions) {
+        if (!Geometry::isValidPolygonRegion(targetRegion)) {
+            return failure(PlanningStatus::InvalidInput, CoveragePlanningError::InvalidCoverageTarget,
+                           "Decomposition requires valid target polygon regions");
+        }
+    }
+
+    PolygonRegionSet2D orderedTargetRegions = targetRegions;
+    std::sort(orderedTargetRegions.begin(), orderedTargetRegions.end(), polygonLess);
+
+    CoverageDecompositionResult result;
+    for (const PolygonRegion2D& targetRegion : orderedTargetRegions) {
+        const CoverageDecompositionResult component = decomposeSingleComponent(targetRegion, navigationAngleDeg);
+        if (component.status != PlanningStatus::Success) {
+            return failure(component.status, component.error, component.message);
+        }
+
+        const std::uint64_t cellOffset = static_cast<std::uint64_t>(result.cells.size());
+        constexpr std::uint64_t MaximumCellId = std::numeric_limits<CoverageCellId>::max();
+        for (const CoverageCell& cell : component.cells) {
+            if ((cellOffset > MaximumCellId) || (static_cast<std::uint64_t>(cell.id) > MaximumCellId - cellOffset)) {
+                return failure(PlanningStatus::Failed, CoveragePlanningError::DecompositionFailed,
+                               "Too many coverage cells across target components");
+            }
+            result.cells.push_back({.id = static_cast<CoverageCellId>(cellOffset + cell.id), .polygon = cell.polygon});
+        }
+        for (const CellAdjacency& adjacency : component.adjacency) {
+            if ((cellOffset > MaximumCellId) ||
+                (static_cast<std::uint64_t>(adjacency.first) > MaximumCellId - cellOffset) ||
+                (static_cast<std::uint64_t>(adjacency.second) > MaximumCellId - cellOffset)) {
+                return failure(PlanningStatus::Failed, CoveragePlanningError::DecompositionFailed,
+                               "Too many coverage cells across target components");
+            }
+            result.adjacency.push_back({.first = static_cast<CoverageCellId>(cellOffset + adjacency.first),
+                                        .second = static_cast<CoverageCellId>(cellOffset + adjacency.second)});
+        }
+    }
+
     std::sort(result.adjacency.begin(), result.adjacency.end(), [](const CellAdjacency& a, const CellAdjacency& b) {
         return (a.first < b.first) || ((a.first == b.first) && (a.second < b.second));
     });

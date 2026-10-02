@@ -164,12 +164,19 @@ void CoverageGeometryTest::_testHistoricalPlannerBoundary()
     problem.executionSafety.executionMarginM = 100.0;
     QCOMPARE(CoverageProblemValidator::validateAndNormalize(problem), CoveragePlanningError::None);
     QCOMPARE(buildCoverageGeometry(problem.region).error, CoveragePlanningError::None);
-    for (const auto result : {MockCoveragePlanner{}.plan(problem), LawnmowerCoveragePlanner{}.plan(problem),
-                              BoustrophedonCoveragePlanner{}.plan(problem)}) {
+    for (const auto result : {MockCoveragePlanner{}.plan(problem), LawnmowerCoveragePlanner{}.plan(problem)}) {
         QCOMPARE(result.error, CoveragePlanningError::UnsupportedSeparateBoundaries);
         QCOMPARE(result.status, PlanningStatus::Failed);
         QVERIFY(result.path.empty());
     }
+
+    problem.sweepAngleMode = SweepAngleMode::Manual;
+    problem.requestedSweepAngleDeg = 90.0;
+    const CoveragePlanningSolution bcdResult = BoustrophedonCoveragePlanner{}.plan(problem);
+    QCOMPARE(bcdResult.status, PlanningStatus::Failed);
+    QCOMPARE(bcdResult.error, CoveragePlanningError::NoNavigableArea);
+    QVERIFY(bcdResult.error != CoveragePlanningError::UnsupportedSeparateBoundaries);
+    QVERIFY(bcdResult.path.empty());
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(CoverageGeometryTest, TestLabel::Unit)

@@ -139,6 +139,13 @@ void PlanningInputIdentityTest::_testPlanningAndResolvedSemanticFingerprints()
     const auto resolved = PlanningInputIdentity::fromTask(task, semantics);
     QVERIFY(resolved.has_value());
     QCOMPARE(resolved->fingerprint, QStringLiteral("ccaeefbca3d7fac593dfa4a686c7f0a1f10a00bec1927941290e3ce0f884f53b"));
+
+    semantics.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId);
+    semantics.strategyVersion = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion);
+    const auto bcdResolved = PlanningInputIdentity::fromTask(task, semantics);
+    QVERIFY(bcdResolved.has_value());
+    QCOMPARE(bcdResolved->fingerprint,
+             QStringLiteral("548e77c9c6d0f59cea9eac2905c9f8669c4b735eccd6bc336b606a837e2b5235"));
 }
 
 void PlanningInputIdentityTest::_testSupportedSemanticMatching()
@@ -148,9 +155,7 @@ void PlanningInputIdentityTest::_testSupportedSemanticMatching()
          {std::pair{QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneId),
                     QString::fromLatin1(CoverageStrategySemantics::SimpleMonotoneVersion)},
           std::pair{QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId),
-                    QString::fromLatin1(CoverageStrategySemantics::LegacyBoustrophedonVersion)},
-          std::pair{QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId),
-                    QString::fromLatin1(CoverageStrategySemantics::BoustrophedonPendingVersion)},
+                    QString::fromLatin1(CoverageStrategySemantics::BoustrophedonVersion)},
           std::pair{QString::fromLatin1(CoverageStrategySemantics::LawnmowerId),
                     QString::fromLatin1(CoverageStrategySemantics::LawnMowerVersion)},
           std::pair{QString::fromLatin1(CoverageStrategySemantics::MockPlannerId),
@@ -160,7 +165,19 @@ void PlanningInputIdentityTest::_testSupportedSemanticMatching()
         semantics.strategyVersion = version;
         const auto identity = PlanningInputIdentity::fromTask(task, semantics);
         QVERIFY(identity.has_value());
-        QVERIFY(identity->matchesSupported(task));
+        QVERIFY2(identity->matchesSupported(task),
+                 qPrintable(strategyId + QLatin1Char('@') + version));
+    }
+
+    for (const QString& unsupportedVersion :
+         {QString::fromLatin1(CoverageStrategySemantics::LegacyBoustrophedonVersion),
+          QString::fromLatin1(CoverageStrategySemantics::BoustrophedonPendingVersion)}) {
+        PlanningSemantics unsupportedBcd;
+        unsupportedBcd.resolvedStrategy = QString::fromLatin1(CoverageStrategySemantics::BoustrophedonId);
+        unsupportedBcd.strategyVersion = unsupportedVersion;
+        const auto identity = PlanningInputIdentity::fromTask(task, unsupportedBcd);
+        QVERIFY(identity.has_value());
+        QVERIFY(!identity->matchesSupported(task));
     }
 
     PlanningSemantics unsupported;

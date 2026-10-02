@@ -1,12 +1,26 @@
 #include "CoverageQualityEvaluatorTest.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
+#include "Geometry/GeoReference.h"
 #include "Geometry/PolygonRegion.h"
+#include "Planning/BoustrophedonDecomposition.h"
+#include "Planning/CellCoverage.h"
+#include "Planning/ComplexCoverageAssembly.h"
+#include "Planning/CoverageGeometry.h"
 #include "Planning/CoverageQualityEvaluator.h"
 #include "Planning/CoverageQualityPolicy.h"
+#include "Planning/CoverageSafety.h"
+#include "Planning/CoverageStrategySemantics.h"
+#include "Planning/CoverageTaskAdapter.h"
+#include "Planning/GreedyCellOrdering.h"
 
 using namespace Marine;
 
@@ -54,6 +68,106 @@ double area(const PolygonRegionSet2D& regions)
     const auto result = Geometry::polygonRegionArea(regions);
     return result.status == Geometry::PolygonRegionOperationStatus::Success ? result.areaM2
                                                                             : std::numeric_limits<double>::quiet_NaN();
+}
+
+struct GeoPartitionWitness
+{
+    PolygonRegionSet2D target;
+    PolygonRegionSet2D footprint;
+    std::vector<Point2D> path;
+    std::vector<PathLegRole> legRoles;
+    CoverageQualityEvaluation quality;
+};
+
+bool buildGeoPartitionWitness(GeoPartitionWitness& witness, std::string& failure)
+{
+    MarineTask task;
+    task.name = "V05-06C Geo partition regression";
+    task.vehicleId = "v05-06c-geo-regression";
+    task.planner.plannerId = CoverageStrategySemantics::BoustrophedonId;
+    task.coverage.swathWidthM = 20.0;
+    task.coverage.coverageRequirement = CoverageRequirement::Standard;
+    task.coverage.sweepAngleMode = SweepAngleMode::Manual;
+    task.coverage.sweepAngleDeg = 90.0;
+    task.safety.hardSafetyMarginM = 0.0;
+    task.safety.preferredSafetyMarginM = 0.0;
+    task.planner.executionSafety.executionMarginM = 0.25;
+    task.region.coverageBoundary.vertices = {{47.3977, 8.5455, 0.0}, {47.3977, 8.5465, 0.0},
+                                              {47.3987, 8.5465, 0.0}, {47.3987, 8.5455, 0.0}};
+    task.region.navigationBoundary = task.region.coverageBoundary;
+    task.region.noGoRegions.push_back({.vertices = {{47.39805, 8.54585, 0.0}, {47.39805, 8.54615, 0.0},
+                                                    {47.39835, 8.54615, 0.0}, {47.39835, 8.54585, 0.0}}});
+
+    CoveragePlanningProblem problem;
+    std::optional<GeoReference> reference;
+    CoveragePlanningError adapterError = CoveragePlanningError::None;
+    if (!CoverageTaskAdapter::buildProblem(task, problem, reference, adapterError) || !reference) {
+        failure = "Geo task adaptation failed, error=" + std::to_string(static_cast<int>(adapterError));
+        return false;
+    }
+
+    const CoverageGeometryResult coverage = buildCoverageGeometry(problem.region);
+    if (coverage.error != CoveragePlanningError::None) {
+        failure = "Coverage geometry failed, error=" + std::to_string(static_cast<int>(coverage.error));
+        return false;
+    }
+    const SafetyTrackRegionsResult safety =
+        buildSafetyTrackRegions(problem.region, problem.safety, problem.executionSafety);
+    if (safety.error != CoveragePlanningError::None) {
+        failure = "Safety geometry failed, error=" + std::to_string(static_cast<int>(safety.error));
+        return false;
+    }
+
+    const CoverageDecompositionResult decomposition = decomposeBoustrophedon(coverage.geometry.coverageTarget, 90.0);
+    if (decomposition.status != PlanningStatus::Success) {
+        failure = "BCD decomposition failed, error=" + std::to_string(static_cast<int>(decomposition.error));
+        return false;
+    }
+    const CellCoverageGenerationResult generated =
+        generateCellCoverage(decomposition.cells, safety.regions.hardExecutionTrackRegion, problem.swathWidthM, 90.0);
+    if (generated.status != PlanningStatus::Success) {
+        failure = "Cell coverage generation failed, error=" + std::to_string(static_cast<int>(generated.error));
+        return false;
+    }
+    const CellOrderingResult ordered =
+        orderCellTraversals(safety.regions.hardExecutionTrackRegion, generated.cells, generated.traversalStates);
+    if (ordered.status != PlanningStatus::Success) {
+        failure = "Cell ordering failed, error=" + std::to_string(static_cast<int>(ordered.error));
+        return false;
+    }
+    const ComplexCoverageAssemblyResult assembly =
+        assembleComplexCoverage(safety.regions.hardExecutionTrackRegion, generated.cells, ordered.visits);
+    if (assembly.status != PlanningStatus::Success) {
+        failure = "Coverage assembly failed, error=" + std::to_string(static_cast<int>(assembly.error));
+        return false;
+    }
+    if (evaluateSafetyCandidate(safety, assembly.path).error != CoveragePlanningError::None) {
+        failure = "Assembled path did not pass safety evaluation";
+        return false;
+    }
+
+    std::vector<Geometry::LineSegment2D> coverageSegments;
+    for (std::size_t index = 0; index < assembly.legRoles.size(); ++index) {
+        if (assembly.legRoles[index] == PathLegRole::Coverage) {
+            coverageSegments.push_back({assembly.path[index], assembly.path[index + 1]});
+        }
+    }
+    const Geometry::PolygonRegionOperationResult footprint =
+        Geometry::bufferLineSegments(coverageSegments, problem.swathWidthM / 2.0);
+    if (footprint.status != Geometry::PolygonRegionOperationStatus::Success) {
+        failure = "Coverage footprint generation failed";
+        return false;
+    }
+
+    witness.target = coverage.geometry.coverageTarget;
+    witness.footprint = footprint.regions;
+    witness.path = assembly.path;
+    witness.legRoles = assembly.legRoles;
+    witness.quality = evaluateCoverageQuality(
+        witness.target, witness.path, witness.legRoles, problem.swathWidthM, problem.coverageRequirement,
+        {.strategyId = CoverageStrategySemantics::BoustrophedonId,
+         .semanticVersion = CoverageStrategySemantics::BoustrophedonVersion});
+    return true;
 }
 
 void verifySharedEvaluationTruth(const CoverageQualityEvaluation& standard, const CoverageQualityEvaluation& strict)
@@ -148,6 +262,17 @@ void CoverageQualityEvaluatorTest::_testInternalCriticalGap()
     QCOMPARE(strict.status, CoverageQualityStatus::Insufficient);
     QVERIFY(standard.coverageRatio > 0.99);
     QVERIFY(standard.criticalUncoveredAreaM2 > standard.numericalToleranceM2);
+    QCOMPARE(standard.error, CoverageQualityError::None);
+    QVERIFY(!standard.residual.criticalUncoveredRegion.empty());
+    QVERIFY(!standard.residual.boundaryShortfallRegion.empty());
+    const auto criticalArea = Geometry::polygonRegionArea(standard.residual.criticalUncoveredRegion);
+    const auto boundaryArea = Geometry::polygonRegionArea(standard.residual.boundaryShortfallRegion);
+    QCOMPARE(criticalArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QCOMPARE(boundaryArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(std::abs(criticalArea.areaM2 - standard.criticalUncoveredAreaM2) <= standard.numericalToleranceM2);
+    QVERIFY(criticalArea.areaM2 <= standard.uncoveredAreaM2 + standard.numericalToleranceM2);
+    QVERIFY(boundaryArea.areaM2 > 0.0);
+    QVERIFY(boundaryArea.areaM2 <= standard.uncoveredAreaM2 + standard.numericalToleranceM2);
 }
 
 void CoverageQualityEvaluatorTest::_testStrategyIdentityDoesNotChangeQualityTruth()
@@ -358,6 +483,38 @@ void CoverageQualityEvaluatorTest::_testComparatorErrorAndTransitivity()
     QCOMPARE(compareCoverageQuality(a, b), CoverageQualityComparison::Better);
     QCOMPARE(compareCoverageQuality(b, c), CoverageQualityComparison::Better);
     QCOMPARE(compareCoverageQuality(a, c), CoverageQualityComparison::Better);
+}
+
+void CoverageQualityEvaluatorTest::_testGeoResidualTruthRegression()
+{
+    GeoPartitionWitness witness;
+    std::string failure;
+    QVERIFY2(buildGeoPartitionWitness(witness, failure), failure.c_str());
+
+    const auto targetArea = Geometry::polygonRegionArea(witness.target);
+    const auto uncovered = Geometry::differencePolygonRegions(witness.target, witness.footprint);
+    QCOMPARE(targetArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QCOMPARE(uncovered.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(std::isfinite(targetArea.areaM2));
+    QVERIFY(targetArea.areaM2 > 0.0);
+
+    const auto uncoveredArea = Geometry::polygonRegionArea(uncovered.regions);
+    QCOMPARE(uncoveredArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(std::isfinite(uncoveredArea.areaM2));
+    QVERIFY(uncoveredArea.areaM2 >= 0.0);
+    QCOMPARE(witness.quality.status, CoverageQualityStatus::Complete);
+    QCOMPARE(witness.quality.error, CoverageQualityError::None);
+    QVERIFY(witness.quality.passesRequirement);
+    QCOMPARE(witness.quality.targetAreaM2, targetArea.areaM2);
+    const auto residualArea = Geometry::polygonRegionArea(witness.quality.residual.uncoveredRegion);
+    QCOMPARE(residualArea.status, Geometry::PolygonRegionOperationStatus::Success);
+    QVERIFY(std::abs(witness.quality.uncoveredAreaM2 - uncoveredArea.areaM2) <= witness.quality.numericalToleranceM2);
+    QVERIFY(std::abs(witness.quality.uncoveredAreaM2 - residualArea.areaM2) <= witness.quality.numericalToleranceM2);
+    QVERIFY(std::abs(witness.quality.coveredAreaM2 + witness.quality.uncoveredAreaM2 - witness.quality.targetAreaM2) <=
+            witness.quality.numericalToleranceM2);
+    QVERIFY(witness.quality.uncoveredAreaM2 <= witness.quality.numericalToleranceM2);
+    QVERIFY(witness.quality.criticalUncoveredAreaM2 <=
+            witness.quality.uncoveredAreaM2 + witness.quality.numericalToleranceM2);
 }
 
 UT_REGISTER_TEST_LIGHTWEIGHT(CoverageQualityEvaluatorTest, TestLabel::Unit)

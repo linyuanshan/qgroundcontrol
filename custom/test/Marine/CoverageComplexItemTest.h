@@ -38,7 +38,7 @@ private slots:
     void _testUnplannedSaveLoad();
     void _testLoadValidation();
     void _testArtifactIdentity();
-    void _testAutoResolvedStrategyIdentityAndPendingBcd();
+    void _testAutoResolvedStrategyIdentityAndBcdArtifacts();
     void _testStaleArtifactReferenceChange();
     void _testClosingVertexIdentityAndPlan();
 
