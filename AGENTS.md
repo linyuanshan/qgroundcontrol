@@ -51,11 +51,17 @@ V05 governance state:
 | Complete | V05-03 production implementation |
 | Complete | V05-04 production implementation |
 | Complete | V05-05 production implementation |
-| Authorized | V05-06 production implementation |
+| Complete | V05-06 production implementation |
+| Complete | V05-07 production implementation |
+| Complete | V05-08 integrated planning result and Mission gate |
+| Complete | V05-09 QML/editor/result visualization |
+| Complete | V05-10 design/contract freeze — `V05-10-DC-v1` |
+| Authorized | V05-10 execution — M00–M09, regressions, persistence, Mission integration, SITL, manual acceptance, freeze audit |
 
-V05-05 production implementation is complete and has passed independent review.
-V05-06 implementation is explicitly authorized by the project owner.
-After implementation, stop for independent review. V05-07 and later packages remain unauthorized.
+V05-08 and V05-09 are closed. V05-10 design/contract review is complete and `V05-10-DC-v1` is frozen at
+commit `4c1414622293bbb23da881ba1c8f4a76b9a1b9eb`. The project owner has explicitly authorized V05-10 execution
+under `docs/marine/V05_10_EXECUTION_WRAPPER.md`. After execution, stop for fresh independent implementation
+review. V05-11 and later packages remain unauthorized.
 
 V05-01 must not begin until the pre-V05-01 gate is completed and the project owner explicitly
 authorizes
