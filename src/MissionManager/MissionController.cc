@@ -1,39 +1,62 @@
-#include "QmlObjectListModel.h"
 #include "MissionController.h"
-#include "Vehicle.h"
-#include "VehicleSupports.h"
-#include "MissionManager.h"
-#include "FlightPathSegment.h"
-#include "FirmwarePlugin.h"
-#include "QGCApplication.h"
-#include "SimpleMissionItem.h"
-#include "SurveyComplexItem.h"
-#include "FixedWingLandingComplexItem.h"
-#include "VTOLLandingComplexItem.h"
-#include "StructureScanComplexItem.h"
-#include "CorridorScanComplexItem.h"
-#include "GeoJsonHelper.h"
-#include "JsonParsing.h"
-#include "QGroundControlQmlGlobal.h"
-#include "SettingsManager.h"
-#include "AppSettings.h"
-#include "MissionSettingsItem.h"
-#include "PlanMasterController.h"
-#include "KMLPlanDomDocument.h"
-#include "QGCCorePlugin.h"
-#include "TakeoffMissionItem.h"
-#include "PlanViewSettings.h"
-#include "MissionCommandTree.h"
-#include "QGCMath.h"
-#include "QGCLoggingCategory.h"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtMath>
 
+#include "AppMessages.h"
+#include "AppSettings.h"
+#include "CorridorScanComplexItem.h"
+#include "FirmwarePlugin.h"
+#include "FixedWingLandingComplexItem.h"
+#include "FlightPathSegment.h"
+#include "GeoJsonHelper.h"
+#include "JsonParsing.h"
+#include "KMLPlanDomDocument.h"
+#include "MissionCommandTree.h"
+#include "MissionManager.h"
+#include "MissionSettingsItem.h"
+#include "PlanMasterController.h"
+#include "PlanViewSettings.h"
+#include "QGCApplication.h"
+#include "QGCCorePlugin.h"
+#include "QGCLoggingCategory.h"
+#include "QGCMath.h"
+#include "QGroundControlQmlGlobal.h"
+#include "QmlObjectListModel.h"
+#include "SettingsManager.h"
+#include "SimpleMissionItem.h"
+#include "StructureScanComplexItem.h"
+#include "SurveyComplexItem.h"
+#include "TakeoffMissionItem.h"
+#include "VTOLLandingComplexItem.h"
+#include "Vehicle.h"
+#include "VehicleSupports.h"
+
 #define UPDATE_TIMEOUT 5000 ///< How often we check for bounding box changes
 
 QGC_LOGGING_CATEGORY(MissionControllerLog, "PlanManager.MissionController")
+
+namespace {
+bool checkUploadAdmission(QmlObjectListModel* items, QString& reason)
+{
+    reason.clear();
+    if (!items) {
+        reason = MissionController::tr("The mission item list is unavailable.");
+        return false;
+    }
+    for (int index = 0; index < items->count(); ++index) {
+        auto* item = qobject_cast<VisualMissionItem*>(items->get(index));
+        if (!item || !item->readyForUpload(reason)) {
+            if (reason.isEmpty()) {
+                reason = MissionController::tr("A mission item is not ready for upload.");
+            }
+            return false;
+        }
+    }
+    return true;
+}
+}  // namespace
 
 MissionController::MissionController(PlanMasterController* masterController, QObject *parent)
     : PlanElementController (masterController, parent)
@@ -182,21 +205,50 @@ void MissionController::loadFromVehicle(void)
 
 void MissionController::sendToVehicle(void)
 {
-    if (_masterController->offline()) {
-        qCCritical(MissionControllerLog) << "MissionControllerLog::sendToVehicle called while offline";
-    } else if (syncInProgress()) {
-        qCCritical(MissionControllerLog) << "MissionControllerLog::sendToVehicle called while syncInProgress";
+    QString errorString;
+    if (!sendToVehicleChecked(errorString)) {
+        QGC::showAppMessage(errorString);
+    }
+}
+
+bool MissionController::uploadAllowed() const
+{
+    QString reason;
+    return checkUploadAdmission(_visualItems, reason);
+}
+
+QString MissionController::uploadBlockingReason() const
+{
+    QString reason;
+    checkUploadAdmission(_visualItems, reason);
+    return reason;
+}
+
+bool MissionController::sendToVehicleChecked(QString& errorString)
+{
+    if (!checkUploadAdmission(_visualItems, errorString)) {
+        return false;
+    }
+    if (!_managerVehicle || _masterController->offline()) {
+        errorString = tr("Upload requires an active vehicle.");
+        return false;
+    }
+    if (syncInProgress()) {
+        errorString = tr("A mission transfer is already in progress.");
+        return false;
+    }
+    bool submitted;
+    if (_visualItems->count() == 1) {
+        // Preserve the intentional clear without transmitting a possibly bogus home position.
+        QmlObjectListModel emptyModel;
+        submitted = sendItemsToVehicle(_managerVehicle, &emptyModel, &errorString);
     } else {
-        qCDebug(MissionControllerLog) << "MissionControllerLog::sendToVehicle";
-        if (_visualItems->count() == 1) {
-            // This prevents us from sending a possibly bogus home position to the vehicle
-            QmlObjectListModel emptyModel;
-            sendItemsToVehicle(_managerVehicle, &emptyModel);
-        } else {
-            sendItemsToVehicle(_managerVehicle, _visualItems);
-        }
+        submitted = sendItemsToVehicle(_managerVehicle, _visualItems, &errorString);
+    }
+    if (submitted) {
         setDirty(false);
     }
+    return submitted;
 }
 
 /// Converts from visual items to MissionItems
@@ -242,16 +294,52 @@ void MissionController::addMissionToKML(KMLPlanDomDocument& planKML)
     deleteParent->deleteLater();
 }
 
-void MissionController::sendItemsToVehicle(Vehicle* vehicle, QmlObjectListModel* visualMissionItems)
+bool MissionController::sendItemsToVehicle(Vehicle* vehicle, QmlObjectListModel* visualMissionItems,
+                                           QString* errorString)
 {
-    if (vehicle) {
-        QList<MissionItem*> rgMissionItems;
-
-        _convertToMissionItems(visualMissionItems, rgMissionItems, vehicle);
-
-        // PlanManager takes control of MissionItems so no need to delete
-        vehicle->missionManager()->writeMissionItems(rgMissionItems);
+    QString reason;
+    const auto refuse = [&](const QString& message) {
+        if (errorString) {
+            *errorString = message;
+        }
+        return false;
+    };
+    if (!checkUploadAdmission(visualMissionItems, reason)) {
+        return refuse(reason);
     }
+    if (!vehicle || vehicle->isOfflineEditingVehicle()) {
+        return refuse(tr("Upload requires an active vehicle."));
+    }
+    if (vehicle->missionManager()->inProgress()) {
+        return refuse(tr("A mission transfer is already in progress."));
+    }
+
+    QObject temporaryOwner;
+    QList<MissionItem*> missionItems;
+    int lastSequence = 0;
+    for (int index = 0; index < visualMissionItems->count(); ++index) {
+        auto* item = qobject_cast<VisualMissionItem*>(visualMissionItems->get(index));
+        if (!item || !item->appendMissionItemsForUpload(missionItems, &temporaryOwner, reason)) {
+            return refuse(reason.isEmpty() ? tr("A mission item could not be converted for upload.") : reason);
+        }
+        lastSequence = item->lastSequenceNumber();
+    }
+    if (visualMissionItems->count() > 0) {
+        if (auto* settings = qobject_cast<MissionSettingsItem*>(visualMissionItems->get(0))) {
+            settings->addMissionEndAction(missionItems, lastSequence + 1, &temporaryOwner);
+        }
+    }
+    if (vehicle->missionManager()->inProgress()) {
+        return refuse(tr("A mission transfer is already in progress."));
+    }
+    for (auto* item : missionItems) {
+        item->setParent(vehicle);
+    }
+    vehicle->missionManager()->writeMissionItems(missionItems);
+    if (errorString) {
+        errorString->clear();
+    }
+    return true;
 }
 
 int MissionController::_nextSequenceNumber(void)
@@ -1492,6 +1580,7 @@ void MissionController::_initAllVisualItems(void)
 
     connect(_visualItems, &QmlObjectListModel::dirtyChanged, this, &MissionController::_visualItemsDirtyChanged);
     connect(_visualItems, &QmlObjectListModel::countChanged, this, &MissionController::containsItemsChanged);
+    connect(_visualItems, &QmlObjectListModel::countChanged, this, &MissionController::uploadAllowedChanged);
 
     // Connect for incremental tree model sync
     connect(_visualItems, &QAbstractItemModel::rowsInserted, this, &MissionController::_syncTreeMissionItemsInserted);
@@ -1515,6 +1604,7 @@ void MissionController::_initAllVisualItems(void)
     }
 
     emit visualItemsReset();
+    emit uploadAllowedChanged();
     emit containsItemsChanged();
     emit plannedHomePositionChanged(plannedHomePosition());
     emit homePositionSetChanged();
@@ -1538,6 +1628,7 @@ void MissionController::_deinitAllVisualItems(void)
 
     disconnect(_visualItems, &QmlObjectListModel::dirtyChanged, this, &MissionController::_visualItemsDirtyChanged);
     disconnect(_visualItems, &QmlObjectListModel::countChanged, this, &MissionController::containsItemsChanged);
+    disconnect(_visualItems, &QmlObjectListModel::countChanged, this, &MissionController::uploadAllowedChanged);
 
     // Disconnect incremental tree model sync
     disconnect(_visualItems, &QAbstractItemModel::rowsInserted, this, &MissionController::_syncTreeMissionItemsInserted);
@@ -1558,6 +1649,7 @@ void MissionController::_deinitAllVisualItems(void)
 void MissionController::_initVisualItem(VisualMissionItem* visualItem)
 {
     setDirty(false);
+    connect(visualItem, &VisualMissionItem::uploadReadinessChanged, this, &MissionController::uploadAllowedChanged);
 
     connect(visualItem, &VisualMissionItem::specifiesCoordinateChanged,                 this, &MissionController::_recalcFlightPathSegmentsSignal,  Qt::QueuedConnection);
     connect(visualItem, &VisualMissionItem::specifiedFlightSpeedChanged,                this, &MissionController::_recalcMissionFlightStatusSignal, Qt::QueuedConnection);

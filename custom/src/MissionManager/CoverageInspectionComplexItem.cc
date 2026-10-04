@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "ArduPilotMissionAdapter.h"
+#include "CoveragePlanningPresentation.h"
 #include "CoverageProblemValidator.h"
 #include "CoverageStrategySemantics.h"
 #include "CoverageTaskAdapter.h"
@@ -23,6 +24,7 @@
 #include "MarinePlanContext.h"
 #include "PlanningArtifactCodec.h"
 #include "PlanningPathMetrics.h"
+#include "QGCQGeoCoordinate.h"
 
 using namespace Marine;
 
@@ -212,16 +214,32 @@ CoverageInspectionComplexItem::CoverageInspectionComplexItem(PlanMasterControlle
                                                              MarinePlanContext* marineContext)
     : ComplexMissionItem(masterController, flyView), _marineContext(marineContext)
 {
+    _watchPolygonVertices(&_workRegionPolygon);
+    _watchPolygonVertices(&_navigationPolygon);
     connect(&_workRegionPolygon, &QGCMapPolygon::pathChanged, this,
             &CoverageInspectionComplexItem::_workRegionPolygonChanged);
+    connect(&_navigationPolygon, &QGCMapPolygon::pathChanged, this,
+            &CoverageInspectionComplexItem::_navigationPolygonChanged);
+    connect(&_workRegionPolygon, &QGCMapPolygon::dragPathChanged, this, &CoverageInspectionComplexItem::invalidatePlan);
+    connect(&_navigationPolygon, &QGCMapPolygon::dragPathChanged, this, &CoverageInspectionComplexItem::invalidatePlan);
+    const auto dragChanged = [this](bool dragging) {
+        if (dragging) {
+            invalidatePlan();
+        }
+        emit uploadReadinessChanged();
+    };
+    connect(&_workRegionPolygon, &QGCMapPolygon::vertexDragChanged, this, dragChanged);
+    connect(&_navigationPolygon, &QGCMapPolygon::vertexDragChanged, this, dragChanged);
+    setEditingRegion(0);
     if (_marineContext) {
         connect(_marineContext, &MarinePlanContext::taskChanged, this, [this](const QString& changedTaskId) {
             if (changedTaskId == taskId()) {
-                _syncWorkRegionPolygonFromTask();
                 if (!_updatingTaskFromItem) {
+                    _syncWorkRegionPolygonFromTask();
                     _syncNoGoPolygonsFromTask();
                 }
                 emit taskDataChanged();
+                emit uploadReadinessChanged();
                 setDirty(true);
                 emit readyForSaveStateChanged();
                 if (_planningArtifact &&
@@ -313,10 +331,129 @@ void CoverageInspectionComplexItem::setSafetyMarginM(double safetyMarginM)
     }
     MarineTask updatedTask = *marineTask;
     updatedTask.safety.hardSafetyMarginM = safetyMarginM;
-    if (updatedTask.safety.preferredSafetyMarginM < safetyMarginM) {
-        updatedTask.safety.preferredSafetyMarginM = safetyMarginM;
-    }
     _replaceTask(updatedTask);
+}
+
+double CoverageInspectionComplexItem::preferredSafetyMarginM() const
+{
+    const auto* task = _task();
+    return task ? task->safety.preferredSafetyMarginM : std::numeric_limits<double>::quiet_NaN();
+}
+
+void CoverageInspectionComplexItem::setPreferredSafetyMarginM(double value)
+{
+    const auto* task = _task();
+    if (!task || task->safety.preferredSafetyMarginM == value) {
+        return;
+    }
+    auto updated = *task;
+    updated.safety.preferredSafetyMarginM = value;
+    _replaceTask(updated);
+}
+
+double CoverageInspectionComplexItem::executionMarginM() const
+{
+    const auto* task = _task();
+    return task ? task->planner.executionSafety.executionMarginM : std::numeric_limits<double>::quiet_NaN();
+}
+
+void CoverageInspectionComplexItem::setExecutionMarginM(double value)
+{
+    const auto* task = _task();
+    if (!task || task->planner.executionSafety.executionMarginM == value) {
+        return;
+    }
+    auto updated = *task;
+    updated.planner.executionSafety.executionMarginM = value;
+    _replaceTask(updated);
+}
+
+QString CoverageInspectionComplexItem::coverageRequirement() const
+{
+    const auto* task = _task();
+    return task && task->coverage.coverageRequirement == CoverageRequirement::Strict ? QStringLiteral("Strict")
+                                                                                     : QStringLiteral("Standard");
+}
+
+void CoverageInspectionComplexItem::setCoverageRequirement(const QString& value)
+{
+    if (value != QStringLiteral("Standard") && value != QStringLiteral("Strict")) {
+        return;
+    }
+    const auto* task = _task();
+    const auto requirement =
+        value == QStringLiteral("Strict") ? CoverageRequirement::Strict : CoverageRequirement::Standard;
+    if (!task || task->coverage.coverageRequirement == requirement) {
+        return;
+    }
+    auto updated = *task;
+    updated.coverage.coverageRequirement = requirement;
+    _replaceTask(updated);
+}
+
+void CoverageInspectionComplexItem::setEditingRegion(int region)
+{
+    if (region < 0 || region > 2) {
+        return;
+    }
+    if (region != 2) {
+        clearNoGoRegionInteractive();
+    }
+    _workRegionPolygon.setInteractive(region == 0);
+    _navigationPolygon.setInteractive(region == 1);
+    if (_editingRegion != region) {
+        _editingRegion = region;
+        emit editingRegionChanged();
+    }
+}
+
+bool CoverageInspectionComplexItem::resultStale() const
+{
+    const auto* task = _task();
+    return _planningArtifact &&
+           (_planningArtifact->stale || !task || !_boundaryPolygonsMatchTask(task) || !_noGoPolygonsMatchTask(task) ||
+            !PlanningArtifactCodec::matchesCurrentInput(*_planningArtifact, *task));
+}
+
+bool CoverageInspectionComplexItem::uploadAllowed() const
+{
+    QString reason;
+    return readyForUpload(reason);
+}
+
+bool CoverageInspectionComplexItem::readyForUpload(QString& reason) const
+{
+    const auto* task = _task();
+    if (!task || !_planningArtifact || !_boundaryPolygonsMatchTask(task) || !_noGoPolygonsMatchTask(task) ||
+        !noGoRegionsReady() || _workRegionPolygon.vertexDrag() || _navigationPolygon.vertexDrag()) {
+        reason = tr("Coverage inspection has no current complete planning result.");
+        return false;
+    }
+    for (int index = 0; index < _noGoPolygons.count(); ++index) {
+        const auto* polygon = _noGoPolygons.value<QGCMapPolygon*>(index);
+        if (polygon && polygon->vertexDrag()) {
+            reason = tr("Finish editing the No-Go region and generate a new plan.");
+            return false;
+        }
+    }
+    return PlanningArtifactCodec::uploadAllowed(*_planningArtifact, *task, reason);
+}
+
+bool CoverageInspectionComplexItem::appendMissionItemsForUpload(QList<MissionItem*>& items, QObject* parent,
+                                                                QString& reason)
+{
+    if (!readyForUpload(reason)) {
+        return false;
+    }
+    int nextSequenceNumber = _sequenceNumber;
+    return ArduPilotMissionAdapter::appendWaypoints(*_planningArtifact, *_task(), items, parent, nextSequenceNumber,
+                                                    reason);
+}
+
+QVariantMap CoverageInspectionComplexItem::planningPresentation() const
+{
+    const bool stale = resultStale();
+    return Marine::QGC::planningPresentation(_planningResult, _planningState == Planned && !stale, stale);
 }
 
 bool CoverageInspectionComplexItem::automaticSweepAngle() const
@@ -657,6 +794,9 @@ void CoverageInspectionComplexItem::setNoGoRegionInteractive(int index, bool int
     }
 
     const bool wasEditing = noGoRegionEditing();
+    if (interactive) {
+        setEditingRegion(2);
+    }
     _syncingNoGoInteraction = true;
     for (int polygonIndex = 0; polygonIndex < _noGoPolygons.count(); ++polygonIndex) {
         QGCMapPolygon* polygon = _noGoPolygons.value<QGCMapPolygon*>(polygonIndex);
@@ -1014,6 +1154,7 @@ void CoverageInspectionComplexItem::_applyPlanningResult(PlanningResult result, 
         emit planningStateChanged();
     }
     emit planningResultChanged();
+    emit uploadReadinessChanged();
     if (incompleteChanged) {
         emit isIncompleteChanged();
     }
@@ -1051,16 +1192,49 @@ void CoverageInspectionComplexItem::_replaceTask(const MarineTask& task)
     }
 }
 
+void CoverageInspectionComplexItem::_watchPolygonVertices(QGCMapPolygon* polygon)
+{
+    auto* model = polygon->qmlPathModel();
+    connect(model, &QAbstractItemModel::rowsInserted, this, [this, polygon]() { _connectPolygonVertices(polygon); });
+    connect(model, &QAbstractItemModel::modelReset, this, [this, polygon]() { _connectPolygonVertices(polygon); });
+    _connectPolygonVertices(polygon);
+}
+
+void CoverageInspectionComplexItem::_connectPolygonVertices(QGCMapPolygon* polygon)
+{
+    auto* model = polygon->qmlPathModel();
+    for (int index = 0; index < model->count(); ++index) {
+        auto* vertex = model->value<QGCQGeoCoordinate*>(index);
+        connect(vertex, &QGCQGeoCoordinate::coordinateChanged, this,
+                &CoverageInspectionComplexItem::_editorVertexChanged, Qt::UniqueConnection);
+    }
+}
+
+void CoverageInspectionComplexItem::_editorVertexChanged()
+{
+    if (!_syncingWorkRegionPolygon && !_syncingNavigationPolygon && !_syncingNoGoPolygons) {
+        invalidatePlan();
+    }
+}
+
 void CoverageInspectionComplexItem::_connectNoGoPolygon(QGCMapPolygon* polygon)
 {
+    _watchPolygonVertices(polygon);
     connect(polygon, &QGCMapPolygon::pathChanged, this, &CoverageInspectionComplexItem::_noGoPolygonPathChanged);
     connect(polygon, &QGCMapPolygon::countChanged, this, [this](int) { _noGoPolygonPathChanged(); });
     connect(polygon, &QGCMapPolygon::dragPathChanged, this, &CoverageInspectionComplexItem::invalidatePlan);
+    connect(polygon, &QGCMapPolygon::vertexDragChanged, this, [this](bool dragging) {
+        if (dragging) {
+            invalidatePlan();
+        }
+        emit uploadReadinessChanged();
+    });
     connect(polygon, &QGCMapPolygon::interactiveChanged, this, [this, polygon](bool interactive) {
         if (_syncingNoGoPolygons || _syncingNoGoInteraction) {
             return;
         }
         if (interactive) {
+            setEditingRegion(2);
             _syncingNoGoInteraction = true;
             for (int index = 0; index < _noGoPolygons.count(); ++index) {
                 QGCMapPolygon* other = _noGoPolygons.value<QGCMapPolygon*>(index);
@@ -1108,6 +1282,7 @@ void CoverageInspectionComplexItem::_workRegionPolygonChanged()
 
 void CoverageInspectionComplexItem::_syncWorkRegionPolygonFromTask()
 {
+    _syncNavigationPolygonFromTask();
     QList<QGeoCoordinate> coordinates;
     const MarineTask* marineTask = _task();
     if (marineTask != nullptr) {
@@ -1123,6 +1298,51 @@ void CoverageInspectionComplexItem::_syncWorkRegionPolygonFromTask()
     _syncingWorkRegionPolygon = true;
     _workRegionPolygon.setPath(coordinates);
     _syncingWorkRegionPolygon = false;
+}
+
+void CoverageInspectionComplexItem::_navigationPolygonChanged()
+{
+    if (_syncingNavigationPolygon || !_task()) {
+        return;
+    }
+    auto updated = *_task();
+    updated.region.navigationBoundary.vertices.clear();
+    for (const auto& coordinate : _navigationPolygon.coordinateList()) {
+        updated.region.navigationBoundary.vertices.push_back({coordinate.latitude(), coordinate.longitude(), 0.0});
+    }
+    _replaceTask(updated);
+}
+
+void CoverageInspectionComplexItem::_syncNavigationPolygonFromTask()
+{
+    QList<QGeoCoordinate> coordinates;
+    if (const auto* task = _task()) {
+        for (const auto& point : task->region.navigationBoundary.vertices) {
+            coordinates.append(_toQGeoCoordinate(point));
+        }
+    }
+    if (coordinatePathsEqual(_navigationPolygon.coordinateList(), coordinates)) {
+        return;
+    }
+    _syncingNavigationPolygon = true;
+    _navigationPolygon.setPath(coordinates);
+    _syncingNavigationPolygon = false;
+}
+
+bool CoverageInspectionComplexItem::_boundaryPolygonsMatchTask(const MarineTask* task) const
+{
+    if (!task) {
+        return false;
+    }
+    const auto matches = [](const QGCMapPolygon& polygon, const GeoPolygon& boundary) {
+        QList<QGeoCoordinate> coordinates;
+        for (const auto& vertex : boundary.vertices) {
+            coordinates.append(_toQGeoCoordinate(vertex));
+        }
+        return coordinatePathsEqual(polygon.coordinateList(), coordinates);
+    };
+    return matches(_workRegionPolygon, task->region.coverageBoundary) &&
+           matches(_navigationPolygon, task->region.navigationBoundary);
 }
 
 bool CoverageInspectionComplexItem::_noGoPolygonsMatchTask(const MarineTask* task) const

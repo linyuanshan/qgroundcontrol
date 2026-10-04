@@ -194,6 +194,20 @@ public:
     ///     @param missionItemParent Parent object for newly created MissionItems
     virtual void appendMissionItems(QList<MissionItem*>& items, QObject* missionItemParent) = 0;
 
+    /// Upload admission is separate from save readiness; upstream items retain their existing admission.
+    virtual bool readyForUpload(QString& reason) const
+    {
+        reason.clear();
+        return true;
+    }
+
+    virtual bool appendMissionItemsForUpload(QList<MissionItem*>& items, QObject* missionItemParent, QString& reason)
+    {
+        reason.clear();
+        appendMissionItems(items, missionItemParent);
+        return true;
+    }
+
     /// Adjust the altitude of the item if appropriate to the new altitude.
     virtual void applyNewAltitude(double newAltitude) = 0;
 
@@ -209,6 +223,7 @@ public:
     static constexpr const char* jsonTypeComplexItemValue =   "ComplexItem"; ///< Item type is Complex Item
 
 signals:
+    void uploadReadinessChanged();
     void altDifferenceChanged           (double altDifference);
     void altPercentChanged              (double altPercent);
     void terrainPercentChanged          (double terrainPercent);

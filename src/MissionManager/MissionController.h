@@ -50,6 +50,8 @@ public:
     using MissionFlightStatus_t = ::MissionFlightStatus_t;
 
     Q_PROPERTY(QmlObjectListModel*  visualItems                     READ visualItems                    NOTIFY visualItemsReset)
+    Q_PROPERTY(bool uploadAllowed READ uploadAllowed NOTIFY uploadAllowedChanged)
+    Q_PROPERTY(QString uploadBlockingReason READ uploadBlockingReason NOTIFY uploadAllowedChanged)
     Q_PROPERTY(QmlObjectTreeModel*  visualItemsTree                 READ visualItemsTree                CONSTANT)                               ///< Tree-structured view of visualItems for TreeView
     Q_PROPERTY(QPersistentModelIndex planFileGroupIndex              READ planFileGroupIndex              CONSTANT)
     Q_PROPERTY(QPersistentModelIndex defaultsGroupIndex              READ defaultsGroupIndex              CONSTANT)
@@ -222,7 +224,12 @@ public:
     int readyForSaveState(void) const;
 
     /// Sends the mission items to the specified vehicle
-    static void sendItemsToVehicle(Vehicle* vehicle, QmlObjectListModel* visualMissionItems);
+    static bool sendItemsToVehicle(Vehicle* vehicle, QmlObjectListModel* visualMissionItems,
+                                   QString* errorString = nullptr);
+
+    bool uploadAllowed() const;
+    QString uploadBlockingReason() const;
+    bool sendToVehicleChecked(QString& errorString);
 
     bool loadTextFile(QFile& file, QString& errorString);
 
@@ -304,6 +311,7 @@ public:
     static constexpr int kGroupCount       = 6;
 
 signals:
+    void uploadAllowedChanged();
     void visualItemsReset                   (void);
     void splitSegmentChanged                (void);
     void newItemsFromVehicle                (void);

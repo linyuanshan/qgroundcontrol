@@ -515,24 +515,11 @@ void CoverageComplexItemTest::_testQmlRegistration()
     QVERIFY2(editorComponent.isReady(), qPrintable(editorComponent.errorString()));
     QVERIFY2(mapVisualComponent.isReady(), qPrintable(mapVisualComponent.errorString()));
 
-    QFile editorFile(QStringLiteral(":/qml/Marine/Plan/CoverageInspectionEditor.qml"));
-    QVERIFY(editorFile.open(QIODevice::ReadOnly));
-    const QByteArray editorSource = editorFile.readAll();
-    QVERIFY(editorSource.contains("automaticSweepAngle"));
-    QVERIFY(editorSource.contains("selectedSweepAngleDeg"));
-    QFile mapVisualFile(QStringLiteral(":/qml/Marine/Plan/CoverageInspectionMapVisual.qml"));
-    QVERIFY(mapVisualFile.open(QIODevice::ReadOnly));
-    const QByteArray mapVisualSource = mapVisualFile.readAll();
-    QVERIFY(mapVisualSource.contains("QGCMapPolygonVisuals"));
-    QVERIFY(mapVisualSource.contains("workRegionPolygon"));
-    QVERIFY(mapVisualSource.contains("noGoPolygons"));
-    QVERIFY(mapVisualSource.contains("generatedPathRoleRuns"));
-    QVERIFY(mapVisualSource.contains("qgcPal.mapMissionTrajectory"));
-    QVERIFY(mapVisualSource.contains("qgcPal.colorGrey"));
-    QVERIFY(mapVisualSource.contains("neutralPathComponent"));
-    QVERIFY(!editorSource.contains("No-Go regions are read-only"));
-    QVERIFY(editorSource.contains("Add No-Go Region"));
-    QVERIFY(editorSource.contains("noGoRegionsReady"));
+    std::unique_ptr<QObject> editor(editorComponent.createWithInitialProperties(
+        {{QStringLiteral("missionItem"), QVariant::fromValue(_item)}, {QStringLiteral("availableWidth"), 500}}));
+    QVERIFY2(editor != nullptr, qPrintable(editorComponent.errorString()));
+    QVERIFY(editor->findChild<QObject*>(QStringLiteral("marine_readiness")));
+    QVERIFY(editor->findChild<QObject*>(QStringLiteral("marine_executionReserve")));
 }
 
 void CoverageComplexItemTest::_testQmlTaskProperties()
@@ -720,7 +707,7 @@ void CoverageComplexItemTest::_testNoGoRegionEditing()
     QVERIFY(_item->noGoRegionsReady());
 }
 
-void CoverageComplexItemTest::_testSafetyMarginEditPreservesTaskValidity()
+void CoverageComplexItemTest::_testSafetyMarginEditPreservesIndependentInputs()
 {
     MarineTask task = validTask();
     task.safety.hardSafetyMarginM = 1.0;
@@ -733,8 +720,11 @@ void CoverageComplexItemTest::_testSafetyMarginEditPreservesTaskValidity()
     const MarineTask* updatedTask = _marineContext->task(task.id);
     QVERIFY(updatedTask != nullptr);
     QCOMPARE(updatedTask->safety.hardSafetyMarginM, 3.0);
-    QCOMPARE(updatedTask->safety.preferredSafetyMarginM, 3.0);
-    QVERIFY(updatedTask->schemaValid());
+    QCOMPARE(updatedTask->safety.preferredSafetyMarginM, 2.0);
+    QVERIFY(!updatedTask->schemaValid());
+    _item->setPreferredSafetyMarginM(4.0);
+    QCOMPARE(_marineContext->task(task.id)->safety.hardSafetyMarginM, 3.0);
+    QVERIFY(_marineContext->task(task.id)->schemaValid());
 }
 
 void CoverageComplexItemTest::_testSweepAngleProperties()

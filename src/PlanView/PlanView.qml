@@ -107,6 +107,10 @@ Item {
         }
 
         function upload() {
+            if (!_missionController.uploadAllowed) {
+                QGroundControl.showMessageDialog(_root, qsTr("Unable to Upload"), _missionController.uploadBlockingReason)
+                return
+            }
             if (!checkReadyForSaveUpload(false /* save */)) {
                 return
             }

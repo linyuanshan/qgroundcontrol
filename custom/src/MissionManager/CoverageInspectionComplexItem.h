@@ -3,6 +3,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
 #include <QtCore/QVariantList>
+#include <QtCore/QVariantMap>
 
 #include <limits>
 #include <string>
@@ -32,6 +33,11 @@ public:
     Q_PROPERTY(QString taskName READ taskName WRITE setTaskName NOTIFY taskDataChanged)
     Q_PROPERTY(double swathWidthM READ swathWidthM WRITE setSwathWidthM NOTIFY taskDataChanged)
     Q_PROPERTY(double safetyMarginM READ safetyMarginM WRITE setSafetyMarginM NOTIFY taskDataChanged)
+    Q_PROPERTY(double hardSafetyMarginM READ safetyMarginM WRITE setSafetyMarginM NOTIFY taskDataChanged)
+    Q_PROPERTY(double preferredSafetyMarginM READ preferredSafetyMarginM WRITE setPreferredSafetyMarginM NOTIFY
+                   taskDataChanged)
+    Q_PROPERTY(double executionMarginM READ executionMarginM WRITE setExecutionMarginM NOTIFY taskDataChanged)
+    Q_PROPERTY(QString coverageRequirement READ coverageRequirement WRITE setCoverageRequirement NOTIFY taskDataChanged)
     Q_PROPERTY(bool automaticSweepAngle READ automaticSweepAngle WRITE setAutomaticSweepAngle NOTIFY taskDataChanged)
     Q_PROPERTY(double sweepAngleDeg READ sweepAngleDeg WRITE setSweepAngleDeg NOTIFY taskDataChanged)
     Q_PROPERTY(QString plannerId READ plannerId NOTIFY taskDataChanged)
@@ -41,6 +47,9 @@ public:
     Q_PROPERTY(bool sonarRecord READ sonarRecord WRITE setSonarRecord NOTIFY taskDataChanged)
     Q_PROPERTY(QVariantList outerBoundary READ outerBoundary NOTIFY taskDataChanged)
     Q_PROPERTY(QGCMapPolygon* workRegionPolygon READ workRegionPolygon CONSTANT)
+    Q_PROPERTY(QGCMapPolygon* coveragePolygon READ workRegionPolygon CONSTANT)
+    Q_PROPERTY(QGCMapPolygon* navigationPolygon READ navigationPolygon CONSTANT)
+    Q_PROPERTY(int editingRegion READ editingRegion NOTIFY editingRegionChanged)
     Q_PROPERTY(QVariantList noGoRegions READ noGoRegions NOTIFY taskDataChanged)
     Q_PROPERTY(QmlObjectListModel* noGoPolygons READ noGoPolygons CONSTANT)
     Q_PROPERTY(bool noGoRegionsReady READ noGoRegionsReady NOTIFY noGoRegionsChanged)
@@ -55,6 +64,9 @@ public:
     Q_PROPERTY(double selectedSweepAngleDeg READ selectedSweepAngleDeg NOTIFY planningResultChanged)
     Q_PROPERTY(int cellCount READ cellCount NOTIFY planningResultChanged)
     Q_PROPERTY(int turnCount READ turnCount NOTIFY planningResultChanged)
+    Q_PROPERTY(QVariantMap planningPresentation READ planningPresentation NOTIFY planningResultChanged)
+    Q_PROPERTY(bool resultStale READ resultStale NOTIFY planningResultChanged)
+    Q_PROPERTY(bool uploadAllowed READ uploadAllowed NOTIFY uploadReadinessChanged)
 
     static constexpr const char* canonicalName = "Coverage Inspection";
     static constexpr const char* jsonComplexItemTypeValue = "coverageInspection";
@@ -68,6 +80,12 @@ public:
     void setSwathWidthM(double swathWidthM);
     double safetyMarginM() const;
     void setSafetyMarginM(double safetyMarginM);
+    double preferredSafetyMarginM() const;
+    void setPreferredSafetyMarginM(double value);
+    double executionMarginM() const;
+    void setExecutionMarginM(double value);
+    QString coverageRequirement() const;
+    void setCoverageRequirement(const QString& value);
     bool automaticSweepAngle() const;
     void setAutomaticSweepAngle(bool automatic);
     double sweepAngleDeg() const;
@@ -85,6 +103,12 @@ public:
 
     QGCMapPolygon* workRegionPolygon() { return &_workRegionPolygon; }
 
+    QGCMapPolygon* navigationPolygon() { return &_navigationPolygon; }
+
+    int editingRegion() const { return _editingRegion; }
+
+    Q_INVOKABLE void setEditingRegion(int region);
+
     QVariantList noGoRegions() const;
 
     QmlObjectListModel* noGoPolygons() { return &_noGoPolygons; }
@@ -98,6 +122,11 @@ public:
 
     QVariantList generatedPath() const;
     QVariantList generatedPathRoleRuns() const;
+    QVariantMap planningPresentation() const;
+    bool resultStale() const;
+    bool uploadAllowed() const;
+    bool readyForUpload(QString& reason) const final;
+    bool appendMissionItemsForUpload(QList<MissionItem*>& items, QObject* parent, QString& reason) final;
 
     QString planningMessage() const { return QString::fromStdString(_planningResult.message); }
 
@@ -196,16 +225,23 @@ signals:
     void planningResultChanged();
     void noGoRegionsChanged();
     void noGoRegionEditingChanged();
+    void editingRegionChanged();
 
 private:
+    void _watchPolygonVertices(QGCMapPolygon* polygon);
+    void _connectPolygonVertices(QGCMapPolygon* polygon);
+    void _editorVertexChanged();
     void _connectNoGoPolygon(QGCMapPolygon* polygon);
     void _noGoPolygonPathChanged();
     void _workRegionPolygonChanged();
+    void _navigationPolygonChanged();
+    void _syncNavigationPolygonFromTask();
     void _applyPlanningResult(Marine::PlanningResult result, bool current = false);
     void _syncNoGoPolygonsFromTask();
     void _syncWorkRegionPolygonFromTask();
     void _updateTaskFromNoGoPolygons();
     bool _noGoPolygonsMatchTask(const Marine::MarineTask* task) const;
+    bool _boundaryPolygonsMatchTask(const Marine::MarineTask* task) const;
     const Marine::MarineTask* _task() const;
     void _replaceTask(const Marine::MarineTask& task);
     static QVariantList _toQGeoCoordinates(const Marine::GeoPolygon& polygon);
@@ -214,11 +250,14 @@ private:
     std::string _taskId;
     Marine::PlanningResult _planningResult;
     QGCMapPolygon _workRegionPolygon;
+    QGCMapPolygon _navigationPolygon;
     QmlObjectListModel _noGoPolygons;
     QPointer<Marine::MarinePlanContext> _marineContext;
     PlanningState _planningState = Unplanned;
     int _sequenceNumber = 0;
     bool _syncingWorkRegionPolygon = false;
+    bool _syncingNavigationPolygon = false;
+    int _editingRegion = 0;
     bool _syncingNoGoPolygons = false;
     bool _syncingNoGoInteraction = false;
     bool _updatingTaskFromItem = false;

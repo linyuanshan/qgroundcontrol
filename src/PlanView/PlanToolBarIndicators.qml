@@ -130,7 +130,7 @@ RowLayout {
         objectName: "planToolbar_uploadButton"
         text: qsTr("Upload")
         iconSource: "/res/UploadToVehicle.svg"
-        enabled: !_syncInProgress && _hasPlanItems && !_controllerOffline
+        enabled: !_syncInProgress && _hasPlanItems && !_controllerOffline && _missionController.uploadAllowed
         visible: !_syncInProgress
         primary: _uploadDirty && !_controllerOffline
         onClicked: { toolbarButtonClicked(); _uploadClicked() }

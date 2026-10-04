@@ -318,35 +318,61 @@ void PlanMasterController::_sendRallyPointsComplete(void)
 
 void PlanMasterController::sendToVehicle(void)
 {
+    const auto refuse = [this](const QString& reason) {
+        QGC::showAppMessage(reason);
+        if (_deleteWhenSendCompleted) {
+            deleteLater();
+        }
+    };
+    if (!_missionController.uploadAllowed()) {
+        refuse(_missionController.uploadBlockingReason());
+        return;
+    }
+    if (!_managerVehicle) {
+        refuse(tr("Upload requires an active vehicle."));
+        return;
+    }
     SharedLinkInterfacePtr sharedLink = _managerVehicle->vehicleLinkManager()->primaryLink().lock();
     if (sharedLink) {
         if (sharedLink->linkConfiguration()->isHighLatency()) {
-            QGC::showAppMessage(tr("Upload not supported on high latency links."));
+            refuse(tr("Upload not supported on high latency links."));
             return;
         }
     } else {
         // Vehicle is shutting down
+        if (_deleteWhenSendCompleted) {
+            deleteLater();
+        }
         return;
     }
 
     if (offline()) {
-        qCCritical(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle called while offline";
+        refuse(tr("Upload requires an active vehicle."));
     } else if (syncInProgress()) {
-        qCCritical(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle called while syncInProgress";
+        refuse(tr("A plan transfer is already in progress."));
     } else {
         qCDebug(PlanMasterControllerLog) << "PlanMasterController::sendToVehicle start mission sendToVehicle";
         _sendSequence = SyncSequence::Mission;
-        _missionController.sendToVehicle();
+        QString errorString;
+        if (!_missionController.sendToVehicleChecked(errorString)) {
+            _sendSequence = SyncSequence::Idle;
+            refuse(errorString);
+        }
     }
 }
 
 void PlanMasterController::loadFromFile(const QString& filename)
 {
+    _loadFromFileChecked(filename);
+}
+
+bool PlanMasterController::_loadFromFileChecked(const QString& filename)
+{
     QString errorString;
     QString errorMessage = tr("Error loading Plan file (%1). %2").arg(filename).arg("%1");
 
     if (filename.isEmpty()) {
-        return;
+        return false;
     }
 
     QFileInfo fileInfo(filename);
@@ -355,7 +381,7 @@ void PlanMasterController::loadFromFile(const QString& filename)
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         errorString = file.errorString() + QStringLiteral(" ") + filename;
         QGC::showAppMessage(errorMessage.arg(errorString));
-        return;
+        return false;
     }
 
     bool success = false;
@@ -375,6 +401,7 @@ void PlanMasterController::loadFromFile(const QString& filename)
     } else {
         _clearCurrentPlanFile();
     }
+    return success;
 }
 
 bool PlanMasterController::_loadPlanJson(const QByteArray& bytes, QString& errorString)
@@ -604,10 +631,17 @@ QStringList PlanMasterController::saveNameFilters(void) const
 
 void PlanMasterController::sendPlanToVehicle(Vehicle* vehicle, const QString& filename)
 {
+    if (!vehicle) {
+        QGC::showAppMessage(tr("Upload requires an active vehicle."));
+        return;
+    }
     // Use a transient PlanMasterController to accomplish this
-    PlanMasterController* controller = new PlanMasterController();
+    PlanMasterController* controller = new PlanMasterController(vehicle);
     controller->startStaticActiveVehicle(vehicle, true /* deleteWhenSendCompleted */);
-    controller->loadFromFile(filename);
+    if (!controller->_loadFromFileChecked(filename)) {
+        controller->deleteLater();
+        return;
+    }
     controller->sendToVehicle();
 }
 

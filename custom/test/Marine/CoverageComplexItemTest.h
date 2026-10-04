@@ -30,7 +30,7 @@ private slots:
     void _testQmlTaskProperties();
     void _testWorkRegionEditing();
     void _testNoGoRegionEditing();
-    void _testSafetyMarginEditPreservesTaskValidity();
+    void _testSafetyMarginEditPreservesIndependentInputs();
     void _testSweepAngleProperties();
     void _testSaveLoad();
     void _testLawnmowerSaveLoad();

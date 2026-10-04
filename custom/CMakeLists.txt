@@ -137,6 +137,8 @@ set(MARINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Marine/QGC/MarinePlanContext.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionComplexItem.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionComplexItem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoveragePlanningPresentation.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoveragePlanningPresentation.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionPlanCreator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/MissionManager/CoverageInspectionPlanCreator.h
 )
@@ -201,6 +203,12 @@ if(QGC_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageInspectionPlanCreatorTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoverageComplexItemTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePresentationTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePresentationTest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlanViewUITest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CoveragePlanViewUITest.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineUploadGateTest.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarineUploadGateTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CustomPluginIntegrationTest.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/CustomPluginIntegrationTest.h
         ${CMAKE_CURRENT_SOURCE_DIR}/test/Marine/MarinePlanContextTest.cc
@@ -293,6 +301,40 @@ if(QGC_BUILD_TESTING)
         "${CMAKE_SOURCE_DIR}"
         CALL
         add_qgc_test
+        CoveragePresentationTest
+        LABELS
+        Unit
+        MissionManager
+    )
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoveragePlanViewUITest
+        LABELS
+        Integration
+        MissionManager
+    )
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        MarineUploadGateTest
+        LABELS
+        Integration
+        MissionManager
+    )
+
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
         CoveragePlannerTest
         LABELS
         Unit
@@ -364,8 +406,26 @@ if(QGC_BUILD_TESTING)
         Unit
     )
 
-    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL add_qgc_test CoverageRepairTest LABELS Unit)
-    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL add_qgc_test IntegratedPlanningResultTest LABELS Unit)
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        CoverageRepairTest
+        LABELS
+        Unit
+    )
+    cmake_language(
+        DEFER
+        DIRECTORY
+        "${CMAKE_SOURCE_DIR}"
+        CALL
+        add_qgc_test
+        IntegratedPlanningResultTest
+        LABELS
+        Unit
+    )
 
     cmake_language(
         DEFER

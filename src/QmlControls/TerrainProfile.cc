@@ -282,7 +282,9 @@ void TerrainProfile::_addMissingPoints(FlightPathSegment* segment, double curren
         if (!points.isEmpty()) {
             points.append(QPointF(currentDistance * _horizontalScale, qQNaN()));
         }
-        const double minAlt = _minAMSLAlt * _verticalScale;
+        // Missing terrain is marked at the bottom of the viewport, not at an observed altitude.
+        // With no AMSL datum yet, use the same empty-profile lower bound as TerrainStatus.
+        const double minAlt = (qIsFinite(_minAMSLAlt) ? _minAMSLAlt : 0.0) * _verticalScale;
         points.append(QPointF(currentDistance * _horizontalScale, minAlt));
         points.append(QPointF((currentDistance + segment->totalDistance()) * _horizontalScale, minAlt));
     }

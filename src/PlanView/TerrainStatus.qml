@@ -19,9 +19,13 @@ Rectangle {
     property var  _visualItems:             missionController.visualItems
     property real _altRange:                _maxAMSLAltitude - _minAMSLAltitude
     property real _indicatorSpacing:        5
-    property real _minAMSLAltitude:         isNaN(terrainProfile.minAMSLAlt) ? 0 : terrainProfile.minAMSLAlt
-    property real _maxAMSLAltitude:         isNaN(terrainProfile.maxAMSLAlt) ? 100 : terrainProfile.maxAMSLAlt
-    property real _missionTotalDistance:    isNaN(missionController.missionTotalDistance) ? 100 : missionController.missionTotalDistance
+    property real _minAMSLAltitude:         isFinite(terrainProfile.minAMSLAlt) ? terrainProfile.minAMSLAlt : 0
+    property real _maxAMSLAltitude:         isFinite(terrainProfile.maxAMSLAlt) ? terrainProfile.maxAMSLAlt : 100
+    // Empty and constant profiles need a nonzero viewport for QtGraphs' data-to-pixel transform.
+    // Reuse the empty-profile extent; these bounds never change mission/sample values.
+    readonly property real _axisMinAltitude: _maxAMSLAltitude > _minAMSLAltitude ? _minAMSLAltitude : _minAMSLAltitude - 50
+    readonly property real _axisMaxAltitude: _maxAMSLAltitude > _minAMSLAltitude ? _maxAMSLAltitude : _minAMSLAltitude + 50
+    property real _missionTotalDistance:    isFinite(missionController.missionTotalDistance) && missionController.missionTotalDistance > 0 ? missionController.missionTotalDistance : 100
     property var  _unitsConversion:         QGroundControl.unitsConversion
 
     QGCPalette { id: qgcPal }
@@ -52,6 +56,7 @@ Rectangle {
 
             GraphsView {
                 id:                 chart
+                objectName:         "terrainStatusChart"
                 anchors.fill:       parent
                 marginTop:          ScreenTools.defaultFontPixelHeight / 2  // Fixes top clipping problem
                 marginRight:        ScreenTools.defaultFontPixelWidth * 2   // Prevents clipping last tick mark
@@ -85,8 +90,8 @@ Rectangle {
 
                 axisY: ValueAxis {
                     id:                         axisY
-                    min:                        _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_minAMSLAltitude)
-                    max:                        _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_maxAMSLAltitude)
+                    min:                        _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_axisMinAltitude)
+                    max:                        _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_axisMaxAltitude)
                     lineVisible:                true
                     tickInterval:               (max - min) > 0 ? (max - min) / 3 : 1
                     labelDecimals:              1
@@ -123,6 +128,7 @@ Rectangle {
 
             TerrainProfile {
                 id:                 terrainProfile
+                objectName:         "terrainStatusProfile"
                 x:                  chart.plotArea.x
                 y:                  chart.plotArea.y
                 height:             chart.plotArea.height

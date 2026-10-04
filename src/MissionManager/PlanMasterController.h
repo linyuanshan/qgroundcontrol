@@ -169,6 +169,7 @@ private:
     void _setDirtyStates(bool dirtyForSave, bool dirtyForUpload);
     void _clearCurrentPlanFile();
     bool _loadPlanJson(const QByteArray& bytes, QString& errorString);
+    bool _loadFromFileChecked(const QString& filename);
 
 #ifdef QGC_UNITTEST_BUILD
     // Used by unit tests to set dirty flags for initial state
