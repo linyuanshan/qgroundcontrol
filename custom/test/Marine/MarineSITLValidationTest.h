@@ -10,6 +10,7 @@ private slots:
     void init() override;
     void cleanup() override;
     void _validateP2Scenarios();
+    void _validateV05Scenarios();
     void _diagnoseS04Execution();
     void _analyzeExecutionSafety();
 };

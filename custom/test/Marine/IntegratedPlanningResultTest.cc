@@ -1,9 +1,14 @@
 #include "IntegratedPlanningResultTest.h"
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QCryptographicHash>
+#include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <set>
@@ -15,15 +20,18 @@
 #include "CoverageGeometry.h"
 #include "CoverageInspectionComplexItem.h"
 #include "CoverageProblemValidator.h"
+#include "CoverageQualityEvaluator.h"
 #include "CoverageRepair.h"
 #include "CoverageSafety.h"
 #include "CoverageTaskAdapter.h"
 #include "Geometry/MarineGeometry.h"
 #include "IntegratedPlanningResult.h"
 #include "MarinePlanContext.h"
+#include "MarineTaskJsonCodec.h"
 #include "MissionItem.h"
 #include "PlanningArtifactCodec.h"
 #include "SimpleMonotoneCoveragePlanner.h"
+#include "V05ExecutionFixtures.h"
 
 using namespace Marine;
 
@@ -167,6 +175,122 @@ QJsonObject complexObject(QJsonObject json, const MarineTask& task)
     json.insert("complexItemType", "coverageInspection");
     json.insert("taskId", QString::fromStdString(task.id));
     return json;
+}
+
+void verifyScenarioIdentity(const char* canonical, const char* expectedSha256)
+{
+    const QByteArray actual = QCryptographicHash::hash(QByteArray(canonical), QCryptographicHash::Sha256).toHex();
+    QCOMPARE(actual, QByteArray(expectedSha256));
+}
+
+void verifySITLBinding(const QString& scenario, const QByteArray& canonical, const QByteArray& fixtureHash,
+                       const CoveragePlanningProblem& expected)
+{
+    const QString root = qEnvironmentVariable("QGC_V05_10_R1_BINDING_DIR");
+    if (root.isEmpty()) {
+        return;
+    }
+    const QDir directory(QDir(root).filePath(scenario));
+    const auto bytes = [&](const QString& name) {
+        QFile file(directory.filePath(name));
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+    };
+    const auto digest = [](const QByteArray& value) {
+        return QCryptographicHash::hash(value, QCryptographicHash::Sha256).toHex();
+    };
+    const auto evidence = QJsonDocument::fromJson(bytes(QStringLiteral("scenario.json"))).object();
+    QVERIFY(!evidence.isEmpty());
+    QCOMPARE(evidence.value("canonical").toString().toUtf8(), canonical);
+    QCOMPARE(evidence.value("canonicalSha256").toString().toLatin1(), fixtureHash);
+    QCOMPARE(evidence.value("sourceHead").toString(), QStringLiteral("cc70699c25f7f396907cf937c95f41daa9ff64b7"));
+    QFile binary(QCoreApplication::applicationFilePath());
+    QVERIFY(binary.open(QIODevice::ReadOnly));
+    QCOMPARE(evidence.value("binarySha256").toString().toLatin1(), digest(binary.readAll()));
+    const auto taskBytes = bytes(QStringLiteral("task.json"));
+    const auto artifactBytes = bytes(QStringLiteral("artifact.json"));
+    QCOMPARE(digest(taskBytes), evidence.value("taskSha256").toString().toLatin1());
+    QCOMPARE(digest(artifactBytes), evidence.value("artifactSha256").toString().toLatin1());
+    const auto taskJson = QJsonDocument::fromJson(taskBytes).object();
+    const auto artifactJson = QJsonDocument::fromJson(artifactBytes).object();
+    MarineTask task;
+    PlanningArtifact artifact;
+    QString error;
+    QVERIFY2(MarineTaskJsonCodec::load(taskJson, task, error), qPrintable(error));
+    QCOMPARE(task.id, "V05-10-R1-" + scenario.toStdString());
+    QVERIFY2(PlanningArtifactCodec::load(artifactJson, task, artifact, error), qPrintable(error));
+    QVERIFY(!artifact.stale);
+    QVERIFY(PlanningArtifactCodec::matchesCurrentInput(artifact, task));
+    QCOMPARE(artifact.identity.toJson(), evidence.value("taskIdentity").toObject());
+    QCOMPARE(serialized(artifact, task), artifactJson);
+
+    CoveragePlanningProblem realized;
+    std::optional<GeoReference> reference;
+    CoveragePlanningError buildError;
+    QVERIFY(CoverageTaskAdapter::buildProblem(task, realized, reference, buildError));
+    QCOMPARE(realized.swathWidthM, expected.swathWidthM);
+    QCOMPARE(realized.safety.hardSafetyMarginM, expected.safety.hardSafetyMarginM);
+    QCOMPARE(realized.safety.preferredSafetyMarginM, expected.safety.preferredSafetyMarginM);
+    QCOMPARE(realized.executionSafety.executionMarginM, expected.executionSafety.executionMarginM);
+    QCOMPARE(realized.coverageRequirement, expected.coverageRequirement);
+    QCOMPARE(realized.sweepAngleMode, expected.sweepAngleMode);
+    QCOMPARE(realized.requestedSweepAngleDeg, expected.requestedSweepAngleDeg);
+    QVERIFY(realized.region.noGoRegions.empty());
+    const auto center = [](const Polygon2D& polygon) {
+        Point2D result;
+        for (const auto& vertex : polygon.vertices) {
+            result.xM += vertex.xM / polygon.vertices.size();
+            result.yM += vertex.yM / polygon.vertices.size();
+        }
+        return result;
+    };
+    const auto actualCenter = center(realized.region.coverageBoundary);
+    const auto wantedCenter = center(expected.region.coverageBoundary);
+    const Point2D offset{actualCenter.xM - wantedCenter.xM, actualCenter.yM - wantedCenter.yM};
+    for (const auto pair : {std::pair{&realized.region.coverageBoundary, &expected.region.coverageBoundary},
+                            std::pair{&realized.region.navigationBoundary, &expected.region.navigationBoundary}}) {
+        QCOMPARE(pair.first->vertices.size(), pair.second->vertices.size());
+        for (const auto& actual : pair.first->vertices) {
+            double nearestM = std::numeric_limits<double>::infinity();
+            for (const auto& wanted : pair.second->vertices) {
+                nearestM = std::min(nearestM,
+                                    std::hypot(actual.xM - wanted.xM - offset.xM, actual.yM - wanted.yM - offset.yM));
+            }
+            QVERIFY2(nearestM <= 1e-3,
+                     qPrintable(QStringLiteral("Fixture vertex difference %1 m").arg(nearestM, 0, 'g', 12)));
+        }
+    }
+    const auto solution = AutoCoveragePlanner{}.plan(realized);
+    QCOMPARE(solution.status, artifact.result.status);
+    QCOMPARE(solution.outcome.readiness, artifact.result.outcome.readiness);
+    QCOMPARE(solution.outcome.tier, artifact.result.outcome.tier);
+    QVERIFY(solution.outcome.coverageQuality && solution.outcome.coverageQuality->passesRequirement);
+    QCOMPARE(solution.path.size(), artifact.result.path.size());
+    for (std::size_t index = 0; index < solution.path.size(); ++index) {
+        const auto actual = reference->toLocal(artifact.result.path[index]);
+        QVERIFY(actual.has_value());
+        QVERIFY(std::hypot(actual->xM - solution.path[index].xM, actual->yM - solution.path[index].yM) <= 1e-3);
+    }
+    verifyAllowed(artifact, task);
+}
+
+std::pair<std::vector<Point2D>, std::vector<PathLegRole>> lanePath(double width, const std::vector<double>& lanes)
+{
+    std::vector<Point2D> path;
+    std::vector<PathLegRole> roles;
+    if (lanes.empty()) {
+        return {path, roles};
+    }
+    path.push_back({0, lanes.front()});
+    for (std::size_t i = 0; i < lanes.size(); ++i) {
+        const bool leftToRight = i % 2 == 0;
+        path.push_back({leftToRight ? width : 0.0, lanes[i]});
+        roles.push_back(PathLegRole::Coverage);
+        if (i + 1 < lanes.size()) {
+            path.push_back({leftToRight ? width : 0.0, lanes[i + 1]});
+            roles.push_back(PathLegRole::Transit);
+        }
+    }
+    return {path, roles};
 }
 
 class ForbiddenPlanner final : public ICoveragePlanner
@@ -803,6 +927,247 @@ void IntegratedPlanningResultTest::_testT20()
                      original);
         }
     }
+}
+
+void IntegratedPlanningResultTest::_testM00CanonicalReady()
+{
+    verifyScenarioIdentity(V05ExecutionFixtures::M00Canonical, V05ExecutionFixtures::M00Sha256);
+    const auto p = V05ExecutionFixtures::problem(false);
+    const auto result = AutoCoveragePlanner{}.plan(p);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QCOMPARE(result.outcome.readiness, MissionReadiness::Ready);
+    QCOMPARE(result.outcome.tier, SafetySolutionTier::D0);
+    QVERIFY(result.plannerSource);
+    QCOMPARE(result.plannerSource->resolvedStrategy.strategyId,
+             std::string(CoverageStrategySemantics::SimpleMonotoneId));
+    QVERIFY(!result.plannerSource->escalated);
+    QVERIFY(!result.outcome.repair.attempted);
+    QVERIFY(!result.outcome.repair.applied);
+    QCOMPARE(result.outcome.repair.reason, CoverageRepairReason::InitialPolicyPass);
+    QVERIFY(result.outcome.coverageQuality && result.outcome.coverageQuality->passesRequirement);
+    QVERIFY(hasIssue(result, PlanningIssueCode::IngressNotAssessed));
+    const auto task = taskFor(p);
+    const auto artifact = artifactFor(p, result);
+    verifyAllowed(artifact, task);
+    verifyRoundTrip(p, result);
+    verifySITLBinding(QStringLiteral("M00"), V05ExecutionFixtures::M00Canonical, V05ExecutionFixtures::M00Sha256, p);
+}
+
+void IntegratedPlanningResultTest::_testM01ConcaveMonotone()
+{
+    constexpr auto canonical =
+        "M01|C=L(0,0;20,0;20,10;10,10;10,20;0,20)|N=rect(-10,-10,30,30)|O=[]|swath=4|H=0|P=0|E=0|req=Strict|sweep="
+        "Manual90|planner=Auto";
+    verifyScenarioIdentity(canonical, "3f0f9aceb82cf3dd9f0ebc488cf100c96e3d862610d4a050564d86b98a59fb06");
+
+    auto p = problem();
+    p.region.coverageBoundary = {.vertices = {{0, 0}, {20, 0}, {20, 10}, {10, 10}, {10, 20}, {0, 20}}};
+    p.region.navigationBoundary = rectangle(-10, -10, 30, 30);
+    p.swathWidthM = 4;
+    const auto result = AutoCoveragePlanner{}.plan(p);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QVERIFY(result.plannerSource);
+    QCOMPARE(result.plannerSource->resolvedStrategy.strategyId,
+             std::string(CoverageStrategySemantics::SimpleMonotoneId));
+    QVERIFY(!result.plannerSource->escalated);
+    QVERIFY(!result.path.empty());
+    verifyRoundTrip(p, result);
+}
+
+void IntegratedPlanningResultTest::_testM02TopologyEscalation()
+{
+    constexpr auto canonical =
+        "M02|C=U(0,0;10,0;10,10;7,10;7,3;3,3;3,10;0,10)|N=rect(-5,-5,15,15)|O=[]|swath=5|H=0|P=0|E=0|req=Strict|sweep="
+        "Manual90|planner=Auto";
+    verifyScenarioIdentity(canonical, "7372f8486e1e3ec12447ba05ce553666a9487c540b8b7d406546c47892939d44");
+
+    auto p = problem();
+    p.region.coverageBoundary = {.vertices = {{0, 0}, {10, 0}, {10, 10}, {7, 10}, {7, 3}, {3, 3}, {3, 10}, {0, 10}}};
+    p.region.navigationBoundary = rectangle(-5, -5, 15, 15);
+    const auto result = AutoCoveragePlanner{}.plan(p);
+    QVERIFY(result.plannerSource);
+    QCOMPARE(result.plannerSource->resolvedStrategy.strategyId,
+             std::string(CoverageStrategySemantics::BoustrophedonId));
+    QVERIFY(result.plannerSource->escalated);
+    QCOMPARE(result.plannerSource->resolutionReason, PlannerResolutionReason::TargetNonMonotoneForSelectedSweep);
+    verifyRoundTrip(p, result);
+}
+
+void IntegratedPlanningResultTest::_testM03NavigationOutsideCoverage()
+{
+    constexpr auto canonical =
+        "M03|C=rect(0,0,1,30)|N=rect(-10,-5,11,35)|O=[rect(-5,9,-0.5,11)]|swath=10|H=0|P=0|E=2|req=Strict|sweep="
+        "Manual90|planner=SimpleMonotone";
+    verifyScenarioIdentity(canonical, "289f4330ce183cc6811f7450cf5e59df0ba939d63ea168724d8ccc2bdda2139d");
+
+    auto p = problem();
+    p.region.coverageBoundary = rectangle(0, 0, 1, 30);
+    p.region.navigationBoundary = rectangle(-10, -5, 11, 35);
+    p.region.noGoRegions = {rectangle(-5, 9, -0.5, 11)};
+    p.swathWidthM = 10;
+    p.executionSafety.executionMarginM = 2;
+    const auto result = SimpleMonotoneCoveragePlanner{}.plan(p);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    const auto geometry = buildCoverageGeometry(p.region);
+    QCOMPARE(geometry.error, CoveragePlanningError::None);
+    bool transitOutsideTarget = false;
+    for (std::size_t leg = 0; leg < result.legRoles.size(); ++leg) {
+        const bool insideTarget = Geometry::segmentInsidePolygonRegion(geometry.geometry.coverageTarget,
+                                                                       result.path[leg], result.path[leg + 1]);
+        if (result.legRoles[leg] == PathLegRole::Coverage) {
+            QVERIFY(insideTarget);
+        } else if (!insideTarget) {
+            transitOutsideTarget = true;
+        }
+    }
+    QVERIFY(transitOutsideTarget);
+    verifyRoundTrip(p, result);
+}
+
+void IntegratedPlanningResultTest::_testM04HardSafePreferredWarning()
+{
+    verifyScenarioIdentity(V05ExecutionFixtures::M04Canonical, V05ExecutionFixtures::M04Sha256);
+    const auto p = V05ExecutionFixtures::problem(true);
+    const auto result = AutoCoveragePlanner{}.plan(p);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QCOMPARE(result.outcome.readiness, MissionReadiness::ReadyWithWarning);
+    QCOMPARE(result.outcome.tier, SafetySolutionTier::D1);
+    QVERIFY(result.outcome.coverageQuality);
+    QVERIFY(result.outcome.coverageQuality->passesRequirement);
+    QVERIFY(hasIssue(result, PlanningIssueCode::PreferredSafetyViolated));
+    verifyAllowed(artifactFor(p, result), taskFor(p));
+    verifyRoundTrip(p, result);
+    verifySITLBinding(QStringLiteral("M04"), V05ExecutionFixtures::M04Canonical, V05ExecutionFixtures::M04Sha256, p);
+}
+
+void IntegratedPlanningResultTest::_testM05RawDiagnosticOnly()
+{
+    constexpr auto canonical =
+        "M05|C=rect(0,0,20,20)|N=rect(-5,-5,25,25)|O=[]|swath=5|H=0|P=0|E=30|req=Strict|sweep=Manual90|planner=Auto";
+    verifyScenarioIdentity(canonical, "98fda72f67f30797e74244c2f5ccebc4ada0b9845a3ed89897a7f58931a9a6ae");
+
+    auto p = problem(0, 0, 30);
+    p.region.navigationBoundary = rectangle(-5, -5, 25, 25);
+    const auto result = AutoCoveragePlanner{}.plan(p);
+    QCOMPARE(result.status, PlanningStatus::Failed);
+    QCOMPARE(result.outcome.readiness, MissionReadiness::DiagnosticOnly);
+    QCOMPARE(result.outcome.tier, SafetySolutionTier::D2);
+    QVERIFY(result.path.empty());
+    QVERIFY(result.outcome.diagnosticCandidate);
+    const auto raw = buildCoverageGeometry(p.region).geometry.rawNavigationFreeSpace;
+    const auto& diagnostic = *result.outcome.diagnosticCandidate;
+    for (std::size_t leg = 1; leg < diagnostic.path.size(); ++leg) {
+        QVERIFY(Geometry::segmentInsidePolygonRegionForValidatedGeometry(raw, diagnostic.path[leg - 1],
+                                                                         diagnostic.path[leg]));
+    }
+    verifyRejected(artifactFor(p, result), taskFor(p));
+    verifyRoundTrip(p, result);
+}
+
+void IntegratedPlanningResultTest::_testM06StandardStrictSameGeometry()
+{
+    constexpr auto canonical =
+        "M06|T=rect(0,0,100,100)|path=lanes(y=1..97step2,98.6)|swath=2|compare=Standard_vs_Strict|strategy=simple-"
+        "monotone.v1";
+    verifyScenarioIdentity(canonical, "24a97a4708f316f457f1acfde827f26541f2643412bac2f16a5f45ab4c55986e");
+
+    std::vector<double> lanes;
+    for (double y = 1; y <= 97; y += 2) {
+        lanes.push_back(y);
+    }
+    lanes.push_back(98.6);
+    const auto [path, roles] = lanePath(100, lanes);
+    const PolygonRegionSet2D target{{.outerBoundary = rectangle(0, 0, 100, 100)}};
+    const PlannerStrategyIdentity strategy{.strategyId = CoverageStrategySemantics::SimpleMonotoneId,
+                                           .semanticVersion = CoverageStrategySemantics::SimpleMonotoneVersion};
+    const auto standard = evaluateCoverageQuality(target, path, roles, 2, CoverageRequirement::Standard, strategy);
+    const auto strict = evaluateCoverageQuality(target, path, roles, 2, CoverageRequirement::Strict, strategy);
+    QCOMPARE(standard.targetAreaM2, strict.targetAreaM2);
+    QCOMPARE(standard.coveredAreaM2, strict.coveredAreaM2);
+    QCOMPARE(standard.uncoveredAreaM2, strict.uncoveredAreaM2);
+    QCOMPARE(standard.coverageRatio, strict.coverageRatio);
+    QCOMPARE(standard.criticalUncoveredAreaM2, strict.criticalUncoveredAreaM2);
+    QCOMPARE(standard.status, CoverageQualityStatus::Acceptable);
+    QVERIFY(standard.passesRequirement);
+    QCOMPARE(strict.status, CoverageQualityStatus::Insufficient);
+    QVERIFY(!strict.passesRequirement);
+    QCOMPARE(standard.policySemanticVersion, std::string(CoverageQualityPolicySemanticVersion));
+    QCOMPARE(strict.policySemanticVersion, std::string(CoverageQualityPolicySemanticVersion));
+}
+
+void IntegratedPlanningResultTest::_testM07RepairSuccess()
+{
+    constexpr auto canonical =
+        "M07|C=rect(0,0,20,20)|N=C|O=[]|swath=5|H=1|P=2|E=0|req=Strict|sweep=Manual90|planner=Auto";
+    verifyScenarioIdentity(canonical, "47de0de79db47251ac34af0a0bd41d48f26ea701603bb380bd10884e83dada9d");
+
+    const auto p = problem(1, 2);
+    const auto result = AutoCoveragePlanner{}.plan(p);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QCOMPARE(result.outcome.readiness, MissionReadiness::ReadyWithWarning);
+    QVERIFY(result.outcome.repair.attempted);
+    QVERIFY(result.outcome.repair.applied);
+    QCOMPARE(result.outcome.repair.reason, CoverageRepairReason::AppliedPolicyPass);
+    QVERIFY(!result.outcome.repair.components.empty());
+    QVERIFY(result.outcome.repair.components.back().after.passesRequirement);
+    verifyAllowed(artifactFor(p, result), taskFor(p));
+    verifyRoundTrip(p, result);
+}
+
+void IntegratedPlanningResultTest::_testM08RepairExhausted()
+{
+    constexpr auto canonical =
+        "M08|C=rect(0,0,20,20)|N=C|O=[]|swath=5|H=2|P=2|E=0|req=Strict|sweep=Manual90|planner=Auto";
+    verifyScenarioIdentity(canonical, "d59601e14d74fb4f1559f215229bb0e0d045e28dd7ecf7ddcc14efbaeb96b8b3");
+
+    const auto p = problem(2, 2);
+    const auto result = AutoCoveragePlanner{}.plan(p);
+    QCOMPARE(result.status, PlanningStatus::Success);
+    QCOMPARE(result.outcome.readiness, MissionReadiness::ReviewRequired);
+    QVERIFY(!result.path.empty());
+    QVERIFY(result.outcome.coverageQuality);
+    QCOMPARE(result.outcome.coverageQuality->status, CoverageQualityStatus::Insufficient);
+    QVERIFY(result.outcome.repair.attempted);
+    QCOMPARE(result.outcome.repair.applied, !result.outcome.repair.components.empty());
+    QVERIFY(hasIssue(result, PlanningIssueCode::CoverageBelowRequirement));
+    if (result.outcome.repair.applied) {
+        QVERIFY(hasIssue(result, PlanningIssueCode::CoverageRepairApplied));
+        QVERIFY(hasIssue(result, PlanningIssueCode::CoverageRepairInsufficient));
+        QVERIFY(!result.outcome.repair.components.back().after.passesRequirement);
+    }
+    QVERIFY(result.plannerSource);
+    QCOMPARE(result.plannerSource->resolvedStrategy.strategyId,
+             std::string(CoverageStrategySemantics::SimpleMonotoneId));
+    QVERIFY(!result.plannerSource->escalated);
+    verifyRejected(artifactFor(p, result), taskFor(p));
+    verifyRoundTrip(p, result);
+}
+
+void IntegratedPlanningResultTest::_testM09UnsupportedAndInvalid()
+{
+    constexpr auto canonical =
+        "M09|validUnsupported=C=rect(0,0,20,20),N=rect(-5,-5,25,25),O=[rect(8,8,12,12)],E=100,planner=SimpleMonotone|"
+        "invalid=O=rect(-1,-1,2,2),planner=Auto";
+    verifyScenarioIdentity(canonical, "e116c1ed81aa5837d202254d757d5accf1786eb85efd31a1957f4c4c466bdbe7");
+
+    const auto supportedInputFailure = unsupportedProblem();
+    const auto unsupported = SimpleMonotoneCoveragePlanner{}.plan(supportedInputFailure);
+    QCOMPARE(unsupported.status, PlanningStatus::Failed);
+    QCOMPARE(unsupported.outcome.readiness, MissionReadiness::DiagnosticOnly);
+    QCOMPARE(unsupported.outcome.tier, SafetySolutionTier::D3);
+    QVERIFY(unsupported.path.empty());
+    QVERIFY(!unsupported.outcome.diagnosticCandidate);
+    QVERIFY(!unsupported.outcome.diagnosticOverlays.empty());
+    verifyRejected(artifactFor(supportedInputFailure, unsupported), taskFor(supportedInputFailure));
+
+    auto invalid = problem();
+    invalid.region.noGoRegions = {rectangle(-1, -1, 2, 2)};
+    const auto invalidResult = AutoCoveragePlanner{}.plan(invalid);
+    QCOMPARE(invalidResult.status, PlanningStatus::InvalidInput);
+    QCOMPARE(invalidResult.outcome.readiness, MissionReadiness::None);
+    QVERIFY(!invalidResult.outcome.tier);
+    QVERIFY(invalidResult.path.empty());
+    QVERIFY(!invalidResult.outcome.diagnosticCandidate);
 }
 
 void IntegratedPlanningResultTest::_testCoverageRequirementBinding()

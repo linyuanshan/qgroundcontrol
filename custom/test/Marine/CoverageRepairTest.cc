@@ -312,6 +312,24 @@ void CoverageRepairTest::_testStableTrialKeys()
     CoverageRepairStep low;
     low.after = candidateFor(target, {{0, 5}, {10, 5}});
     low.transitionCostM = 10;
+    auto qualityBetter = low;
+    qualityBetter.after = candidateFor(target, {{0, 3}, {10, 3}, {0, 7}, {10, 7}});
+    qualityBetter.transitionCostM = 100;
+    auto qualityWorse = low;
+    qualityWorse.transitionCostM = 1;
+    QCOMPARE(compareCoverageQuality(qualityBetter.after.quality, qualityWorse.after.quality),
+             CoverageQualityComparison::Better);
+    QVERIFY(coverageRepairTrialBetter(qualityBetter, qualityWorse));
+    QVERIFY(!coverageRepairTrialBetter(qualityWorse, qualityBetter));
+
+    auto lowerCost = low;
+    auto higherCost = low;
+    lowerCost.transitionCostM = 5;
+    higherCost.transitionCostM = 50;
+    higherCost.componentId = 0;
+    lowerCost.componentId = 100;
+    QVERIFY(coverageRepairTrialBetter(lowerCost, higherCost));
+    QVERIFY(!coverageRepairTrialBetter(higherCost, lowerCost));
     for (int dimension = 0; dimension < 3; ++dimension) {
         auto high = low;
         if (dimension == 0) {

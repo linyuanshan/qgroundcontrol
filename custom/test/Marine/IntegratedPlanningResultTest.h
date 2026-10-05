@@ -26,6 +26,16 @@ private slots:
     void _testT18();
     void _testT19();
     void _testT20();
+    void _testM00CanonicalReady();
+    void _testM01ConcaveMonotone();
+    void _testM02TopologyEscalation();
+    void _testM03NavigationOutsideCoverage();
+    void _testM04HardSafePreferredWarning();
+    void _testM05RawDiagnosticOnly();
+    void _testM06StandardStrictSameGeometry();
+    void _testM07RepairSuccess();
+    void _testM08RepairExhausted();
+    void _testM09UnsupportedAndInvalid();
     void _testCoverageRequirementBinding();
     void _testRepairEvaluationConsistency();
     void _testFailedCurrentOutcome();

@@ -38,6 +38,7 @@
 #include "LinkManager.h"
 #include "MAVLinkSigning.h"
 #include "MarinePlanContext.h"
+#include "MarineTaskJsonCodec.h"
 #include "MissionController.h"
 #include "MissionItem.h"
 #include "MissionManager.h"
@@ -45,12 +46,17 @@
 #include "MultiVehicleManager.h"
 #include "ParameterManager.h"
 #include "PlanMasterController.h"
+#include "Planning/AutoCoveragePlanner.h"
 #include "Planning/BoustrophedonCoveragePlanner.h"
 #include "Planning/CoverageFreeSpace.h"
+#include "Planning/CoverageStrategySemantics.h"
 #include "Planning/CoverageTaskAdapter.h"
 #include "Planning/NominalCoverageValidator.h"
+#include "Planning/SimpleMonotoneCoveragePlanner.h"
+#include "PlanningArtifactCodec.h"
 #include "QmlObjectListModel.h"
 #include "TCPLink.h"
+#include "V05ExecutionFixtures.h"
 #include "Vehicle.h"
 #include "VisualMissionItem.h"
 
@@ -93,6 +99,14 @@ struct MissionStateSample
     int mode = 0;
 };
 
+struct ExecutionPositionSample
+{
+    TrajectorySample trajectory;
+    quint32 bootTimeMs = 0;
+    double northSpeedMps = 0.0;
+    double eastSpeedMps = 0.0;
+};
+
 struct MissionRunResult
 {
     bool initialArmed = false;
@@ -112,6 +126,7 @@ struct MissionRunResult
     QList<int> currentSequences;
     QList<MissionStateSample> missionStateHistory;
     std::vector<TrajectorySample> trajectory;
+    std::vector<ExecutionPositionSample> positionTelemetry;
     QString prearmError;
 };
 
@@ -162,6 +177,155 @@ std::vector<ScenarioDefinition> scenarios()
          0.0,
          1},
     };
+}
+
+struct V05ScenarioDefinition
+{
+    QString id;
+    QByteArray canonical;
+    QByteArray canonicalSha256;
+    bool execute = false;
+};
+
+const std::vector<V05ScenarioDefinition>& v05Scenarios()
+{
+    static const std::vector<V05ScenarioDefinition> definitions = [] {
+        std::vector<V05ScenarioDefinition> result{
+            {QStringLiteral("M00"), V05ExecutionFixtures::M00Canonical, V05ExecutionFixtures::M00Sha256, true},
+            {QStringLiteral("M04"), V05ExecutionFixtures::M04Canonical, V05ExecutionFixtures::M04Sha256, true},
+            {QStringLiteral("M05"),
+             QByteArrayLiteral("M05|C=rect(0,0,20,20)|N=rect(-5,-5,25,25)|O=[]|swath=5|H=0|P=0|E=30|req=Strict|sweep="
+                               "Manual90|planner=Auto"),
+             QByteArrayLiteral("98fda72f67f30797e74244c2f5ccebc4ada0b9845a3ed89897a7f58931a9a6ae"), false},
+            {QStringLiteral("M08"),
+             QByteArrayLiteral(
+                 "M08|C=rect(0,0,20,20)|N=C|O=[]|swath=5|H=2|P=2|E=0|req=Strict|sweep=Manual90|planner=Auto"),
+             QByteArrayLiteral("d59601e14d74fb4f1559f215229bb0e0d045e28dd7ecf7ddcc14efbaeb96b8b3"), false},
+            {QStringLiteral("M09"),
+             QByteArrayLiteral("M09|validUnsupported=C=rect(0,0,20,20),N=rect(-5,-5,25,25),O=[rect(8,8,12,12)],E=100,"
+                               "planner=SimpleMonotone|invalid=O=rect(-1,-1,2,2),planner=Auto"),
+             QByteArrayLiteral("e116c1ed81aa5837d202254d757d5accf1786eb85efd31a1957f4c4c466bdbe7"), false},
+            {QStringLiteral("STALE"), V05ExecutionFixtures::M00Canonical, V05ExecutionFixtures::M00Sha256, false},
+        };
+        for (const int side : {20, 60, 120}) {
+            const QByteArray canonical =
+                QStringLiteral(
+                    "CAL%1|C=rect(0,0,%1,%1)|N=C|O=[]|swath=%2|H=0|P=0|E=0|req=Standard|sweep=Manual90|planner=Auto")
+                    .arg(side)
+                    .arg(side * 0.75)
+                    .toUtf8();
+            result.push_back({QStringLiteral("CAL%1").arg(side), canonical,
+                              QCryptographicHash::hash(canonical, QCryptographicHash::Sha256).toHex(), true});
+        }
+        return result;
+    }();
+    return definitions;
+}
+
+CoveragePlanningProblem v05Problem(const QString& scenario)
+{
+    CoveragePlanningProblem problem;
+    problem.region.coverageBoundary = rectangle(0.0, 0.0, 20.0, 20.0);
+    problem.region.navigationBoundary = problem.region.coverageBoundary;
+    problem.swathWidthM = 5.0;
+    problem.coverageRequirement = CoverageRequirement::Strict;
+    problem.sweepAngleMode = SweepAngleMode::Manual;
+    problem.requestedSweepAngleDeg = 90.0;
+    problem.safety.hardSafetyMarginM = 0.0;
+    problem.safety.preferredSafetyMarginM = 0.0;
+    problem.executionSafety.executionMarginM = 0.0;
+
+    if (scenario.startsWith(QStringLiteral("CAL"))) {
+        const double side = scenario.mid(3).toDouble();
+        problem.region.coverageBoundary = rectangle(0.0, 0.0, side, side);
+        problem.region.navigationBoundary = problem.region.coverageBoundary;
+        problem.swathWidthM = side * 0.75;
+        problem.coverageRequirement = CoverageRequirement::Standard;
+    } else if (scenario == QStringLiteral("M00") || scenario == QStringLiteral("STALE")) {
+        problem = V05ExecutionFixtures::problem(false);
+    } else if (scenario == QStringLiteral("M04")) {
+        problem = V05ExecutionFixtures::problem(true);
+    } else if (scenario == QStringLiteral("M05")) {
+        problem.region.navigationBoundary = rectangle(-5.0, -5.0, 25.0, 25.0);
+        problem.executionSafety.executionMarginM = 30.0;
+    } else if (scenario == QStringLiteral("M08")) {
+        problem.safety.hardSafetyMarginM = 2.0;
+        problem.safety.preferredSafetyMarginM = 2.0;
+    } else if (scenario == QStringLiteral("M09")) {
+        problem.region.navigationBoundary = rectangle(-5.0, -5.0, 25.0, 25.0);
+        problem.region.noGoRegions = {rectangle(8.0, 8.0, 12.0, 12.0)};
+        problem.executionSafety.executionMarginM = 100.0;
+    }
+    return problem;
+}
+
+CoveragePlanningSolution planV05Problem(const CoveragePlanningProblem& problem, const QString& scenario)
+{
+    if (scenario == QStringLiteral("M09")) {
+        return SimpleMonotoneCoveragePlanner{}.plan(problem);
+    }
+    return AutoCoveragePlanner{}.plan(problem);
+}
+
+void translatePolygon(Polygon2D& polygon, const Point2D& offset);
+GeoPolygon toGeoPolygon(const Polygon2D& polygon, const GeoReference& reference);
+
+CoveragePlanningProblem anchorV05FirstPathPoint(CoveragePlanningProblem problem, const QString& scenario,
+                                                const GeoReference& vehicleReference, QString& error)
+{
+    const CoveragePlanningSolution initial = planV05Problem(problem, scenario);
+    if ((initial.status != PlanningStatus::Success) || initial.path.empty()) {
+        error = QStringLiteral("Unable to anchor V05 scenario: %1").arg(QString::fromStdString(initial.message));
+        return {};
+    }
+    const Point2D offset{-initial.path.front().xM, -initial.path.front().yM};
+    translatePolygon(problem.region.coverageBoundary, offset);
+    translatePolygon(problem.region.navigationBoundary, offset);
+    for (Polygon2D& noGo : problem.region.noGoRegions) {
+        translatePolygon(noGo, offset);
+    }
+    // Fixture placement must include the real Task adapter's region-centred projection.
+    // Two fixed numerical corrections preserve shape, dimensions and planning semantics.
+    for (int correction = 0; correction <= 2; ++correction) {
+        MarineTask task;
+        task.region.coverageBoundary = toGeoPolygon(problem.region.coverageBoundary, vehicleReference);
+        task.region.navigationBoundary = toGeoPolygon(problem.region.navigationBoundary, vehicleReference);
+        task.coverage.swathWidthM = problem.swathWidthM;
+        task.coverage.coverageRequirement = problem.coverageRequirement;
+        task.coverage.sweepAngleMode = problem.sweepAngleMode;
+        task.coverage.sweepAngleDeg = problem.requestedSweepAngleDeg;
+        task.safety = problem.safety;
+        task.planner.executionSafety = problem.executionSafety;
+        CoveragePlanningProblem realized;
+        std::optional<GeoReference> realizedReference;
+        CoveragePlanningError buildError;
+        if (!CoverageTaskAdapter::buildProblem(task, realized, realizedReference, buildError)) {
+            error = QStringLiteral("Unable to project the anchored execution fixture");
+            return {};
+        }
+        const auto solution = planV05Problem(realized, scenario);
+        if (solution.status != PlanningStatus::Success || solution.path.empty()) {
+            error = QStringLiteral("Projected fixture has no canonical ingress anchor");
+            return {};
+        }
+        const auto firstGeo = realizedReference->toGeo(solution.path.front());
+        const auto first = firstGeo ? vehicleReference.toLocal(*firstGeo) : std::nullopt;
+        if (!first) {
+            error = QStringLiteral("Projected fixture ingress is not finite");
+            return {};
+        }
+        if (correction == 2) {
+            if (std::hypot(first->xM, first->yM) > MetricToleranceM) {
+                error = QStringLiteral("Projected fixture ingress exceeds the frozen anchor tolerance");
+                return {};
+            }
+            return problem;
+        }
+        const Point2D correctionOffset{-first->xM, -first->yM};
+        translatePolygon(problem.region.coverageBoundary, correctionOffset);
+        translatePolygon(problem.region.navigationBoundary, correctionOffset);
+    }
+    return problem;
 }
 
 CoveragePlanningProblem problemFor(const ScenarioDefinition& definition)
@@ -436,7 +600,7 @@ bool writeJson(const QString& path, const QJsonObject& object)
     return file.write(QJsonDocument(object).toJson(QJsonDocument::Indented)) > 0;
 }
 
-MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog)
+MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog, bool observeStopping = false)
 {
     MissionRunResult result;
     result.initialArmed = vehicle->armed();
@@ -456,6 +620,18 @@ MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog
             std::memcpy(record.data() + sizeof(timestamp), messageBytes.constData(),
                         static_cast<std::size_t>(messageBytes.size()));
             (void) tlog.write(record);
+
+            if (message.msgid == MAVLINK_MSG_ID_GLOBAL_POSITION_INT) {
+                mavlink_global_position_int_t position{};
+                mavlink_msg_global_position_int_decode(&message, &position);
+                result.positionTelemetry.push_back(
+                    {{QDateTime::currentMSecsSinceEpoch(),
+                      QGeoCoordinate(position.lat * 1e-7, position.lon * 1e-7, position.alt * 1e-3),
+                      vehicle->flightMode(), currentSequence},
+                     position.time_boot_ms,
+                     position.vx * 0.01,
+                     position.vy * 0.01});
+            }
 
             if (message.msgid == MAVLINK_MSG_ID_MISSION_ITEM_REACHED) {
                 mavlink_mission_item_reached_t reached{};
@@ -491,7 +667,11 @@ MissionRunResult executeMission(Vehicle* vehicle, int finalSequence, QFile& tlog
                     }
                 }
             }
-            if (result.missionComplete && result.reachedSequences.contains(finalSequence)) {
+            const bool stationary =
+                !result.positionTelemetry.empty() && std::hypot(result.positionTelemetry.back().northSpeedMps,
+                                                                result.positionTelemetry.back().eastSpeedMps) <= 0.05;
+            if (result.missionComplete && result.reachedSequences.contains(finalSequence) &&
+                (!observeStopping || stationary)) {
                 loop.quit();
             }
         });
@@ -1445,6 +1625,448 @@ void MarineSITLValidationTest::_validateP2Scenarios()
     }
 }
 
+void MarineSITLValidationTest::_validateV05Scenarios()
+{
+    const QString evidenceRoot = qEnvironmentVariable("QGC_V05_10_SITL_EVIDENCE_DIR");
+    const QString requestedScenario = qEnvironmentVariable("QGC_V05_10_SITL_SCENARIO").toUpper();
+    ignoreLogMessage("Vehicle.StandardModes", QtWarningMsg, QRegularExpression("Failed to retrieve available modes"));
+    ignoreLogMessage("Utilities.QGCSensors", QtWarningMsg,
+                     QRegularExpression(QStringLiteral("Failed to connect to pressure backend")));
+    ignoreLogMessage("Utilities.QGCSensors", QtWarningMsg,
+                     QRegularExpression(QStringLiteral("Error Initializing Pressure Sensor")));
+    if (evidenceRoot.isEmpty() || requestedScenario.isEmpty()) {
+        QSKIP("Set QGC_V05_10_SITL_EVIDENCE_DIR and QGC_V05_10_SITL_SCENARIO to enable V05-10 SITL");
+    }
+    const auto definition = std::ranges::find(v05Scenarios(), requestedScenario, &V05ScenarioDefinition::id);
+    QVERIFY2(definition != v05Scenarios().end(),
+             qPrintable(QStringLiteral("Unknown V05-10 scenario: %1").arg(requestedScenario)));
+    QCOMPARE(QCryptographicHash::hash(definition->canonical, QCryptographicHash::Sha256).toHex(),
+             definition->canonicalSha256);
+
+    const QString scenarioDirectory = QDir(evidenceRoot).filePath(requestedScenario);
+    QVERIFY(QDir().mkpath(scenarioDirectory));
+    QCOMPARE(LinkManager::instance()->links().count(), 0);
+
+    auto* tcpConfiguration = new TCPConfiguration(QStringLiteral("V05-10 ArduRover SITL"));
+    tcpConfiguration->setHost(QStringLiteral("127.0.0.1"));
+    tcpConfiguration->setPort(5760);
+    tcpConfiguration->setDynamic(true);
+    SharedLinkConfigurationPtr sharedConfiguration(tcpConfiguration);
+    QVERIFY2(LinkManager::instance()->createConnectedLink(sharedConfiguration), "Failed to connect TCP SITL link");
+
+    QTRY_VERIFY_WITH_TIMEOUT(MultiVehicleManager::instance()->activeVehicle() != nullptr, ConnectionTimeoutMs);
+    Vehicle* vehicle = MultiVehicleManager::instance()->activeVehicle();
+    QVERIFY(vehicle != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(vehicle->isInitialConnectComplete(), ConnectionTimeoutMs);
+    QVERIFY(vehicle->parameterManager() != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(vehicle->parameterManager()->parametersReady(), ConnectionTimeoutMs);
+    QCOMPARE(vehicle->firmwareType(), MAV_AUTOPILOT_ARDUPILOTMEGA);
+    QCOMPARE(vehicle->vehicleType(), MAV_TYPE_GROUND_ROVER);
+    QCOMPARE(vehicle->firmwareMajorVersion(), 4);
+    QCOMPARE(vehicle->firmwareMinorVersion(), 7);
+    QCOMPARE(vehicle->firmwarePatchVersion(), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(vehicle->coordinate().isValid(), ConnectionTimeoutMs);
+
+    const QList<QPair<QString, double>> expectedParameters{
+        {QStringLiteral("WP_RADIUS"), 3.0},   {QStringLiteral("WP_SPEED"), 5.0},
+        {QStringLiteral("TURN_RADIUS"), 0.9}, {QStringLiteral("ATC_TURN_MAX_G"), 0.6},
+        {QStringLiteral("WP_ACCEL"), 0.0},    {QStringLiteral("WP_JERK"), 0.0},
+    };
+    QStringList parameterNames;
+    for (const auto& expected : expectedParameters) {
+        parameterNames.append(expected.first);
+    }
+    const QJsonObject parameterValues = parameterSnapshot(vehicle->parameterManager(), parameterNames);
+    for (const auto& expected : expectedParameters) {
+        const auto parameter = parameterValues.value(expected.first).toObject();
+        QVERIFY(parameter.value(QStringLiteral("present")).toBool());
+        QVERIFY(std::abs(parameter.value(QStringLiteral("value")).toDouble() - expected.second) <= 1e-3);
+    }
+    QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("environment.json")),
+                      {{QStringLiteral("firmwareVersion"), QStringLiteral("%1.%2.%3")
+                                                               .arg(vehicle->firmwareMajorVersion())
+                                                               .arg(vehicle->firmwareMinorVersion())
+                                                               .arg(vehicle->firmwarePatchVersion())},
+                       {QStringLiteral("tcpEndpoint"), QStringLiteral("127.0.0.1:5760")},
+                       {QStringLiteral("frame"), QStringLiteral("rover")},
+                       {QStringLiteral("seed"), QStringLiteral("N/A")},
+                       {QStringLiteral("parameters"), parameterValues}}));
+
+    QObject initialTelemetryScope;
+    std::optional<mavlink_global_position_int_t> initialPosition;
+    std::optional<mavlink_mission_current_t> initialMission;
+    connect(vehicle, &Vehicle::mavlinkMessageReceived, &initialTelemetryScope, [&](const mavlink_message_t& message) {
+        if (message.msgid == MAVLINK_MSG_ID_GLOBAL_POSITION_INT) {
+            mavlink_global_position_int_t position{};
+            mavlink_msg_global_position_int_decode(&message, &position);
+            initialPosition = position;
+        } else if (message.msgid == MAVLINK_MSG_ID_MISSION_CURRENT) {
+            mavlink_mission_current_t current{};
+            mavlink_msg_mission_current_decode(&message, &current);
+            initialMission = current;
+        }
+    });
+    QTRY_VERIFY_WITH_TIMEOUT(initialPosition.has_value() && initialMission.has_value(), ConnectionTimeoutMs);
+    const double initialSpeedMps = std::hypot(initialPosition->vx, initialPosition->vy) * 0.01;
+    const QString freshContainerId = qEnvironmentVariable("QGC_V05_10_FRESH_CONTAINER_ID");
+    QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("initial-state.json")),
+                      {{QStringLiteral("freshContainerId"), freshContainerId},
+                       {QStringLiteral("latitudeDeg"), initialPosition->lat * 1e-7},
+                       {QStringLiteral("longitudeDeg"), initialPosition->lon * 1e-7},
+                       {QStringLiteral("headingDeg"), initialPosition->hdg * 0.01},
+                       {QStringLiteral("northSpeedMps"), initialPosition->vx * 0.01},
+                       {QStringLiteral("eastSpeedMps"), initialPosition->vy * 0.01},
+                       {QStringLiteral("speedMps"), initialSpeedMps},
+                       {QStringLiteral("stationary"), initialSpeedMps <= 0.05},
+                       {QStringLiteral("armed"), vehicle->armed()},
+                       {QStringLiteral("flightMode"), vehicle->flightMode()},
+                       {QStringLiteral("missionState"), initialMission->mission_state},
+                       {QStringLiteral("missionSequence"), initialMission->seq},
+                       {QStringLiteral("missionItems"), vehicle->missionManager()->missionItems().size()},
+                       {QStringLiteral("bootTimeMs"), static_cast<qint64>(initialPosition->time_boot_ms)}}));
+    if (definition->execute) {
+        QVERIFY2(!freshContainerId.isEmpty(), "ALLOW execution requires an independently fresh SITL container");
+        QVERIFY(!vehicle->armed());
+        QVERIFY(initialSpeedMps <= 0.05);
+        QVERIFY(initialMission->mission_state != MISSION_STATE_ACTIVE);
+        QVERIFY(vehicle->missionManager()->missionItems().size() <= 1);
+    }
+    QVERIFY2(resetMissionExecutionState(vehicle), "Unable to set Rover disarmed HOLD before V05-10 scenario");
+    const QGeoCoordinate vehicleStart = vehicle->coordinate();
+    QVERIFY(vehicleStart.isValid());
+    const auto reference = GeoReference::create({vehicleStart.latitude(), vehicleStart.longitude(), 0.0});
+    QVERIFY(reference.has_value());
+
+    CoveragePlanningProblem problem = v05Problem(requestedScenario);
+    if (definition->execute) {
+        QString anchorError;
+        problem = anchorV05FirstPathPoint(problem, requestedScenario, *reference, anchorError);
+        QVERIFY2(anchorError.isEmpty(), qPrintable(anchorError));
+    }
+
+    PlanMasterController controller;
+    controller.setFlyView(false);
+    controller.start();
+    auto* creator = coverageCreator(controller);
+    QVERIFY(creator != nullptr);
+    creator->createPlan(vehicleStart);
+    auto* item = coverageItem(controller);
+    QVERIFY(item != nullptr);
+    auto* context = controller.findChild<MarinePlanContext*>(QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(context != nullptr);
+    const MarineTask* createdTask = context->task(item->taskId().toStdString());
+    QVERIFY(createdTask != nullptr);
+    MarineTask task = *createdTask;
+    task.id = "V05-10-R1-" + requestedScenario.toStdString();
+    task.name = requestedScenario.toStdString() + " V05-10 SITL";
+    task.planner.plannerId = requestedScenario == QStringLiteral("M09")
+                                 ? std::string(CoverageStrategySemantics::SimpleMonotoneId)
+                                 : std::string(CoverageStrategySemantics::AutoPlannerId);
+    task.region.coverageBoundary = toGeoPolygon(problem.region.coverageBoundary, *reference);
+    task.region.navigationBoundary = toGeoPolygon(problem.region.navigationBoundary, *reference);
+    task.region.noGoRegions.clear();
+    for (const auto& noGo : problem.region.noGoRegions) {
+        task.region.noGoRegions.push_back(toGeoPolygon(noGo, *reference));
+    }
+    task.coverage.swathWidthM = problem.swathWidthM;
+    task.coverage.coverageRequirement = problem.coverageRequirement;
+    task.coverage.sweepAngleMode = problem.sweepAngleMode;
+    task.coverage.sweepAngleDeg = problem.requestedSweepAngleDeg;
+    task.safety = problem.safety;
+    task.planner.executionSafety = problem.executionSafety;
+    context->addTask(task);
+    item->setTaskId(QString::fromStdString(task.id));
+    QCoreApplication::processEvents();
+
+    const bool planned = item->plan();
+    const PlanningResult& planning = item->planningResult();
+    if (requestedScenario == QStringLiteral("M00") || requestedScenario.startsWith(QStringLiteral("CAL"))) {
+        QVERIFY(planned);
+        QCOMPARE(planning.status, PlanningStatus::Success);
+        QCOMPARE(planning.outcome.readiness, MissionReadiness::Ready);
+        QCOMPARE(planning.outcome.tier, std::optional<SafetySolutionTier>(SafetySolutionTier::D0));
+        QVERIFY(planning.outcome.coverageQuality && planning.outcome.coverageQuality->passesRequirement);
+        QVERIFY(!planning.outcome.repair.attempted);
+        QVERIFY(!planning.outcome.repair.applied);
+        QCOMPARE(planning.outcome.repair.reason, CoverageRepairReason::InitialPolicyPass);
+        QVERIFY(planning.plannerSource);
+        QCOMPARE(planning.plannerSource->resolvedStrategy.strategyId,
+                 std::string(CoverageStrategySemantics::SimpleMonotoneId));
+    } else if (requestedScenario == QStringLiteral("M04")) {
+        QVERIFY(planned);
+        QCOMPARE(planning.status, PlanningStatus::Success);
+        QCOMPARE(planning.outcome.readiness, MissionReadiness::ReadyWithWarning);
+        QCOMPARE(planning.outcome.tier, std::optional<SafetySolutionTier>(SafetySolutionTier::D1));
+        QVERIFY(planning.outcome.coverageQuality && planning.outcome.coverageQuality->passesRequirement);
+        QVERIFY(std::ranges::any_of(planning.outcome.issues, [](const auto& issue) {
+            return issue.code == PlanningIssueCode::PreferredSafetyViolated;
+        }));
+    } else if (requestedScenario == QStringLiteral("M05")) {
+        QVERIFY(!planned);
+        QCOMPARE(planning.status, PlanningStatus::Failed);
+        QCOMPARE(planning.outcome.readiness, MissionReadiness::DiagnosticOnly);
+        QCOMPARE(planning.outcome.tier, std::optional<SafetySolutionTier>(SafetySolutionTier::D2));
+        QVERIFY(planning.path.empty());
+    } else if (requestedScenario == QStringLiteral("M08")) {
+        QVERIFY(planned);
+        QCOMPARE(planning.status, PlanningStatus::Success);
+        QCOMPARE(planning.outcome.readiness, MissionReadiness::ReviewRequired);
+        QVERIFY(!planning.path.empty());
+    } else if (requestedScenario == QStringLiteral("M09")) {
+        QVERIFY(!planned);
+        QCOMPARE(planning.status, PlanningStatus::Failed);
+        QCOMPARE(planning.outcome.readiness, MissionReadiness::DiagnosticOnly);
+        QCOMPARE(planning.outcome.tier, std::optional<SafetySolutionTier>(SafetySolutionTier::D3));
+        QVERIFY(planning.path.empty());
+    } else {
+        QVERIFY(planned);
+        QCOMPARE(planning.status, PlanningStatus::Success);
+        QCOMPARE(planning.outcome.readiness, MissionReadiness::Ready);
+        item->setSwathWidthM(11.0);
+        QVERIFY(item->resultStale());
+    }
+
+    const QString artifactPath = QDir(scenarioDirectory).filePath(QStringLiteral("scenario.json"));
+    const MarineTask* currentTask = context->task(item->taskId().toStdString());
+    QVERIFY(currentTask != nullptr);
+    QJsonObject taskJson;
+    QString identityError;
+    QVERIFY2(MarineTaskJsonCodec::save(*currentTask, taskJson, identityError), qPrintable(identityError));
+    QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("task.json")), taskJson));
+    QJsonObject artifactJson;
+    QVERIFY(item->planningArtifact().has_value());
+    QVERIFY2(PlanningArtifactCodec::save(*item->planningArtifact(), *currentTask, artifactJson, identityError),
+             qPrintable(identityError));
+    QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("artifact.json")), artifactJson));
+    QJsonObject scenarioEvidence{
+        {QStringLiteral("scenario"), requestedScenario},
+        {QStringLiteral("canonical"), QString::fromUtf8(definition->canonical)},
+        {QStringLiteral("canonicalSha256"), QString::fromLatin1(definition->canonicalSha256)},
+        {QStringLiteral("taskId"), item->taskId()},
+        {QStringLiteral("planningStatus"), static_cast<int>(planning.status)},
+        {QStringLiteral("readiness"), static_cast<int>(planning.outcome.readiness)},
+        {QStringLiteral("resultStale"), item->resultStale()},
+        {QStringLiteral("uploadAllowed"), controller.missionController()->uploadAllowed()},
+        {QStringLiteral("taskIdentity"), item->planningArtifact()->identity.toJson()},
+        {QStringLiteral("taskSha256"),
+         QString::fromLatin1(sha256(QDir(scenarioDirectory).filePath(QStringLiteral("task.json"))))},
+        {QStringLiteral("artifactSha256"),
+         QString::fromLatin1(sha256(QDir(scenarioDirectory).filePath(QStringLiteral("artifact.json"))))},
+        {QStringLiteral("sourceHead"), qEnvironmentVariable("QGC_V05_10_SOURCE_HEAD")},
+        {QStringLiteral("binarySha256"), QString::fromLatin1(sha256(QCoreApplication::applicationFilePath()))},
+    };
+    if (planning.outcome.tier) {
+        scenarioEvidence.insert(QStringLiteral("tier"), static_cast<int>(*planning.outcome.tier));
+    }
+    QVERIFY(writeJson(artifactPath, scenarioEvidence));
+
+    if (qEnvironmentVariableIsSet("QGC_V05_10_PREPARE_ONLY")) {
+        QVERIFY(definition->execute);
+        return;
+    }
+
+    if (requestedScenario == QStringLiteral("M00") || requestedScenario == QStringLiteral("M04")) {
+        QFile lockFile(qEnvironmentVariable("QGC_V05_10_FIXTURE_LOCK"));
+        QVERIFY(lockFile.open(QIODevice::ReadOnly));
+        const auto lock = QJsonDocument::fromJson(lockFile.readAll()).object();
+        const auto lockedFixture = lock.value("fixtures").toObject().value(requestedScenario).toObject();
+        QCOMPARE(scenarioEvidence.value("canonical").toString(), lockedFixture.value("canonical").toString());
+        QCOMPARE(scenarioEvidence.value("canonicalSha256").toString(), lockedFixture.value("sha256").toString());
+        QCOMPARE(scenarioEvidence.value("taskSha256").toString(), lockedFixture.value("taskSha256").toString());
+        QCOMPARE(scenarioEvidence.value("artifactSha256").toString(), lockedFixture.value("artifactSha256").toString());
+        QCOMPARE(scenarioEvidence.value("binarySha256").toString(), lock.value("binary_sha256").toString());
+        QCOMPARE(scenarioEvidence.value("sourceHead").toString(), lock.value("source_head").toString());
+    }
+
+    if (definition->execute) {
+        QVERIFY(controller.missionController()->uploadAllowed());
+        QVERIFY(!planning.path.empty());
+        const QGeoCoordinate first(planning.path.front().latitudeDeg, planning.path.front().longitudeDeg);
+        const double anchorDistanceM = vehicleStart.distanceTo(first);
+        QVERIFY2(anchorDistanceM <= MetricToleranceM,
+                 qPrintable(QStringLiteral("Ingress anchor distance %1 m exceeds %2 m")
+                                .arg(anchorDistanceM, 0, 'g', 12)
+                                .arg(MetricToleranceM, 0, 'g', 12)));
+
+        QSignalSpy sendComplete(vehicle->missionManager(), &MissionManager::sendComplete);
+        controller.sendToVehicle();
+        QVERIFY2(sendComplete.wait(ConnectionTimeoutMs), "V05-10 Mission upload did not complete");
+        QCOMPARE(sendComplete.count(), 1);
+        QCOMPARE(sendComplete.takeFirst().at(0).toBool(), false);
+        QTRY_VERIFY_WITH_TIMEOUT(!controller.syncInProgress(), ConnectionTimeoutMs);
+
+        const int missionOffset = vehicle->firmwarePlugin()->sendHomePositionToVehicle() ? 1 : 0;
+        QCOMPARE(vehicle->missionManager()->missionItems().size(),
+                 static_cast<qsizetype>(planning.path.size()) + missionOffset);
+        vehicle->setCurrentMissionSequence(missionOffset);
+        QTRY_COMPARE_WITH_TIMEOUT(vehicle->missionManager()->currentIndex(), missionOffset, ConnectionTimeoutMs);
+
+        const QString tlogPath = QDir(scenarioDirectory).filePath(requestedScenario + QStringLiteral(".tlog"));
+        QFile tlog(tlogPath);
+        QVERIFY(tlog.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        const MissionRunResult run =
+            executeMission(vehicle, static_cast<int>(planning.path.size()) - 1 + missionOffset, tlog, true);
+        tlog.close();
+        QVERIFY2(run.readyToFly, qPrintable(QStringLiteral("Rover did not become ready: %1").arg(run.prearmError)));
+        QVERIFY(run.started);
+        QVERIFY(run.enteredAuto);
+        QVERIFY(run.missionStartAckSeen);
+        QCOMPARE(run.missionStartAckResult, static_cast<int>(MAV_RESULT_ACCEPTED));
+        QVERIFY(run.missionActiveObserved);
+        QVERIFY(!run.timedOut);
+        QVERIFY(run.missionComplete);
+        QVERIFY(run.reachedSequences.contains(static_cast<int>(planning.path.size()) - 1 + missionOffset));
+
+        QList<int> uniqueReached;
+        for (const int sequence : run.reachedSequences) {
+            if (uniqueReached.isEmpty() || uniqueReached.back() != sequence) {
+                uniqueReached.append(sequence);
+            }
+        }
+        QCOMPARE(uniqueReached.size(), static_cast<qsizetype>(planning.path.size()));
+        for (int index = 0; index < uniqueReached.size(); ++index) {
+            QCOMPARE(uniqueReached[index], index + missionOffset);
+        }
+
+        bool outsideNavigation = false;
+        int outsideNavigationSamples = 0;
+        double maximumOutsideNavigationM = 0.0;
+        double maximumPathDeviationM = 0.0;
+        double maximumSpeedMps = 0.0;
+        quint32 maximumPositionIntervalMs = 0;
+        std::optional<quint32> previousBootTime;
+        QJsonArray positionEvidence;
+        std::vector<TrajectorySample> actualTrajectory;
+        std::vector<Point2D> canonicalLocal;
+        for (const auto& point : planning.path) {
+            const auto local = reference->toLocal({point.latitudeDeg, point.longitudeDeg, 0.0});
+            QVERIFY(local.has_value());
+            canonicalLocal.push_back(*local);
+        }
+        bool enteredNoGo = false;
+        for (const auto& position : run.positionTelemetry) {
+            const auto& sample = position.trajectory;
+            actualTrajectory.push_back(sample);
+            const auto local = reference->toLocal({sample.coordinate.latitude(), sample.coordinate.longitude(), 0.0});
+            QVERIFY(local.has_value());
+            double deviationM = std::numeric_limits<double>::infinity();
+            for (std::size_t leg = 1; leg < canonicalLocal.size(); ++leg) {
+                deviationM =
+                    std::min(deviationM, pointToSegmentDistance(*local, canonicalLocal[leg - 1], canonicalLocal[leg]));
+            }
+            QVERIFY(std::isfinite(deviationM));
+            maximumPathDeviationM = std::max(maximumPathDeviationM, deviationM);
+            maximumSpeedMps = std::max(maximumSpeedMps, std::hypot(position.northSpeedMps, position.eastSpeedMps));
+            if (previousBootTime) {
+                QVERIFY(position.bootTimeMs > *previousBootTime);
+                maximumPositionIntervalMs =
+                    std::max(maximumPositionIntervalMs, position.bootTimeMs - *previousBootTime);
+            }
+            previousBootTime = position.bootTimeMs;
+            positionEvidence.append(
+                QJsonObject{{QStringLiteral("bootTimeMs"), static_cast<qint64>(position.bootTimeMs)},
+                            {QStringLiteral("latitudeDeg"), sample.coordinate.latitude()},
+                            {QStringLiteral("longitudeDeg"), sample.coordinate.longitude()},
+                            {QStringLiteral("northSpeedMps"), position.northSpeedMps},
+                            {QStringLiteral("eastSpeedMps"), position.eastSpeedMps},
+                            {QStringLiteral("pathDeviationM"), deviationM}});
+            const bool outside = !Geometry::containsPoint(problem.region.navigationBoundary, *local);
+            outsideNavigation |= outside;
+            if (outside) {
+                ++outsideNavigationSamples;
+                maximumOutsideNavigationM =
+                    std::max(maximumOutsideNavigationM,
+                             pointToPolygonBoundaryDistance(*local, problem.region.navigationBoundary));
+            }
+            for (const auto& noGo : problem.region.noGoRegions) {
+                enteredNoGo |= pointStrictlyInside(noGo, *local);
+            }
+            QVERIFY(sample.mode != vehicle->rtlFlightMode());
+        }
+        QVERIFY(!actualTrajectory.empty());
+        QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("position-telemetry.json")),
+                          {{QStringLiteral("samples"), positionEvidence}}));
+        const QString csvPath = QDir(scenarioDirectory).filePath(requestedScenario + QStringLiteral("-trajectory.csv"));
+        QVERIFY(writeTrajectoryCsv(csvPath, actualTrajectory));
+        QVERIFY(
+            writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("result.json")),
+                      {{QStringLiteral("scenario"), requestedScenario},
+                       {QStringLiteral("anchorToleranceM"), MetricToleranceM},
+                       {QStringLiteral("anchorDistanceM"), anchorDistanceM},
+                       {QStringLiteral("missionStartAckAccepted"),
+                        run.missionStartAckSeen && run.missionStartAckResult == MAV_RESULT_ACCEPTED},
+                       {QStringLiteral("missionActiveObserved"), run.missionActiveObserved},
+                       {QStringLiteral("missionComplete"), run.missionComplete},
+                       {QStringLiteral("leftNavigationArea"), outsideNavigation},
+                       {QStringLiteral("outsideNavigationSamples"), outsideNavigationSamples},
+                       {QStringLiteral("maximumOutsideNavigationM"), maximumOutsideNavigationM},
+                       {QStringLiteral("maximumPathDeviationM"), maximumPathDeviationM},
+                       {QStringLiteral("maximumSpeedMps"), maximumSpeedMps},
+                       {QStringLiteral("maximumPositionIntervalMs"), static_cast<qint64>(maximumPositionIntervalMs)},
+                       {QStringLiteral("measurementOnly"), requestedScenario.startsWith(QStringLiteral("CAL"))},
+                       {QStringLiteral("positionSamples"), static_cast<qint64>(actualTrajectory.size())},
+                       {QStringLiteral("enteredNoGo"), enteredNoGo},
+                       {QStringLiteral("marineGeneratedRtl"), false},
+                       {QStringLiteral("tlogSha256"), QString::fromLatin1(sha256(tlogPath))},
+                       {QStringLiteral("trajectoryCsvSha256"), QString::fromLatin1(sha256(csvPath))}}));
+        if (!requestedScenario.startsWith(QStringLiteral("CAL"))) {
+            QVERIFY2(!outsideNavigation, "Actual V05-10 SITL trajectory left NavigationArea");
+        }
+        QVERIFY2(!enteredNoGo, "Actual V05-10 SITL trajectory entered No-Go");
+        QVERIFY(vehicle->flightMode() != vehicle->rtlFlightMode());
+        QVERIFY2(resetMissionExecutionState(vehicle), "Unable to reset Rover after V05-10 execution scenario");
+        return;
+    }
+
+    PlanMasterController seed;
+    seed.startStaticActiveVehicle(vehicle);
+    seed.missionController()->insertSimpleMissionItem(vehicleStart, 1, false);
+    QString seedError;
+    QSignalSpy seedComplete(vehicle->missionManager(), &MissionManager::sendComplete);
+    QVERIFY2(seed.missionController()->sendToVehicleChecked(seedError), qPrintable(seedError));
+    QVERIFY2(seedComplete.wait(ConnectionTimeoutMs), "Unable to seed previous mission");
+    QCOMPARE(seedComplete.count(), 1);
+    QCOMPARE(seedComplete.takeFirst().at(0).toBool(), false);
+    QSignalSpy downloaded(vehicle->missionManager(), &MissionManager::newMissionItemsAvailable);
+    vehicle->missionManager()->loadFromVehicle();
+    QVERIFY2(downloaded.wait(ConnectionTimeoutMs), "Unable to confirm seeded previous mission");
+    QVERIFY(!vehicle->missionManager()->missionItems().isEmpty());
+    const auto beforeRemote = vehicle->missionManager()->missionItems();
+    const int beforeCurrent = vehicle->missionManager()->currentIndex();
+
+    auto* mission = controller.missionController();
+    QVERIFY(!mission->uploadAllowed());
+    QVERIFY(!mission->uploadBlockingReason().isEmpty());
+    QSignalSpy sendComplete(vehicle->missionManager(), &MissionManager::sendComplete);
+    QSignalSpy missionActivity(vehicle->missionManager(), &PlanManager::inProgressChanged);
+    QSignalSpy missionProgress(vehicle->missionManager(), &PlanManager::progressPctChanged);
+    QString error;
+    QVERIFY(!mission->sendToVehicleChecked(error));
+    QVERIFY(!error.isEmpty());
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 250);
+    QCOMPARE(sendComplete.count(), 0);
+    QCOMPARE(missionActivity.count(), 0);
+    QCOMPARE(missionProgress.count(), 0);
+    QVERIFY(!controller.syncInProgress());
+    QCOMPARE(vehicle->missionManager()->currentIndex(), beforeCurrent);
+    const auto afterRemote = vehicle->missionManager()->missionItems();
+    QCOMPARE(afterRemote.size(), beforeRemote.size());
+    for (int index = 0; index < beforeRemote.size(); ++index) {
+        QCOMPARE(afterRemote[index]->command(), beforeRemote[index]->command());
+        QCOMPARE(afterRemote[index]->sequenceNumber(), beforeRemote[index]->sequenceNumber());
+        QCOMPARE(afterRemote[index]->param5(), beforeRemote[index]->param5());
+        QCOMPARE(afterRemote[index]->param6(), beforeRemote[index]->param6());
+        QCOMPARE(afterRemote[index]->param7(), beforeRemote[index]->param7());
+    }
+    QVERIFY(writeJson(QDir(scenarioDirectory).filePath(QStringLiteral("result.json")),
+                      {{QStringLiteral("scenario"), requestedScenario},
+                       {QStringLiteral("backendRejected"), true},
+                       {QStringLiteral("sendCompleteSignals"), sendComplete.count()},
+                       {QStringLiteral("missionActivitySignals"), missionActivity.count()},
+                       {QStringLiteral("missionProgressSignals"), missionProgress.count()},
+                       {QStringLiteral("remoteMissionPreserved"), true},
+                       {QStringLiteral("syncInProgress"), controller.syncInProgress()}}));
+}
 void MarineSITLValidationTest::_diagnoseS04Execution()
 {
     const QString evidenceRoot = qEnvironmentVariable("QGC_P2_SITL_DIAGNOSTIC_ROOT");

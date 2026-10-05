@@ -9,6 +9,7 @@
 #include <QtCore/QSet>
 #include <QtCore/QTemporaryDir>
 #include <QtGraphs/QXYSeries>
+#include <QtGui/QColor>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlIncubationController>
 #include <QtQuick/QQuickItem>
@@ -30,6 +31,7 @@
 #include "QGCApplication.h"
 #include "QGroundControlQmlGlobal.h"
 #include "RallyPointManager.h"
+#include "TerrainProfile.h"
 #include "Vehicle.h"
 
 using namespace Marine;
@@ -98,6 +100,9 @@ void CoveragePlanViewUITest::_testActualUploadAndConfirmation()
                                                     "MAV_CMD_SET_MESSAGE_INTERVAL message: %1\"?$")
                                                 .arg(message)));
     }
+    // AVAILABLE_MODES enumeration may fail while the MockLink connection is still settling. Upstream vehicle
+    // lifecycle tests classify the same warning as expected MockLink noise; keep all other warnings strict.
+    ignoreLogMessage("Vehicle.StandardModes", QtWarningMsg, QRegularExpression("Failed to retrieve available modes"));
     runWithMockLink(
         [] { return MockLink::startAPMArduRoverMockLink(); },
         [this, review, ordinary](QPointer<MockLink>, Vehicle* vehicle) {
@@ -295,6 +300,54 @@ void CoveragePlanViewUITest::_testActualUploadAndConfirmation()
             QTRY_COMPARE(mission->maxAMSLAltitude(), ordinary ? 50.0 : 0.0);
             if (ordinary) {
                 QCOMPARE(mission->missionTotalDistance(), 0.0);
+            }
+
+            if (ordinary) {
+                auto* visual = mission->visualItems()->value<VisualMissionItem*>(0);
+                QVERIFY(visual);
+                auto* segment = visual->simpleFlightPathSegment();
+                QVERIFY(segment);
+                auto* profile = qobject_cast<TerrainProfile*>(findItem(_rootItem, "terrainStatusProfile"));
+                auto* chart = findVisibleItem(_rootItem, "terrainStatusChart", TestTimeout::mediumMs());
+                QVERIFY(profile);
+                QVERIFY(chart);
+
+                QXYSeries* missingSeries = nullptr;
+                QXYSeries* collisionSeries = nullptr;
+                QXYSeries* terrainSeries = nullptr;
+                QXYSeries* flightSeries = nullptr;
+                for (auto* curve : chart->findChildren<QXYSeries*>()) {
+                    const QColor color = curve->property("color").value<QColor>();
+                    if (color == QColor(Qt::yellow)) {
+                        missingSeries = curve;
+                    } else if (color == QColor(Qt::red)) {
+                        collisionSeries = curve;
+                    } else if (color == QColor("green")) {
+                        terrainSeries = curve;
+                    } else if (color == QColor("orange")) {
+                        flightSeries = curve;
+                    }
+                }
+                QVERIFY(missingSeries);
+                QVERIFY(collisionSeries);
+                QVERIFY(terrainSeries);
+                QVERIFY(flightSeries);
+
+                const QVariant originalHeights = segment->property("amslTerrainHeights");
+                QVERIFY(segment->setProperty("amslTerrainHeights", QVariantList{}));
+                profile->updateSeries(terrainSeries, flightSeries, missingSeries, collisionSeries);
+
+                const auto missingPoints = missingSeries->points();
+                QVERIFY(missingPoints.size() >= 2);
+                QVERIFY(qIsFinite(missingPoints.front().x()));
+                QVERIFY(qIsFinite(missingPoints.front().y()));
+                const double expectedY =
+                    profile->property("minAMSLAlt").toDouble() * profile->property("verticalScale").toDouble();
+                QVERIFY(qIsFinite(expectedY));
+                QVERIFY(qAbs(missingPoints.front().y() - expectedY) <= 1e-6);
+
+                QVERIFY(segment->setProperty("amslTerrainHeights", originalHeights));
+                profile->updateSeries(terrainSeries, flightSeries, missingSeries, collisionSeries);
             }
 
             // Loaded plans intentionally stop tracking the offline setting. Load a real supported
