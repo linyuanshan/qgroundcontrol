@@ -187,9 +187,12 @@ void verifySITLBinding(const QString& scenario, const QByteArray& canonical, con
                        const CoveragePlanningProblem& expected)
 {
     const QString root = qEnvironmentVariable("QGC_V05_10_R1_BINDING_DIR");
-    if (root.isEmpty()) {
+    if (!qEnvironmentVariableIsSet("QGC_V05_10_R1_BINDING_DIR")) {
         return;
     }
+    QVERIFY2(!root.isEmpty(), "Binding validation requires a non-empty QGC_V05_10_R1_BINDING_DIR");
+    const QString expectedSourceHead = qEnvironmentVariable("QGC_V05_10_SOURCE_HEAD");
+    QVERIFY2(!expectedSourceHead.isEmpty(), "Binding validation requires QGC_V05_10_SOURCE_HEAD");
     const QDir directory(QDir(root).filePath(scenario));
     const auto bytes = [&](const QString& name) {
         QFile file(directory.filePath(name));
@@ -202,7 +205,7 @@ void verifySITLBinding(const QString& scenario, const QByteArray& canonical, con
     QVERIFY(!evidence.isEmpty());
     QCOMPARE(evidence.value("canonical").toString().toUtf8(), canonical);
     QCOMPARE(evidence.value("canonicalSha256").toString().toLatin1(), fixtureHash);
-    QCOMPARE(evidence.value("sourceHead").toString(), QStringLiteral("cc70699c25f7f396907cf937c95f41daa9ff64b7"));
+    QCOMPARE(evidence.value("sourceHead").toString(), expectedSourceHead);
     QFile binary(QCoreApplication::applicationFilePath());
     QVERIFY(binary.open(QIODevice::ReadOnly));
     QCOMPARE(evidence.value("binarySha256").toString().toLatin1(), digest(binary.readAll()));
