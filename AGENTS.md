@@ -30,9 +30,8 @@ protocols remain authoritative for unaffected requirements.
 If implementation requires a material change to the approved architecture, stop and report
 the issue before making the broader redesign.
 
-P2 v0.5 architecture Design Freeze is complete. V05 implementation, SITL validation, P2
-software freeze, and
-field validation are not complete.
+P2 v0.5 architecture Design Freeze is complete. V05 implementation, SITL validation, and P2
+software freeze are complete. Field validation remains deferred by the frozen specification.
 
 V05 governance state:
 
@@ -56,12 +55,14 @@ V05 governance state:
 | Complete | V05-08 integrated planning result and Mission gate |
 | Complete | V05-09 QML/editor/result visualization |
 | Complete | V05-10 design/contract freeze — `V05-10-DC-v1` |
-| Authorized | V05-10 execution — M00–M09, regressions, persistence, Mission integration, SITL, manual acceptance, freeze audit |
+| Complete | V05-10 execution and P2 v0.5 software freeze — M00–M09, regressions, persistence, Mission integration, SITL, manual acceptance, freeze audit |
 
 V05-08 and V05-09 are closed. V05-10 design/contract review is complete and `V05-10-DC-v1` is frozen at
-commit `4c1414622293bbb23da881ba1c8f4a76b9a1b9eb`. The project owner has explicitly authorized V05-10 execution
-under `docs/marine/V05_10_EXECUTION_WRAPPER.md`. After execution, stop for fresh independent implementation
-review. V05-11 and later packages remain unauthorized.
+commit `4c1414622293bbb23da881ba1c8f4a76b9a1b9eb`. V05-10 execution completed under
+`docs/marine/V05_10_EXECUTION_WRAPPER.md`, passed the final independent freeze review, and the project owner
+approved `V05-10 = CLOSED` and `P2 v0.5 SOFTWARE FREEZE = APPROVED`. The accepted runtime/source HEAD remains
+`f25ec3990cdeb5355680a8d9669a0f3e15373a26`; later closure-document commits do not change that runtime binding.
+V05-11 and later packages remain unauthorized.
 
 V05-01 must not begin until the pre-V05-01 gate is completed and the project owner explicitly
 authorizes
