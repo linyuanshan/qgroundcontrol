@@ -19,6 +19,7 @@ public:
     PlanViewUITest() = default;
 
 private slots:
+    void _testRepeatedClearKeepsPlanTreeVisible();
     void _testPlanViewStates();
     void _testSaveAsMenu();
     void _testRoverWaypointOnEmptyPlan();

@@ -569,6 +569,70 @@ void PlanViewUITest::_testPlanViewStates()
     stopUI();
 }
 
+
+void PlanViewUITest::_testRepeatedClearKeepsPlanTreeVisible()
+{
+    startUI();
+    if (QTest::currentTestFailed()) return;
+
+    _navigateToPlanAndCenterMap();
+    if (QTest::currentTestFailed()) return;
+
+    const QString clearBtn = QStringLiteral("planToolbar_clearButton");
+    const QString acceptBtn = QStringLiteral("popupDialog_acceptButton");
+
+    // Build a minimal non-empty plan so the first Clear exercises the normal
+    // destructive reset path.
+    _clickMap(0.5, 0.5);
+    QVERIFY2(waitForCondition([&] { return _plannedHomePosition().isValid(); }, 2000,
+                              QStringLiteral("home position set")),
+             "KL-01: map click did not set home position");
+    QVERIFY2(clickButton(QStringLiteral("planToolStrip_takeoffButton")), "KL-01: failed to add takeoff");
+    QVERIFY2(waitForCondition([&] { return _missionItemCount() == 2; }, 2000,
+                              QStringLiteral("takeoff inserted")),
+             "KL-01: takeoff item was not inserted");
+
+    QVERIFY2(clickButton(clearBtn), "KL-01: failed to click initial Clear");
+    QVERIFY2(findVisibleItem(_rootItem, acceptBtn, 2000), "KL-01: initial Clear confirmation missing");
+    QVERIFY2(clickButton(acceptBtn), "KL-01: failed to confirm initial Clear");
+    QVERIFY2(waitForCondition([&] { return _missionItemCount() == 1; }, 2000,
+                              QStringLiteral("initial clear completed")),
+             "KL-01: initial Clear did not return to an empty plan");
+
+    // The empty Plan Tree must remain populated after every repeated Clear.
+    for (int clearAttempt = 0; clearAttempt < 5; ++clearAttempt) {
+        QVERIFY2(findVisibleItem(_rootItem, QStringLiteral("planView_planTree"), 2000),
+                 "KL-01: PlanTreeView disappeared before repeated Clear");
+        QVERIFY2(findVisibleItem(_rootItem, QStringLiteral("planTree_planFileInfo"), 2000),
+                 "KL-01: Plan Info delegate disappeared before repeated Clear");
+
+        QVERIFY2(clickButton(clearBtn), "KL-01: failed to click repeated Clear");
+        QVERIFY2(findVisibleItem(_rootItem, acceptBtn, 2000), "KL-01: repeated Clear confirmation missing");
+        QVERIFY2(clickButton(acceptBtn), "KL-01: failed to confirm repeated Clear");
+        QTest::qWait(_pageDelay);
+
+        QCOMPARE(_missionItemCount(), 1);
+        QVERIFY2(findVisibleItem(_rootItem, QStringLiteral("planView_planTree"), 2000),
+                 "KL-01: PlanTreeView disappeared after repeated Clear");
+        QVERIFY2(findVisibleItem(_rootItem, QStringLiteral("planTree_planFileInfo"), 2000),
+                 "KL-01: Plan Info delegate disappeared after repeated Clear");
+        QVERIFY2(findVisibleItem(_rootItem, QStringLiteral("planInfo_templatesColumn"), 2000),
+                 "KL-01: empty-plan editor content disappeared after repeated Clear");
+    }
+
+    // The editor must still be usable after the repeated no-op clears.
+    _clickMap(0.5, 0.5);
+    QVERIFY2(waitForCondition([&] { return _plannedHomePosition().isValid(); }, 2000,
+                              QStringLiteral("home reset after repeated clear")),
+             "KL-01: could not set home after repeated Clear");
+    QVERIFY2(clickButton(QStringLiteral("planToolStrip_takeoffButton")), "KL-01: failed to add takeoff after repeated Clear");
+    QVERIFY2(waitForCondition([&] { return _missionItemCount() == 2; }, 2000,
+                              QStringLiteral("takeoff inserted after repeated clear")),
+             "KL-01: Plan editor was unusable after repeated Clear");
+
+    stopUI();
+}
+
 // Save as... lives in the hamburger drop panel.
 void PlanViewUITest::_testSaveAsMenu()
 {

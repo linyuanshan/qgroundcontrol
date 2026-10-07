@@ -85,6 +85,7 @@ public:
     Q_INVOKABLE bool saveToFile(const QString& filename);
     Q_INVOKABLE void saveToKml(const QString& filename);
 
+    Q_INVOKABLE void clearPlanEditor(void); ///< Idempotent Plan View Clear entry point; preserves internal removeAll lifecycle semantics
     Q_INVOKABLE void removeAll(void); ///< Removes all from controller only, sync required to remove from vehicle
     Q_INVOKABLE void removeAllFromVehicle(void); ///< Removes all from vehicle and controller
 

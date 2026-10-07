@@ -86,7 +86,7 @@ RowLayout {
         QGroundControl.showMessageDialog(root, qsTr("Clear"),
                                      qsTr("Are you sure you want to remove all the items from the plan editor?"),
                                      Dialog.Yes | Dialog.Cancel,
-                                     function() { _planMasterController.removeAll(); })
+                                     function() { _planMasterController.clearPlanEditor(); })
     }
 
     function _vehicleClearButtonClicked() {
