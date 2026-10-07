@@ -21,6 +21,7 @@ private slots:
     // File name property tests
     void _testFileAssociationSetOnLoad();
     void _testFileAssociationClearedOnRemoveAll();
+    void _testRepeatedClearPlanEditorIsIdempotent();
     void _testFileAssociationClearedOnRemoveAllFromVehicle();
     void _testSaveUpdatesFileName();
     void _testFailedLoadClearsFileAssociation();

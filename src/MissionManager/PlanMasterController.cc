@@ -532,6 +532,34 @@ void PlanMasterController::saveToKml(const QString& filename)
     }
 }
 
+void PlanMasterController::clearPlanEditor(void)
+{
+    // Plan View may issue Clear again after the editor is already pristine.
+    // Avoid replacing MissionController::visualItems in that case: PlanTreeView
+    // delegates from the prior reset can still be completing asynchronous
+    // teardown. Keep removeAll() itself unchanged for internal lifecycle users.
+    if (syncInProgress()) {
+        return;
+    }
+
+    const bool alreadyPristine =
+        isEmpty() &&
+        !_missionController.homePositionSet() &&
+        !_missionController.dirty() &&
+        !_geoFenceController.dirty() &&
+        !_rallyPointController.dirty() &&
+        !_dirtyForSave &&
+        !_dirtyForUpload &&
+        _currentPlanFile.isEmpty() &&
+        !_userSelectedManualCreation;
+
+    if (alreadyPristine) {
+        return;
+    }
+
+    removeAll();
+}
+
 void PlanMasterController::removeAll(void)
 {
     _suppressOverallDirtyUpdate = true;

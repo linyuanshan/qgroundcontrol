@@ -458,6 +458,55 @@ void PlanMasterControllerTest::_testFileAssociationClearedOnRemoveAll()
     QVERIFY(currentFileSpy.count() >= 1);
 }
 
+void PlanMasterControllerTest::_testRepeatedClearPlanEditorIsIdempotent()
+{
+    MissionController* const missionController = _masterController->missionController();
+    QVERIFY(missionController);
+    QVERIFY(missionController->visualItems());
+
+    // A home-only plan is still meaningful clearable state. The first Clear
+    // must reset it and is therefore allowed to replace visualItems.
+    missionController->setHomePosition(QGeoCoordinate(47.397742, 8.545594));
+    QVERIFY(missionController->homePositionSet());
+
+    QmlObjectListModel* const beforeFirstClear = missionController->visualItems();
+    _masterController->clearPlanEditor();
+
+    QVERIFY(!missionController->homePositionSet());
+    QVERIFY(!_masterController->containsItems());
+    QVERIFY(!_masterController->dirtyForSave());
+    QVERIFY(!_masterController->dirtyForUpload());
+    QVERIFY(_masterController->currentPlanFile().isEmpty());
+    QVERIFY(!_masterController->userSelectedManualCreation());
+
+    QmlObjectListModel* const pristineItems = missionController->visualItems();
+    QVERIFY(pristineItems);
+    QVERIFY(pristineItems != beforeFirstClear);
+    QCOMPARE(pristineItems->count(), 1);
+    QObject* const pristineSettingsItem = pristineItems->get(0);
+    QVERIFY(pristineSettingsItem);
+
+    // Subsequent Plan Editor Clear operations on the already-pristine plan
+    // are strict no-ops: no model replacement, no visualItemsReset signal,
+    // no settings replacement, and no dirty state.
+    QSignalSpy resetSpy(missionController, &MissionController::visualItemsReset);
+    for (int i = 0; i < 5; ++i) {
+        _masterController->clearPlanEditor();
+
+        QCOMPARE(resetSpy.count(), 0);
+        QCOMPARE(missionController->visualItems(), pristineItems);
+        QCOMPARE(missionController->visualItems()->get(0), pristineSettingsItem);
+        QCOMPARE(missionController->visualItems()->count(), 1);
+        QVERIFY(!missionController->homePositionSet());
+        QVERIFY(!_masterController->containsItems());
+        QVERIFY(!_masterController->dirtyForSave());
+        QVERIFY(!_masterController->dirtyForUpload());
+        QVERIFY(_masterController->currentPlanFile().isEmpty());
+        QVERIFY(!_masterController->userSelectedManualCreation());
+        QVERIFY(_masterController->showCreateFromTemplate());
+    }
+}
+
 void PlanMasterControllerTest::_testFileAssociationClearedOnRemoveAllFromVehicle()
 {
     _connectMockLink(MAV_AUTOPILOT_PX4);
